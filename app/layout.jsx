@@ -8,7 +8,7 @@ const CSS = `:root{
   --gold:#E8B84B;--gold-b:#F2D163;--gold-d:#C8962E;
   --gg:linear-gradient(135deg,#B8801F,#E8B84B 38%,#F6DC8A 60%,#D9A93A);
   --cream:#F8F5F9;--muted:#B4A0BD;
-  --font:'Inter',system-ui,-apple-system,sans-serif;--fd:'Bricolage Grotesque',sans-serif;--fa:'Instrument Serif',Georgia,serif;
+  --font:'Ubuntu',sans-serif;--fd:'Ubuntu',sans-serif;--fa:'Ubuntu',sans-serif;
 }
 *{margin:0;padding:0;box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -27,7 +27,7 @@ body{background:var(--bg);color:var(--cream);font-family:var(--font);overflow-x:
 .hero{min-height:84vh;display:flex;flex-direction:column;justify-content:center;gap:24px;padding:18px 0 60px}
 .eyebrow{font-size:12px;letter-spacing:.34em;text-transform:uppercase;color:var(--gold);font-weight:700;display:flex;align-items:center;gap:12px}
 .eyebrow:before{content:'';width:34px;height:2px;background:var(--gg)}
-h1{font-family:var(--fd);font-weight:800;font-size:clamp(46px,8vw,96px);line-height:1;letter-spacing:-.015em;color:#fff;animation:reveal 1.1s cubic-bezier(.16,1,.3,1) both}
+h1{font-family:var(--fd);font-weight:700;font-size:clamp(46px,8vw,96px);line-height:1.02;letter-spacing:-.015em;color:#fff;animation:reveal 1.1s cubic-bezier(.16,1,.3,1) both}
 .it{font-family:var(--fa);font-style:italic;font-weight:500;background:var(--gg);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
 @keyframes reveal{from{opacity:0;clip-path:inset(0 0 100% 0);transform:translateY(30px);filter:blur(12px)}to{opacity:1;clip-path:inset(0 0 -12% 0);transform:none;filter:blur(0)}}
 .lead{color:var(--plum-200);font-size:19px;line-height:1.7;max-width:580px;animation:fadeup .9s .28s both}
@@ -68,7 +68,7 @@ export default function RootLayout({ children }) {
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,600;12..96,700;12..96,800&family=Instrument+Serif:ital@0;1&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+        <link href="https://fonts.googleapis.com/css2?family=Ubuntu:ital,wght@0,300;0,400;0,500;0,700;1,400;1,700&display=swap" rel="stylesheet" />
         <style dangerouslySetInnerHTML={{ __html: CSS }} />
       </head>
       <body>{children}</body>
