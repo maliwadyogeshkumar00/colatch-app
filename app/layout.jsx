@@ -36,7 +36,7 @@ body{background:#0f0814;color:var(--cream);font-family:var(--font);overflow-x:hi
 footer{position:relative;z-index:5;border-top:1px solid rgba(212,204,221,.12);margin-top:60px;padding:30px 0;color:var(--plum-400);font-size:13px}
 
 .nav{display:flex;align-items:center;justify-content:space-between;padding:28px 0}
-.logo{display:flex;align-items:center;gap:11px;cursor:pointer}
+.logo{display:flex;align-items:center;gap:11px;cursor:pointer}\n.brandlogo{height:30px;width:auto;display:block;filter:drop-shadow(0 3px 12px rgba(232,184,75,.35));animation:wmreveal 1s cubic-bezier(.16,1,.3,1) both;transition:transform .4s ease,filter .4s ease}\n.logo:hover .brandlogo{transform:scale(1.04);filter:drop-shadow(0 5px 18px rgba(232,184,75,.6)) brightness(1.08)}
 .emb{width:36px;height:36px;flex:none;background:var(--emblem) center/contain no-repeat;transition:transform .5s cubic-bezier(.16,1,.3,1);animation:embin 1.1s cubic-bezier(.16,1,.3,1) both,embpulse 4.5s ease-in-out 1.3s infinite}
 .logo:hover .emb{transform:rotate(-8deg) scale(1.06)}\n.lockup{display:inline-flex;align-items:center;gap:11px}\n.wm-svg{height:21px;width:auto;display:block;filter:drop-shadow(0 2px 10px rgba(0,0,0,.45));animation:wmreveal 1s .25s cubic-bezier(.16,1,.3,1) both}\n.wm-svg path{fill:#fff}\n.logo:hover .wm-svg path{fill:var(--gold-pale)}\n@keyframes wmreveal{from{clip-path:inset(0 100% 0 0);opacity:0}to{clip-path:inset(0 0 0 0);opacity:1}}\n@keyframes embin{from{opacity:0;transform:rotate(-160deg) scale(.35)}to{opacity:1;transform:none}}\n@keyframes embpulse{0%,100%{filter:drop-shadow(0 3px 14px rgba(232,184,75,.5))}50%{filter:drop-shadow(0 4px 22px rgba(232,184,75,.95))}}
 .logo .wm{font-family:var(--fd);font-weight:700;font-size:22px;letter-spacing:-.02em;color:#fff}
