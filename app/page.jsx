@@ -152,17 +152,7 @@ function safetyScore(c, p) {
 /* ---------------- LOGO ---------------- */
 
 function Logo() {
-  return (
-    <svg width="30" height="30" viewBox="0 0 40 40" fill="none" aria-hidden="true">
-      <circle cx="20" cy="20" r="17" stroke="url(#g)" strokeWidth="2.5" />
-      <circle cx="20" cy="20" r="6" fill="url(#g)" />
-      <defs>
-        <linearGradient id="g" x1="0" y1="0" x2="40" y2="40">
-          <stop stopColor="#F6DC8A" /><stop offset="0.5" stopColor="#E8B84B" /><stop offset="1" stopColor="#C8962E" />
-        </linearGradient>
-      </defs>
-    </svg>
-  );
+  return <span className="emb" aria-hidden="true" />;
 }
 
 /* ---------------- SCREEN CSS ---------------- */
@@ -325,6 +315,7 @@ export default function Home() {
 
         {stage === "land" && (
           <section className="hero">
+            <span className="brandmark" aria-hidden="true" />
             <div className="eyebrow">Celebrity &amp; Brand Marketing · AI Matchmaking</div>
             <h1>Find the face<br />your brand <span className="it">deserves.</span></h1>
             <p className="lead">
