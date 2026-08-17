@@ -9,26 +9,29 @@ const CATEGORIES = [
   "Tech / SaaS", "Jewellery & Luxury", "Education", "Other",
 ];
 
-// Real Colatch roster (public names) + fields used for fit scoring & conflict check.
-// "owns" = categories the celebrity is already associated with (competitor-conflict signal).
+const IMG = (s) => "https://colatch.com/roster/" + s + ".webp";
+
+// Real Colatch roster with public portraits. "owns" = categories the face is
+// already associated with (competitor-conflict signal).
 const ROSTER = [
-  { n: "Shahid Kapoor",     f: "Film",       vibe: "Premium urban",     tier: "Flagship", aud: "Premium",  types: ["premium","credible","youth"],   owns: ["Auto & EV","Fashion & Apparel"] },
-  { n: "Kriti Sanon",       f: "Film",       vibe: "Lifestyle radiance", tier: "Scale",    aud: "Lifestyle",types: ["glam","youth","lifestyle"],     owns: ["Beauty & Skincare","Fashion & Apparel"] },
-  { n: "KL Rahul",          f: "Cricket",    vibe: "Youth energy",      tier: "Scale",    aud: "Youth",    types: ["youth","mass","credible"],       owns: ["Fintech & BFSI","D2C / E-commerce"] },
-  { n: "Sonu Sood",         f: "Film",       vibe: "Mass trust",        tier: "Scale",    aud: "Mass",     types: ["trust","mass","credible"],       owns: ["Education","Health & Wellness"] },
-  { n: "Neha Dhupia",       f: "Film",       vibe: "Family warmth",     tier: "Growth",   aud: "Family",   types: ["trust","lifestyle"],             owns: ["Health & Wellness"] },
-  { n: "Malaika Arora",     f: "Lifestyle",  vibe: "Glamour icon",      tier: "Scale",    aud: "Lifestyle",types: ["glam","premium","lifestyle"],    owns: ["Fashion & Apparel","Beauty & Skincare"] },
-  { n: "Saina Nehwal",      f: "Badminton",  vibe: "Discipline & grit", tier: "Growth",   aud: "Family",   types: ["credible","trust"],              owns: ["Health & Wellness"] },
-  { n: "Paresh Rawal",      f: "Film",       vibe: "Veteran credibility",tier: "Growth",  aud: "Family",   types: ["trust","credible"],              owns: ["Health & Wellness"] },
-  { n: "Jaya Kishori",      f: "Culture",    vibe: "Values & trust",    tier: "Growth",   aud: "Mass",     types: ["trust","credible"],              owns: [] },
-  { n: "Shriya Saran",      f: "Film",       vibe: "Pan-India appeal",  tier: "Growth",   aud: "Mass",     types: ["lifestyle","glam"],              owns: ["Jewellery & Luxury"] },
-  { n: "Sharman Joshi",     f: "Film",       vibe: "Relatable youth",   tier: "Starter",  aud: "Youth",    types: ["youth","credible"],              owns: [] },
-  { n: "Adah Sharma",       f: "Film / OTT", vibe: "Bold & digital",    tier: "Growth",   aud: "Youth",    types: ["youth","glam"],                  owns: ["D2C / E-commerce"] },
-  { n: "Mouni Roy",         f: "TV / Film",  vibe: "Aspirational glam",  tier: "Growth",   aud: "Lifestyle",types: ["glam","lifestyle"],             owns: ["Beauty & Skincare"] },
-  { n: "Rannvijay Singha",  f: "Creator",    vibe: "Wellness & travel", tier: "Starter",  aud: "Youth",    types: ["youth","credible","mass"],       owns: ["Health & Wellness"] },
-  { n: "Gulshan Grover",    f: "Film",       vibe: "Iconic character",  tier: "Starter",  aud: "Mass",     types: ["mass","credible"],               owns: [] },
-  { n: "Sonu Nigam",        f: "Music",      vibe: "Timeless voice",    tier: "Growth",   aud: "Family",   types: ["trust","mass"],                  owns: ["Education"] },
+  { n: "Shahid Kapoor", slug: "shahid-kapoor", f: "Film", vibe: "Premium urban", tier: "Flagship", aud: "Premium", types: ["premium","credible","youth"], owns: ["Auto & EV","Fashion & Apparel"] },
+  { n: "Kriti Sanon", slug: "kriti-sanon", f: "Film", vibe: "Lifestyle radiance", tier: "Scale", aud: "Lifestyle", types: ["glam","youth","lifestyle"], owns: ["Beauty & Skincare","Fashion & Apparel"] },
+  { n: "KL Rahul", slug: "kl-rahul", f: "Cricket", vibe: "Youth energy", tier: "Scale", aud: "Youth", types: ["youth","mass","credible"], owns: ["Fintech & BFSI","D2C / E-commerce"] },
+  { n: "Sonu Sood", slug: "sonu-sood", f: "Film", vibe: "Mass trust", tier: "Scale", aud: "Mass", types: ["trust","mass","credible"], owns: ["Education","Health & Wellness"] },
+  { n: "Neha Dhupia", slug: "neha-dhupia", f: "Film", vibe: "Family warmth", tier: "Growth", aud: "Family", types: ["trust","lifestyle"], owns: ["Health & Wellness"] },
+  { n: "Malaika Arora", slug: "malaika-arora", f: "Lifestyle", vibe: "Glamour icon", tier: "Scale", aud: "Lifestyle", types: ["glam","premium","lifestyle"], owns: ["Fashion & Apparel","Beauty & Skincare"] },
+  { n: "Saina Nehwal", slug: "saina-nehwal", f: "Badminton", vibe: "Discipline & grit", tier: "Growth", aud: "Family", types: ["credible","trust"], owns: ["Health & Wellness"] },
+  { n: "Paresh Rawal", slug: "paresh-rawal", f: "Film", vibe: "Veteran credibility", tier: "Growth", aud: "Family", types: ["trust","credible"], owns: ["Health & Wellness"] },
+  { n: "Jaya Kishori", slug: "jaya-kishori", f: "Culture", vibe: "Values & trust", tier: "Growth", aud: "Mass", types: ["trust","credible"], owns: [] },
+  { n: "Shriya Saran", slug: "shriya-saran", f: "Film", vibe: "Pan-India appeal", tier: "Growth", aud: "Mass", types: ["lifestyle","glam"], owns: ["Jewellery & Luxury"] },
+  { n: "Sharman Joshi", slug: "sharman-joshi", f: "Film", vibe: "Relatable youth", tier: "Starter", aud: "Youth", types: ["youth","credible"], owns: [] },
+  { n: "Adah Sharma", slug: "adah-sharma", f: "Film / OTT", vibe: "Bold & digital", tier: "Growth", aud: "Youth", types: ["youth","glam"], owns: ["D2C / E-commerce"] },
+  { n: "Mouni Roy", slug: "mouni-roy", f: "TV / Film", vibe: "Aspirational glam", tier: "Growth", aud: "Lifestyle", types: ["glam","lifestyle"], owns: ["Beauty & Skincare"] },
+  { n: "Rasraj Ji Maharaj", slug: "rasraj-ji-maharaj", f: "Devotion", vibe: "Faith & trust", tier: "Growth", aud: "Mass", types: ["trust","credible"], owns: [] },
+  { n: "Rakesh Bedi", slug: "rakesh-bedi", f: "Film", vibe: "Veteran charm", tier: "Starter", aud: "Family", types: ["credible","mass"], owns: [] },
 ];
+
+const FACES = ROSTER.map((c) => c.slug);
 
 const TIER_PRICE = {
   Starter:  { band: "₹8–25 L",     reach: "20–40M",  recall: "+15–25%" },
@@ -44,7 +47,6 @@ const BUDGET_TIERS = {
   "Flagship (₹1.2 Cr+)":["Flagship", "Scale"],
 };
 
-// 20-question confirmation flow. Each maps into the brand profile used for matching.
 const QUESTIONS = [
   { k: "category", q: "What category is the brand in?", o: CATEGORIES },
   { k: "model", q: "What's the business model?", o: ["D2C / online-first", "Retail / offline", "Marketplace", "Service / B2B"] },
@@ -68,13 +70,8 @@ const QUESTIONS = [
   { k: "matter", q: "What matters most in the face?", o: ["Credibility", "Reach", "Aspiration", "Cultural relevance"] },
 ];
 
-// Map an answer choice into a celebrity "type" bucket for scoring.
-const WANT_TO_TYPE = {
-  "Mass trust": "trust", "Youth energy": "youth", "Glamour": "glam", "Everyday credibility": "credible",
-};
-const AGE_TO_AUD = {
-  "Gen Z (18–24)": "Youth", "Young adults (25–34)": "Lifestyle", "Families (35–50)": "Family", "All ages / mass": "Mass",
-};
+const WANT_TO_TYPE = { "Mass trust": "trust", "Youth energy": "youth", "Glamour": "glam", "Everyday credibility": "credible" };
+const AGE_TO_AUD = { "Gen Z (18–24)": "Youth", "Young adults (25–34)": "Lifestyle", "Families (35–50)": "Family", "All ages / mass": "Mass" };
 
 /* ---------------- HELPERS ---------------- */
 
@@ -86,7 +83,6 @@ function domainToName(url) {
   } catch { return "Your Brand"; }
 }
 
-// Deterministic local decode so the whole flow works before an API key is added.
 function mockDecode(url) {
   const name = domainToName(url);
   const seed = name.length;
@@ -149,54 +145,88 @@ function safetyScore(c, p) {
   return Math.max(60, Math.min(99, s));
 }
 
-/* ---------------- LOGO ---------------- */
-
 function Logo() {
   return <span className="emb" aria-hidden="true" />;
+}
+
+function Wall() {
+  const cols = [[0, 3, 6, 9, 12], [1, 4, 7, 10, 13], [2, 5, 8, 11, 14]];
+  const cls = ["a", "b", "c"];
+  return (
+    <div className="wall" aria-hidden="true">
+      {cols.map((idxs, ci) => (
+        <div className={"wcol " + cls[ci]} key={ci}>
+          {[...idxs, ...idxs].map((fi, k) => (
+            <div className="wface" key={k}>
+              <img src={IMG(FACES[fi])} alt="" loading="eager" />
+            </div>
+          ))}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 /* ---------------- SCREEN CSS ---------------- */
 
 const SCREENCSS = `
+.veil{position:fixed;inset:0;z-index:2;background:rgba(12,6,16,.78);pointer-events:none;transition:opacity .6s}
 .prog{height:4px;background:rgba(212,204,221,.16);border-radius:999px;overflow:hidden;max-width:620px;margin-bottom:26px}
 .prog i{display:block;height:100%;background:var(--gg);transition:width .4s cubic-bezier(.16,1,.3,1)}
-.qwrap{max-width:620px;animation:fadeup .5s both}
+.qwrap{max-width:640px;animation:fadeup .5s both}
 .qnum{font-size:12px;letter-spacing:.24em;text-transform:uppercase;color:var(--gold);font-weight:700}
-.qtitle{font-family:var(--fd);font-weight:700;font-size:clamp(26px,4vw,40px);color:#fff;margin:10px 0 22px;line-height:1.15}
+.qtitle{font-family:var(--fd);font-weight:700;font-size:clamp(28px,4vw,44px);color:#fff;margin:10px 0 24px;line-height:1.12;letter-spacing:-.02em}
 .opts{display:flex;flex-direction:column;gap:11px}
-.opt{text-align:left;background:rgba(255,255,255,.05);border:1px solid rgba(212,204,221,.2);color:var(--cream);padding:16px 20px;border-radius:14px;font-size:16px;font-family:var(--font);cursor:pointer;transition:.2s;display:flex;justify-content:space-between;align-items:center}
-.opt:hover{border-color:var(--gold);background:rgba(232,184,75,.09);transform:translateX(4px)}
-.opt.sel{border-color:var(--gold);background:rgba(232,184,75,.14)}
+.opt{text-align:left;background:rgba(30,18,40,.5);border:1px solid rgba(212,204,221,.18);color:var(--cream);padding:16px 20px;border-radius:14px;font-size:16px;font-family:var(--font);cursor:pointer;transition:.2s;display:flex;justify-content:space-between;align-items:center;backdrop-filter:blur(6px)}
+.opt:hover{border-color:var(--gold);background:rgba(232,184,75,.12);transform:translateX(5px)}
+.opt.sel{border-color:var(--gold);background:rgba(232,184,75,.16)}
 .opt .tick{opacity:0;color:var(--gold-b);font-weight:700}
 .opt.sel .tick{opacity:1}
 .qback{margin-top:20px;background:none;border:none;color:var(--plum-300);cursor:pointer;font-size:14px;font-family:var(--font)}
 .qback:hover{color:#fff}
-.rep{max-width:760px;animation:fadeup .6s both}
-.repgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:20px}
-.repf{background:rgba(255,255,255,.05);border:1px solid rgba(212,204,221,.18);border-radius:14px;padding:16px 18px}
+.sec-head{max-width:820px}
+.sec-head h2{font-family:var(--fd);font-weight:700;font-size:clamp(34px,5vw,60px);color:#fff;margin:8px 0 8px;letter-spacing:-.035em;line-height:1}
+.sec-head p{color:var(--plum-200);font-size:17px;line-height:1.6;max-width:640px}
+.repgrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:22px;max-width:760px}
+.repf{background:rgba(30,18,40,.5);border:1px solid rgba(212,204,221,.16);border-radius:14px;padding:16px 18px;backdrop-filter:blur(6px)}
 .repf label{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--plum-400);display:block;margin-bottom:7px}
-.repf input,.repf select{width:100%;background:rgba(0,0,0,.25);border:1px solid rgba(212,204,221,.22);border-radius:9px;color:#fff;padding:10px 12px;font-size:15px;font-family:var(--font);outline:none}
+.repf input,.repf select{width:100%;background:rgba(0,0,0,.3);border:1px solid rgba(212,204,221,.22);border-radius:9px;color:#fff;padding:10px 12px;font-size:15px;font-family:var(--font);outline:none}
 .repf input:focus,.repf select:focus{border-color:var(--gold)}
 .repfull{grid-column:1/-1}
-.rosgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px;margin-top:22px}
-.celeb{background:linear-gradient(160deg,rgba(60,36,72,.7),rgba(28,15,34,.75));border:1px solid rgba(212,204,221,.16);border-radius:16px;padding:18px;cursor:pointer;transition:.25s;position:relative;overflow:hidden}
-.celeb:hover{border-color:var(--gold);transform:translateY(-3px);box-shadow:0 20px 40px -22px rgba(0,0,0,.8)}
-.celeb.pick{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 20px 40px -22px rgba(0,0,0,.8)}
-.celeb h4{font-family:var(--fd);font-size:19px;color:#fff}
-.celeb .fld{font-size:12.5px;color:var(--plum-300);margin-top:2px}
-.fit{display:flex;align-items:center;gap:9px;margin-top:14px}
-.fitbar{flex:1;height:6px;background:rgba(212,204,221,.16);border-radius:999px;overflow:hidden}
-.fitbar i{display:block;height:100%;background:var(--gg)}
-.fitn{font-family:var(--fd);font-weight:700;color:var(--gold-b);font-size:15px}
-.flag{display:inline-flex;align-items:center;gap:6px;margin-top:12px;font-size:12px;padding:5px 10px;border-radius:999px}
-.flag.bad{background:rgba(237,169,179,.12);color:#EDA9B3;border:1px solid rgba(237,169,179,.3)}
-.flag.ok{background:rgba(120,220,150,.1);color:#8fe3a8;border:1px solid rgba(120,220,150,.28)}
-.match{margin-top:22px;display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.mstat{background:rgba(255,255,255,.05);border:1px solid rgba(212,204,221,.18);border-radius:14px;padding:18px}
-.mstat b{font-family:var(--fd);font-size:26px;color:#fff;display:block}
-.mstat span{font-size:12px;letter-spacing:.1em;text-transform:uppercase;color:var(--plum-400)}
-.row{display:flex;gap:12px;flex-wrap:wrap;margin-top:26px}
-@media(max-width:640px){.repgrid,.match{grid-template-columns:1fr}}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:16px;margin-top:26px}
+.pcard{position:relative;aspect-ratio:3/4;border-radius:18px;overflow:hidden;cursor:pointer;border:1px solid rgba(212,204,221,.14);transition:.3s;background:#241634}
+.pcard img{width:100%;height:100%;object-fit:cover;object-position:top center;transition:.5s;filter:grayscale(.1)}
+.pcard:hover img{transform:scale(1.06)}
+.pcard:hover{border-color:var(--gold);transform:translateY(-5px);box-shadow:0 34px 60px -30px #000}
+.pcard.pick{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold),0 34px 60px -30px #000}
+.pov{position:absolute;inset:0;display:flex;flex-direction:column;justify-content:flex-end;padding:16px;background:linear-gradient(180deg,rgba(12,6,16,0) 38%,rgba(12,6,16,.72) 66%,rgba(12,6,16,.96))}
+.ptier{font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--gold-b);font-weight:700;margin-bottom:auto;align-self:flex-start;background:rgba(12,6,16,.5);padding:5px 9px;border-radius:999px;backdrop-filter:blur(4px)}
+.pov h4{font-family:var(--fd);font-size:19px;color:#fff;letter-spacing:-.01em}
+.pfld{font-size:12px;color:var(--plum-200);margin-top:1px}
+.pfit{display:flex;align-items:center;gap:8px;margin-top:10px}
+.pfitbar{flex:1;height:5px;background:rgba(255,255,255,.16);border-radius:999px;overflow:hidden}
+.pfitbar i{display:block;height:100%;background:var(--gg)}
+.pfitn{font-family:var(--fd);font-weight:700;color:var(--gold-b);font-size:14px}
+.pflag{display:inline-flex;align-items:center;gap:5px;margin-top:9px;font-size:11px;padding:4px 9px;border-radius:999px;align-self:flex-start}
+.pflag.bad{background:rgba(237,169,179,.16);color:#F3B6BE;border:1px solid rgba(237,169,179,.35)}
+.pflag.ok{background:rgba(120,220,150,.14);color:#9CE9B4;border:1px solid rgba(120,220,150,.32)}
+.dossier{display:grid;grid-template-columns:260px 1fr;gap:26px;margin-top:30px;max-width:900px}
+.dportrait{border-radius:18px;overflow:hidden;aspect-ratio:3/4;border:1px solid var(--gold);box-shadow:0 30px 60px -30px #000}
+.dportrait img{width:100%;height:100%;object-fit:cover;object-position:top center}
+.card{background:linear-gradient(155deg,rgba(46,27,54,.78),rgba(20,10,26,.85));border:1px solid rgba(232,184,75,.4);border-radius:24px;padding:30px;backdrop-filter:blur(12px);box-shadow:0 40px 90px -40px #000;animation:cardin .7s cubic-bezier(.16,1,.3,1) both}
+@keyframes cardin{from{opacity:0;transform:translateY(22px) scale(.98)}to{opacity:1;transform:none}}
+.tag{font-size:11px;letter-spacing:.26em;text-transform:uppercase;color:var(--gold-b);font-weight:700}
+.card h3{font-family:var(--fd);font-size:30px;color:#fff;margin:8px 0 4px;letter-spacing:-.02em}
+.tl{color:var(--gold-b);font-size:14px}
+.match{margin-top:20px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.mstat{background:rgba(255,255,255,.05);border:1px solid rgba(212,204,221,.16);border-radius:14px;padding:16px}
+.mstat b{font-family:var(--fd);font-size:26px;color:#fff;display:block;letter-spacing:-.02em}
+.mstat span{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--plum-400)}
+.card p{color:var(--plum-200);line-height:1.65;margin-top:16px;font-size:15px}
+.chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}
+.chips span{background:rgba(232,184,75,.1);border:1px solid rgba(232,184,75,.3);border-radius:999px;padding:6px 13px;font-size:12.5px;color:var(--gold-b);text-transform:capitalize}
+.row{display:flex;gap:12px;flex-wrap:wrap;margin-top:24px}
+@media(max-width:720px){.repgrid,.match{grid-template-columns:1fr}.dossier{grid-template-columns:1fr}.dportrait{max-width:220px}}
 `;
 
 /* ---------------- MAIN ---------------- */
@@ -204,7 +234,6 @@ const SCREENCSS = `
 export default function Home() {
   const [stage, setStage] = useState("land");
   const [url, setUrl] = useState("");
-  const [loading, setLoading] = useState(false);
   const [brand, setBrand] = useState(null);
   const [error, setError] = useState("");
   const [qi, setQi] = useState(0);
@@ -220,9 +249,9 @@ export default function Home() {
     let w, h, parts, raf;
     const resize = () => { w = cv.width = window.innerWidth; h = cv.height = window.innerHeight; };
     resize();
-    parts = Array.from({ length: 46 }, () => ({
-      x: Math.random() * w, y: Math.random() * h, r: Math.random() * 2 + 0.6,
-      s: Math.random() * 0.4 + 0.15, o: Math.random() * 0.5 + 0.2,
+    parts = Array.from({ length: 42 }, () => ({
+      x: Math.random() * w, y: Math.random() * h, r: Math.random() * 1.8 + 0.5,
+      s: Math.random() * 0.4 + 0.12, o: Math.random() * 0.5 + 0.15,
     }));
     const draw = () => {
       ctx.clearRect(0, 0, w, h);
@@ -240,7 +269,7 @@ export default function Home() {
 
   async function decode(u) {
     if (!u || !u.includes(".")) { setError("Enter a valid website, e.g. yourbrand.in"); return; }
-    setError(""); setLoading(true); setStage("scan");
+    setError(""); setStage("scan");
     let data = null;
     try {
       const r = await fetch("/api/decode", {
@@ -254,45 +283,32 @@ export default function Home() {
     setTimeout(() => {
       setBrand(data);
       setAnswers((a) => ({ ...a, category: data.category }));
-      setStage("questions"); setQi(0); setLoading(false);
-    }, 1800);
+      setStage("questions"); setQi(0);
+    }, 1900);
   }
 
   function answer(k, v) {
     const na = { ...answers, [k]: v };
     setAnswers(na);
     if (qi < QUESTIONS.length - 1) {
-      setTimeout(() => setQi(qi + 1), 180);
+      setTimeout(() => setQi(qi + 1), 170);
     } else {
       const p = buildProfile(brand, na);
       setReport({
-        name: brand.name,
-        archetype: brand.archetype,
-        category: p.category,
-        audience: p.audience,
-        tone: p.tone,
-        want: na.want || "Everyday credibility",
-        budget: p.budget,
-        personality: (brand.personality || []).join(", "),
-        summary: brand.summary,
+        name: brand.name, archetype: brand.archetype, category: p.category,
+        audience: p.audience, tone: p.tone, want: na.want || "Everyday credibility",
+        budget: p.budget, personality: (brand.personality || []).join(", "), summary: brand.summary,
       });
       setStage("report");
     }
   }
 
-  function toRoster() {
-    setPicked(null);
-    setStage("roster");
-  }
+  function toRoster() { setPicked(null); setStage("roster"); }
 
   const profile = report && {
-    category: report.category,
-    audience: report.audience,
-    want: WANT_TO_TYPE[report.want] || "credible",
-    budget: report.budget,
-    risk: answers.risk || "Moderate",
-    tone: report.tone,
-    goal: answers.goal || "Awareness / reach",
+    category: report.category, audience: report.audience,
+    want: WANT_TO_TYPE[report.want] || "credible", budget: report.budget,
+    risk: answers.risk || "Moderate", tone: report.tone, goal: answers.goal || "Awareness / reach",
   };
 
   const ranked = profile
@@ -302,22 +318,29 @@ export default function Home() {
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: SCREENCSS }} />
-      <div className="bg" />
+      <div className="stagebg" />
+      <Wall />
+      <div className="scrim" />
+      <div className="veil" style={{ opacity: stage === "land" ? 0 : 0.92 }} />
       <canvas id="embers" ref={canvasRef} />
+      <div className="grain" />
 
       <div className="wrap">
         <nav className="nav">
-          <div className="logo" onClick={() => setStage("land")} style={{ cursor: "pointer" }}>
+          <div className="logo" onClick={() => setStage("land")}>
             <Logo /><span className="wm">Colatch</span>
           </div>
           <a className="navcta" href="https://wa.me/919764140627" target="_blank" rel="noreferrer">Start a partnership</a>
         </nav>
 
+        {/* LANDING */}
         {stage === "land" && (
           <section className="hero">
-            <span className="brandmark" aria-hidden="true" />
             <div className="eyebrow">Celebrity &amp; Brand Marketing · AI Matchmaking</div>
-            <h1>Find the face<br />your brand <span className="it">deserves.</span></h1>
+            <h1>
+              <span className="h1a"><span>Find the face</span></span>
+              <span className="h1a"><span>your brand <span className="it">deserves.</span></span></span>
+            </h1>
             <p className="lead">
               Drop in your website. Colatch decodes your brand DNA, then matches you to the right
               celebrity from our 1500+ roster — cross-checked so no competitor already owns them.
@@ -348,17 +371,19 @@ export default function Home() {
           </section>
         )}
 
+        {/* SCAN */}
         {stage === "scan" && (
           <section className="hero">
             <div className="eyebrow">Decoding</div>
-            <h1 style={{ fontSize: "clamp(34px,6vw,64px)" }}>Reading <span className="it">{domainToName(url)}</span>…</h1>
+            <h1 style={{ fontSize: "clamp(36px,6vw,72px)" }}>Reading <span className="it">{domainToName(url)}</span>…</h1>
             <div className="scan"><span className="spin2" /> Analysing brand signals, tone and audience</div>
             <div className="scan" style={{ opacity: 0.7 }}>Scanning 1500+ faces for fit &amp; competitor conflicts</div>
           </section>
         )}
 
+        {/* QUESTIONS */}
         {stage === "questions" && brand && (
-          <section className="hero" style={{ minHeight: "80vh", justifyContent: "center" }}>
+          <section className="hero" style={{ minHeight: "80vh", justifyContent: "center", maxWidth: "100%" }}>
             <div className="prog"><i style={{ width: `${((qi + 1) / QUESTIONS.length) * 100}%` }} /></div>
             <div className="qwrap" key={qi}>
               <div className="qnum">Question {qi + 1} of {QUESTIONS.length}</div>
@@ -379,83 +404,70 @@ export default function Home() {
           </section>
         )}
 
+        {/* REPORT */}
         {stage === "report" && report && (
-          <section style={{ padding: "40px 0 60px" }}>
-            <div className="rep">
+          <section style={{ padding: "48px 0 70px" }}>
+            <div className="sec-head">
               <div className="eyebrow">Your Brand DNA · editable</div>
-              <h1 style={{ fontSize: "clamp(34px,6vw,60px)", margin: "8px 0 6px" }}>{report.name}</h1>
-              <p className="lead" style={{ animation: "none" }}>{report.summary}</p>
-
-              <div className="repgrid">
-                <div className="repf">
-                  <label>Brand archetype</label>
-                  <input value={report.archetype} onChange={(e) => setReport({ ...report, archetype: e.target.value })} />
-                </div>
-                <div className="repf">
-                  <label>Category</label>
-                  <select value={report.category} onChange={(e) => setReport({ ...report, category: e.target.value })}>
-                    {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div className="repf">
-                  <label>Core audience</label>
-                  <select value={report.audience} onChange={(e) => setReport({ ...report, audience: e.target.value })}>
-                    {["Youth", "Lifestyle", "Family", "Mass", "Premium"].map((c) => <option key={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div className="repf">
-                  <label>Face type you want</label>
-                  <select value={report.want} onChange={(e) => setReport({ ...report, want: e.target.value })}>
-                    {["Mass trust", "Youth energy", "Glamour", "Everyday credibility"].map((c) => <option key={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div className="repf">
-                  <label>Budget band</label>
-                  <select value={report.budget} onChange={(e) => setReport({ ...report, budget: e.target.value })}>
-                    {Object.keys(BUDGET_TIERS).map((c) => <option key={c}>{c}</option>)}
-                  </select>
-                </div>
-                <div className="repf">
-                  <label>Tone of voice</label>
-                  <input value={report.tone} onChange={(e) => setReport({ ...report, tone: e.target.value })} />
-                </div>
-                <div className="repf repfull">
-                  <label>Personality</label>
-                  <input value={report.personality} onChange={(e) => setReport({ ...report, personality: e.target.value })} />
-                </div>
-              </div>
-
-              <div className="row">
-                <button className="btn" onClick={toRoster}>Find my celebrity matches →</button>
-                <button className="navcta" onClick={() => setStage("questions")} style={{ padding: "14px 20px" }}>← Edit answers</button>
-              </div>
+              <h2>{report.name}</h2>
+              <p>{report.summary}</p>
+            </div>
+            <div className="repgrid">
+              <div className="repf"><label>Brand archetype</label>
+                <input value={report.archetype} onChange={(e) => setReport({ ...report, archetype: e.target.value })} /></div>
+              <div className="repf"><label>Category</label>
+                <select value={report.category} onChange={(e) => setReport({ ...report, category: e.target.value })}>
+                  {CATEGORIES.map((c) => <option key={c}>{c}</option>)}
+                </select></div>
+              <div className="repf"><label>Core audience</label>
+                <select value={report.audience} onChange={(e) => setReport({ ...report, audience: e.target.value })}>
+                  {["Youth", "Lifestyle", "Family", "Mass", "Premium"].map((c) => <option key={c}>{c}</option>)}
+                </select></div>
+              <div className="repf"><label>Face type you want</label>
+                <select value={report.want} onChange={(e) => setReport({ ...report, want: e.target.value })}>
+                  {["Mass trust", "Youth energy", "Glamour", "Everyday credibility"].map((c) => <option key={c}>{c}</option>)}
+                </select></div>
+              <div className="repf"><label>Budget band</label>
+                <select value={report.budget} onChange={(e) => setReport({ ...report, budget: e.target.value })}>
+                  {Object.keys(BUDGET_TIERS).map((c) => <option key={c}>{c}</option>)}
+                </select></div>
+              <div className="repf"><label>Tone of voice</label>
+                <input value={report.tone} onChange={(e) => setReport({ ...report, tone: e.target.value })} /></div>
+              <div className="repf repfull"><label>Personality</label>
+                <input value={report.personality} onChange={(e) => setReport({ ...report, personality: e.target.value })} /></div>
+            </div>
+            <div className="row">
+              <button className="btn" onClick={toRoster}>Reveal my celebrity matches →</button>
+              <button className="navcta" onClick={() => setStage("questions")} style={{ padding: "14px 20px" }}>← Edit answers</button>
             </div>
           </section>
         )}
 
+        {/* ROSTER */}
         {stage === "roster" && profile && (
-          <section style={{ padding: "40px 0 70px" }}>
-            <div className="eyebrow">Fit-led shortlist · conflict-checked</div>
-            <h1 style={{ fontSize: "clamp(32px,5vw,54px)", margin: "8px 0 4px" }}>
-              Faces for <span className="it">{report.name}</span>
-            </h1>
-            <p className="lead" style={{ animation: "none" }}>
-              Ranked by fit to your audience, budget and tone — each cross-checked against competitor conflicts in {report.category}.
-            </p>
+          <section style={{ padding: "48px 0 80px" }}>
+            <div className="sec-head">
+              <div className="eyebrow">Fit-led shortlist · conflict-checked</div>
+              <h2>Faces for <span className="it">{report.name}</span></h2>
+              <p>Ranked by fit to your audience, budget and tone — each cross-checked against competitor conflicts in {report.category}.</p>
+            </div>
 
-            <div className="rosgrid">
+            <div className="pgrid">
               {ranked.map(({ c, fit, conflict }) => (
-                <div key={c.n} className={"celeb" + (picked === c.n ? " pick" : "")} onClick={() => setPicked(c.n)}>
-                  <h4>{c.n}</h4>
-                  <div className="fld">{c.f} · {c.vibe}</div>
-                  <div className="fit">
-                    <div className="fitbar"><i style={{ width: fit + "%" }} /></div>
-                    <span className="fitn">{fit}%</span>
+                <div key={c.n} className={"pcard" + (picked === c.n ? " pick" : "")} onClick={() => setPicked(c.n)}>
+                  <img src={IMG(c.slug)} alt={c.n} loading="lazy" onError={(e) => { e.currentTarget.style.opacity = 0.15; }} />
+                  <div className="pov">
+                    <span className="ptier">{c.tier} · {TIER_PRICE[c.tier].band}</span>
+                    <h4>{c.n}</h4>
+                    <div className="pfld">{c.f} · {c.vibe}</div>
+                    <div className="pfit">
+                      <div className="pfitbar"><i style={{ width: fit + "%" }} /></div>
+                      <span className="pfitn">{fit}%</span>
+                    </div>
+                    {conflict
+                      ? <span className="pflag bad">⚠ Conflict · {report.category}</span>
+                      : <span className="pflag ok">✓ No conflict</span>}
                   </div>
-                  <div className="fld" style={{ marginTop: 8 }}>{c.tier} · {TIER_PRICE[c.tier].band}</div>
-                  {conflict
-                    ? <span className="flag bad">⚠ Competitor conflict in {report.category}</span>
-                    : <span className="flag ok">✓ No competitor conflict</span>}
                 </div>
               ))}
             </div>
@@ -465,33 +477,36 @@ export default function Home() {
               const sc = scoreCeleb(c, profile);
               const tp = TIER_PRICE[c.tier];
               return (
-                <div className="card" style={{ marginTop: 30, maxWidth: 820 }}>
-                  <div className="tag">Match dossier</div>
-                  <h3>{c.n} × {report.name}</h3>
-                  <div className="tl">{c.f} · {c.vibe} · {c.tier} tier</div>
-                  <div className="match">
-                    <div className="mstat"><b>{sc.fit}%</b><span>Brand fit</span></div>
-                    <div className="mstat"><b>{safetyScore(c, profile)}/100</b><span>Brand-safety</span></div>
-                    <div className="mstat"><b>{tp.reach}</b><span>Est. reach</span></div>
-                    <div className="mstat"><b>{tp.recall}</b><span>Recall lift</span></div>
-                  </div>
-                  <p>
-                    Indicative all-in band <b style={{ color: "var(--gold-b)" }}>{tp.band}</b> (talent + production + usage).{" "}
-                    {sc.conflict
-                      ? `Heads up — ${c.n.split(" ")[0]} is already associated with ${report.category}, so a competitor may effectively own this face. We'd flag this before you commit.`
-                      : `Clean slate — ${c.n.split(" ")[0]} has no competing ${report.category} association, so the equity works fully for you.`}
-                  </p>
-                  <div className="chips">
-                    <span>{report.audience} audience</span>
-                    <span>{report.want}</span>
-                    <span>{report.tone} tone</span>
-                    {sc.notes.map((n) => <span key={n}>{n}</span>)}
-                  </div>
-                  <div className="row">
-                    <a className="btn" href={`https://wa.me/919764140627?text=${encodeURIComponent(`Hi Colatch — we'd like to explore ${c.n} for ${report.name}.`)}`} target="_blank" rel="noreferrer">
-                      Request {c.n.split(" ")[0]} on WhatsApp →
-                    </a>
-                    <button className="navcta" onClick={() => setStage("report")} style={{ padding: "14px 20px" }}>← Back to report</button>
+                <div className="dossier">
+                  <div className="dportrait"><img src={IMG(c.slug)} alt={c.n} /></div>
+                  <div className="card" style={{ margin: 0 }}>
+                    <div className="tag">Match dossier</div>
+                    <h3>{c.n} × {report.name}</h3>
+                    <div className="tl">{c.f} · {c.vibe} · {c.tier} tier</div>
+                    <div className="match">
+                      <div className="mstat"><b>{sc.fit}%</b><span>Brand fit</span></div>
+                      <div className="mstat"><b>{safetyScore(c, profile)}/100</b><span>Brand-safety</span></div>
+                      <div className="mstat"><b>{tp.reach}</b><span>Est. reach</span></div>
+                      <div className="mstat"><b>{tp.recall}</b><span>Recall lift</span></div>
+                    </div>
+                    <p>
+                      Indicative all-in band <b style={{ color: "var(--gold-b)" }}>{tp.band}</b> (talent + production + usage).{" "}
+                      {sc.conflict
+                        ? `Heads up — ${c.n.split(" ")[0]} is already associated with ${report.category}, so a competitor may effectively own this face. We'd flag this before you commit.`
+                        : `Clean slate — ${c.n.split(" ")[0]} has no competing ${report.category} association, so the equity works fully for you.`}
+                    </p>
+                    <div className="chips">
+                      <span>{report.audience} audience</span>
+                      <span>{report.want}</span>
+                      <span>{report.tone} tone</span>
+                      {sc.notes.map((n) => <span key={n}>{n}</span>)}
+                    </div>
+                    <div className="row">
+                      <a className="btn" href={`https://wa.me/919764140627?text=${encodeURIComponent(`Hi Colatch — we'd like to explore ${c.n} for ${report.name}.`)}`} target="_blank" rel="noreferrer">
+                        Request {c.n.split(" ")[0]} on WhatsApp →
+                      </a>
+                      <button className="navcta" onClick={() => setPicked(null)} style={{ padding: "14px 20px" }}>← All faces</button>
+                    </div>
                   </div>
                 </div>
               );
