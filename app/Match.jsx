@@ -50,7 +50,7 @@ function Reveal({ as: Tag = "div", i = 0, className = "", children, ...rest }) {
 }
 
 function Words({ text, start = 0 }) {
-  return text.split(" ").map((w, k) => <span key={k} className="w" style={{ "--i": start + k }}>{w}{" "}</span>);
+  return text.split(" ").map((w, k) => <span key={k}><span className="w" style={{ "--i": start + k }}>{w}</span>{" "}</span>);
 }
 
 /* ================================================================= */
@@ -117,8 +117,8 @@ export default function Match({ roster, source, syncedAt }) {
             </div>
           )}
           <div className="navr">
-            {stage !== "browse" && <button className="btn btn-line btn-sm" onClick={() => { setOpen(null); go("browse"); }}>Explore the roster</button>}
-            <a className="btn btn-line btn-sm" href={`https://wa.me/${WA}`} target="_blank" rel="noreferrer">Start a partnership</a>
+            {stage !== "browse" && <button className="btn btn-line btn-sm nav-explore" onClick={() => { setOpen(null); go("browse"); }}>Explore the roster</button>}
+            <a className="btn btn-line btn-sm nav-wa" href={`https://wa.me/${WA}`} target="_blank" rel="noreferrer">Start a partnership</a>
           </div>
         </nav>
 
@@ -127,7 +127,7 @@ export default function Match({ roster, source, syncedAt }) {
         {stage === "brief" && brand && <Brief {...{ brand, decodeMeta, answers, setAnswers, qi, setQi, roster, profile, onFinish: () => go("dna") }} />}
         {stage === "dna" && brand && <Dna {...{ brand, decodeMeta, answers, setAnswers, roster, profile, onReveal: reveal, onEdit: () => go("brief") }} />}
         {(stage === "results" || stage === "browse") && (
-          <Results {...{ stage, brand, profile, results, matchMeta, roster, total, source, syncedAt, setOpen, shortlist, toggleSL, onBack: () => go(brand ? "dna" : "land"), onStart: () => go("land") }} />
+          <Results key={stage} {...{ stage, brand, profile, results, matchMeta, roster, total, source, syncedAt, setOpen, shortlist, toggleSL, onBack: () => go(brand ? "dna" : "land"), onStart: () => go("land") }} />
         )}
 
         <footer className="foot">
@@ -165,7 +165,7 @@ function Landing({ roster, total, source, url, setUrl, start, err }) {
           <form className="field rise" style={{ "--i": 9 }} onSubmit={(e) => { e.preventDefault(); start(); }}>
             <span className="pre">https://</span>
             <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="yourbrand.in" aria-label="Your website" inputMode="url" autoComplete="url" />
-            <button className="btn btn-gold" type="submit">Decode my brand <span className="arr">→</span></button>
+            <button className="btn btn-gold" type="submit">Decode<span className="long">&nbsp;my brand</span> <span className="arr">→</span></button>
           </form>
           {err && <div className="err">{err}</div>}
           <div className="samples rise" style={{ "--i": 10 }}>
