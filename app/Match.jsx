@@ -165,7 +165,7 @@ function Landing({ roster, total, source, url, setUrl, start, err }) {
           <form className="field rise" style={{ "--i": 9 }} onSubmit={(e) => { e.preventDefault(); start(); }}>
             <span className="pre">https://</span>
             <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="yourbrand.in" aria-label="Your website" inputMode="url" autoComplete="url" />
-            <button className="btn btn-gold" type="submit">Decode<span className="long">&nbsp;my brand</span> <span className="arr">→</span></button>
+            <button className="btn btn-gold" type="submit"><span>Decode<span className="long"> my brand</span></span><span className="arr">→</span></button>
           </form>
           {err && <div className="err">{err}</div>}
           <div className="samples rise" style={{ "--i": 10 }}>
