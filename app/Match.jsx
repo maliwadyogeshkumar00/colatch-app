@@ -2,13 +2,16 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   CATEGORIES, FIELDS, QUESTIONS, QUICK_AFTER, BUDGET_TIERS, TIER_PRICE, WANT_TO_TYPE, AGE_TO_AUD,
-  buildProfile, rankAll, safetyScore, IMG, initials, domainToName,
+  buildProfile, rankAll, safetyScore, IMG, initials, domainToName, PART_LABELS, PART_MAX,
 } from "../lib/engine";
+import { api, encodeShare, loadHistory, saveHistory, csvDownload } from "./client";
+import { LABELS } from "../lib/brief";
+import { Review, RequestForm, Compare, Refine, UnderstoodChips, OfflineBar, Recent, BriefInput } from "./Extras";
 
 const WA = "919764140627";
 const SAMPLES = ["atlas-athleisure.in", "mamaearth.in", "zerodha.com"];
 const STEP_LABELS = ["Decode", "Brief", "DNA", "Matches"];
-const STAGE_STEP = { land: -1, scan: 0, brief: 1, dna: 2, results: 3, browse: -1 };
+const STAGE_STEP = { land: -1, scan: 0, parse: 0, review: 1, brief: 1, dna: 2, results: 3, browse: -1 };
 
 /* ---------- small helpers ---------- */
 function seeded(seed) { let s = seed; return () => ((s = (s * 16807) % 2147483647) - 1) / 2147483646; }
@@ -66,7 +69,14 @@ export default function Match({ roster, source, syncedAt }) {
   const [matchMeta, setMatchMeta] = useState(null);
   const [open, setOpen] = useState(null);
   const [shortlist, setShortlist] = useState([]);
+  const [mode, setMode] = useState("site");          // landing input: site | brief | file
+  const [review, setReview] = useState(null);         // parsed brief awaiting confirmation
+  const [request, setRequest] = useState(null);       // { talent? } — availability & quote form
+  const [compare, setCompare] = useState(false);
+  const [history, setHistory] = useState([]);
+  const [refining, setRefining] = useState(false);
   const total = roster.length;
+  useEffect(() => { setHistory(loadHistory()); }, []);
 
   const go = useCallback((s) => { setStage(s); if (typeof window !== "undefined") window.scrollTo(0, 0); }, []);
 
@@ -75,31 +85,73 @@ export default function Match({ roster, source, syncedAt }) {
   function start(u) {
     const v = (u ?? url).trim();
     if (!v || !v.includes(".")) { setErr("Enter your website, e.g. yourbrand.in"); return; }
-    setErr(""); setUrl(v); setBrand(null); setDecodeMeta(null); setAnswers({}); setQi(0); setResults(null); setShortlist([]);
+    setErr(""); setUrl(v); setBrand(null); setDecodeMeta(null); setAnswers({}); setQi(0); setResults(null); setShortlist([]); setReview(null);
     go("scan");
   }
 
-  async function reveal() {
-    go("results"); setResults(null); setOpen(null);
+  // written or uploaded brief → /api/brief → review table
+  async function readBrief({ text, file }) {
+    setErr(""); setBrand(null); setDecodeMeta(null); setResults(null); setShortlist([]); setReview(null);
+    go("parse");
     try {
-      const r = await fetch("/api/match", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ profile, brand }) });
-      if (!r.ok) throw new Error("match " + r.status);
-      const j = await r.json();
+      let j;
+      if (file) { const fd = new FormData(); fd.append("file", file); j = await api("/api/brief", { form: fd, timeout: 40000 }); }
+      else j = await api("/api/brief", { body: { text } });
+      setReview({ ...j, text: text || "" }); go("review");
+    } catch (e) { setErr(e.message); go("land"); }
+  }
+
+  function confirmReview(name, summary, picked) {
+    const nm = (name || "").trim() || "Your brand";
+    const b = { name: nm, summary: summary || "", category: picked.category || "Other", archetype: null, personality: [], signals: [], source: review?.ai ? "ai-brief" : "brief", brief: review?.text || "" };
+    setBrand(b); setDecodeMeta({ ai: !!review?.ai, readable: true }); setAnswers(picked);
+    reveal(b, picked);
+  }
+
+  // refinement: "only South Indian faces", "under 60 lakh" → merged answers → re-rank
+  async function refine(text) {
+    if (!text.trim()) return;
+    setRefining(true);
+    try {
+      const j = await api("/api/brief", { body: { text, base: answers } });
+      if (!j.changed?.length) return { msg: "Nothing in that changed the brief. Try a language, budget, platform or audience." };
+      const next = { ...answers }; j.changed.forEach((k) => { next[k] = j.answers[k]; });
+      setAnswers(next); await reveal(brand, next, true);
+      return { msg: "Updated " + j.changed.map((k) => (LABELS[k] || k).toLowerCase() + " → " + j.answers[k]).join(" · ") + ". Re-ranked." };
+    } catch (e) { return { msg: e.message, err: true }; }
+    finally { setRefining(false); }
+  }
+  function dropAnswer(k) { const next = { ...answers }; delete next[k]; setAnswers(next); reveal(brand, next, true); }
+
+  function restore(h) {
+    setBrand(h.brand); setDecodeMeta({ ai: false, readable: true }); setAnswers(h.answers); setShortlist([]); setReview(null);
+    reveal(h.brand, h.answers);
+  }
+
+  async function reveal(b = brand, a = answers, keep = false) {
+    const prof = buildProfile(b || {}, a);
+    if (stage !== "results") go("results");
+    if (!keep) setResults(null); setOpen(null);
+    try {
+      const j = await api("/api/match", { body: { profile: prof, brand: { name: b?.name, summary: b?.summary } }, timeout: 30000 });
       setResults(j.results); setMatchMeta({ ai: j.ai?.used, total: j.total, source: j.rosterSource });
     } catch {
-      setResults(rankAll(roster, profile).map((r) => ({ ...r, reason: null }))); setMatchMeta({ ai: false, total, source });
+      // the engine also runs in the browser, so a failed request still gives a ranked list
+      setResults(rankAll(roster, prof).map((r) => ({ ...r, reason: null }))); setMatchMeta({ ai: false, total, source, offline: true });
     }
+    if (b?.name) setHistory(saveHistory({ brand: { name: b.name, summary: b.summary || "", category: b.category, source: b.source, signals: b.signals || [], personality: b.personality || [], archetype: b.archetype || null }, answers: a }));
   }
 
   const toggleSL = (n) => setShortlist((s) => (s.includes(n) ? s.filter((x) => x !== n) : [...s, n]));
   const byName = useMemo(() => Object.fromEntries(roster.map((c) => [c.n, c])), [roster]);
 
-  // Esc closes the dossier
+  const ovRef = useRef({}); ovRef.current = { open, request, compare };
+  // Esc closes the top-most overlay: request form, then compare, then the dossier
   useEffect(() => {
-    const k = (e) => { if (e.key === "Escape") setOpen(null); };
+    const k = (e) => { if (e.key !== "Escape") return; const o = ovRef.current; if (o.request) setRequest(null); else if (o.compare) setCompare(false); else setOpen(null); };
     window.addEventListener("keydown", k); return () => window.removeEventListener("keydown", k);
   }, []);
-  useEffect(() => { document.body.style.overflow = open ? "hidden" : ""; }, [open]);
+  useEffect(() => { document.body.style.overflow = open || request || compare ? "hidden" : ""; }, [open, request, compare]);
 
   const stepIdx = STAGE_STEP[stage];
 
@@ -122,12 +174,14 @@ export default function Match({ roster, source, syncedAt }) {
           </div>
         </nav>
 
-        {stage === "land" && <Landing {...{ roster, total, source, url, setUrl, start, err }} />}
-        {stage === "scan" && <Scan {...{ url, total, roster, onDone: (dna, meta) => { setBrand(dna); setDecodeMeta(meta); setAnswers((a) => ({ ...a, category: dna.category !== "Other" ? dna.category : a.category })); setQi(dna.category && dna.category !== "Other" ? 1 : 0); go("brief"); } }} />}
+        {stage === "land" && <Landing {...{ roster, total, source, url, setUrl, start, err, setErr, mode, setMode, readBrief, history, restore }} />}
+        {stage === "scan" && <Scan {...{ url, total, roster, onFail: (m) => { setErr(m); go("land"); }, onDone: (dna, meta) => { setBrand(dna); setDecodeMeta(meta); setAnswers((a) => ({ ...a, category: dna.category !== "Other" ? dna.category : a.category })); setQi(dna.category && dna.category !== "Other" ? 1 : 0); go("brief"); } }} />}
         {stage === "brief" && brand && <Brief {...{ brand, decodeMeta, answers, setAnswers, qi, setQi, roster, profile, onFinish: () => go("dna") }} />}
-        {stage === "dna" && brand && <Dna {...{ brand, decodeMeta, answers, setAnswers, roster, profile, onReveal: reveal, onEdit: () => go("brief") }} />}
+        {stage === "dna" && brand && <Dna {...{ brand, decodeMeta, answers, setAnswers, roster, profile, onReveal: () => reveal(), onEdit: () => go("brief") }} />}
+        {stage === "parse" && <Parsing roster={roster} />}
+        {stage === "review" && review && <Review {...{ review, onConfirm: confirmReview, onBack: () => go("land"), onGuided: (name, picked) => { setBrand({ name: name || "Your brand", summary: review.summary || "", category: picked.category || "Other", personality: [], signals: [], source: "brief" }); setAnswers(picked); setQi(0); go("brief"); } }} />}
         {(stage === "results" || stage === "browse") && (
-          <Results key={stage} {...{ stage, brand, profile, results, matchMeta, roster, total, source, syncedAt, setOpen, shortlist, toggleSL, onBack: () => go(brand ? "dna" : "land"), onStart: () => go("land") }} />
+          <Results key={stage} {...{ stage, brand, profile, answers, results, matchMeta, roster, total, source, syncedAt, setOpen, shortlist, toggleSL, refine, refining, dropAnswer, onPropose: () => setRequest({ talent: null }), onBack: () => go(brand ? (brand.source === "brief" || brand.source === "ai-brief" ? "review" : "dna") : "land"), onStart: () => go("land") }} />
         )}
 
         <footer className="foot">
@@ -136,14 +190,17 @@ export default function Match({ roster, source, syncedAt }) {
         </footer>
       </div>
 
-      <ShortlistBar {...{ shortlist, byName, brand, toggleSL, hidden: !!open || !(stage === "results" || stage === "browse") }} />
-      {open && <Dossier {...{ item: open, brand, profile, hasBrief: !!brand && stage === "results", shortlisted: shortlist.includes(open.c.n), toggleSL, onClose: () => setOpen(null) }} />}
+      <OfflineBar />
+      <ShortlistBar {...{ shortlist, byName, brand, profile, results, toggleSL, onCompare: () => setCompare(true), onRequest: () => setRequest({ talent: null, shortlist }), hidden: !!open || !!request || compare || !(stage === "results" || stage === "browse") }} />
+      {open && <Dossier {...{ item: open, brand, profile, hasBrief: !!brand && stage === "results", shortlisted: shortlist.includes(open.c.n), toggleSL, onRequest: () => setRequest({ talent: open.c.n }), onClose: () => setOpen(null) }} />}
+      {compare && <Compare {...{ names: shortlist.slice(0, 4), byName, results, profile, hasBrief: !!brand && stage === "results", brand, onClose: () => setCompare(false), onOpen: (r) => { setCompare(false); setOpen(r); }, toggleSL }} />}
+      {request && <RequestForm {...{ request, brand, profile, hasBrief: !!brand, onClose: () => setRequest(null) }} />}
     </>
   );
 }
 
 /* ================================================================= LANDING */
-function Landing({ roster, total, source, url, setUrl, start, err }) {
+function Landing({ roster, total, source, url, setUrl, start, err, setErr, mode, setMode, readBrief, history, restore }) {
   const cols = useMemo(() => {
     const pool = roster.filter((c) => c.ph && (c.star || c.tier === "Flagship" || c.tier === "Scale"));
     const rnd = seeded(11); const a = [...pool];
@@ -162,16 +219,28 @@ function Landing({ roster, total, source, url, setUrl, start, err }) {
             Drop in your website. Colatch decodes your brand DNA, then ranks every face on our roster for fit, budget and
             competitor conflicts — so you walk into the first call with a shortlist, not a guess.
           </p>
-          <form className="field rise" style={{ "--i": 9 }} onSubmit={(e) => { e.preventDefault(); start(); }}>
-            <span className="pre">https://</span>
-            <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="yourbrand.in" aria-label="Your website" inputMode="url" autoComplete="url" />
-            <button className="btn btn-gold" type="submit"><span>Decode<span className="long"> my brand</span></span><span className="arr">→</span></button>
-          </form>
-          {err && <div className="err">{err}</div>}
-          <div className="samples rise" style={{ "--i": 10 }}>
-            Try a sample
-            {SAMPLES.map((s) => <button key={s} className="chip" onClick={() => start(s)}>{s}</button>)}
+          <div className="modes rise" style={{ "--i": 9 }} role="tablist" aria-label="How do you want to start?">
+            {[["site", "Decode my website"], ["brief", "Write a brief"], ["file", "Upload a brief"]].map(([k, l]) => (
+              <button key={k} role="tab" aria-selected={mode === k} className={mode === k ? "on" : ""} onClick={() => { setMode(k); setErr(""); }}>{l}</button>
+            ))}
           </div>
+          {mode === "site" ? (
+            <>
+              <form className="field rise" style={{ "--i": 9 }} onSubmit={(e) => { e.preventDefault(); start(); }}>
+                <span className="pre">https://</span>
+                <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="yourbrand.in" aria-label="Your website" inputMode="url" autoComplete="url" />
+                <button className="btn btn-gold" type="submit"><span>Decode<span className="long"> my brand</span></span><span className="arr">→</span></button>
+              </form>
+              {err && <div className="err" role="alert">{err}</div>}
+              <div className="samples rise" style={{ "--i": 10 }}>
+                Try a sample
+                {SAMPLES.map((s) => <button key={s} className="chip" onClick={() => start(s)}>{s}</button>)}
+              </div>
+            </>
+          ) : (
+            <BriefInput {...{ mode, readBrief, err, setErr }} />
+          )}
+          <Recent {...{ history, restore }} />
           <div className="stats rise" style={{ "--i": 11 }}>
             <div><b><Count to={total} dur={1400} /></b><span>Faces on the roster</span></div>
             <div><b><Count to={500} dur={1400} suffix="+" /></b><span>Brands in India</span></div>
@@ -201,7 +270,7 @@ function Landing({ roster, total, source, url, setUrl, start, err }) {
 }
 
 /* ================================================================= SCAN */
-function Scan({ url, total, roster, onDone }) {
+function Scan({ url, total, roster, onDone, onFail }) {
   const name = domainToName(url);
   const [step, setStep] = useState(0);
   const [dna, setDna] = useState(null);
@@ -212,9 +281,9 @@ function Scan({ url, total, roster, onDone }) {
 
   useEffect(() => {
     let alive = true;
-    fetch("/api/decode", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ url }) })
-      .then((r) => r.json()).then((j) => { if (!alive) return; setDna(j.dna || { name, category: "Other", personality: [], signals: [], summary: "", source: "domain" }); setMeta({ ai: j.ai, readable: j.readable }); })
-      .catch(() => { if (alive) { setDna({ name, category: "Other", archetype: "The Trusted Guide", personality: ["Credible", "Warm"], signals: [], summary: `We couldn't reach ${url}, so this starts from your answers.`, source: "domain" }); setMeta({ ai: false, readable: false }); } });
+    api("/api/decode", { body: { url }, timeout: 30000 })
+      .then((j) => { if (!alive) return; setDna(j.dna || { name, category: "Other", personality: [], signals: [], summary: "", source: "domain" }); setMeta({ ai: j.ai, readable: j.readable }); })
+      .catch((e) => { if (!alive) return; if (e.status === 400 || e.status === 429) { onFail(e.message); return; } { setDna({ name, category: "Other", archetype: "The Trusted Guide", personality: ["Credible", "Warm"], signals: [], summary: `We couldn't reach ${url}, so this starts from your answers.`, source: "domain" }); setMeta({ ai: false, readable: false }); } });
     return () => { alive = false; };
   }, [url]);
 
@@ -398,7 +467,7 @@ function Dna({ brand, decodeMeta, answers, setAnswers, roster, profile, onReveal
 }
 
 /* ================================================================= RESULTS / BROWSE */
-function Results({ stage, brand, profile, results, matchMeta, roster, total, source, syncedAt, setOpen, shortlist, toggleSL, onBack, onStart }) {
+function Results({ stage, brand, profile, answers, results, matchMeta, roster, total, source, syncedAt, setOpen, shortlist, toggleSL, refine, refining, dropAnswer, onPropose, onBack, onStart }) {
   const browse = stage === "browse";
   const [field, setField] = useState("all");
   const [hide, setHide] = useState(false);
@@ -445,9 +514,12 @@ function Results({ stage, brand, profile, results, matchMeta, roster, total, sou
         </div>
         <div className="rise" style={{ "--i": 3, display: "flex", gap: 8 }}>
           {browse ? <button className="btn btn-plum" onClick={onStart}>Decode my brand <span className="arr">→</span></button>
-                  : <button className="btn btn-line btn-sm" onClick={onBack}>← Adjust brief</button>}
+                  : <><button className="btn btn-line btn-sm" onClick={onPropose}>Ask Colatch to propose names</button><button className="btn btn-line btn-sm" onClick={onBack}>← Adjust brief</button></>}
         </div>
       </div>
+      {!browse && <UnderstoodChips {...{ answers, onDrop: dropAnswer, busy: refining }} />}
+      {!browse && <Refine {...{ refine, busy: refining, answers }} />}
+      {!browse && matchMeta?.offline && <div className="notice" role="status">Showing the in-browser ranking — the AI review couldn't be reached. Results are still complete and conflict-checked.</div>}
 
       <div className="tools">
         {FIELDS.filter(([k]) => k === "all" || counts[k]).map(([k, l]) => (
@@ -498,8 +570,8 @@ function Card({ r, i, rank, big, browse, category, setOpen, shortlist, toggleSL 
 }
 
 /* ================================================================= DOSSIER */
-function Dossier({ item, brand, profile, hasBrief, shortlisted, toggleSL, onClose }) {
-  const { c, fit, conflict, notes, reason } = item;
+function Dossier({ item, brand, profile, hasBrief, shortlisted, toggleSL, onRequest, onClose }) {
+  const { c, fit, conflict, notes, reason, parts } = item;
   const tp = TIER_PRICE[c.tier];
   const first = c.n.split(" ")[0];
   const safety = safetyScore(c, profile);
@@ -540,10 +612,25 @@ function Dossier({ item, brand, profile, hasBrief, shortlisted, toggleSL, onClos
             Band is indicative, all-in (talent + production + usage) and confirmed per campaign. {c.followers ? `${(c.followers / 1e6).toFixed(1)}M followers. ` : ""}
             {notes?.length ? "Why it ranks: " + notes.join(", ") + "." : ""}
           </p>
+          {hasBrief && parts && (
+            <div className="split rise" style={{ "--i": 6 }} aria-label="How the fit score is made">
+              <h4>How the {fit}% is made</h4>
+              {Object.keys(PART_LABELS).filter((k) => parts[k]).map((k, i) => (
+                <div className={"sp" + (parts[k] < 0 ? " neg" : "")} key={k}>
+                  <span>{PART_LABELS[k]}</span>
+                  <i style={{ "--v": Math.min(1, Math.abs(parts[k]) / PART_MAX[k]), "--i": i }} />
+                  <b>{parts[k] > 0 ? "+" : ""}{parts[k]}</b>
+                </div>
+              ))}
+              {conflict && <div className="sp neg"><span>Known {profile.category} association</span><i style={{ "--v": 1 }} /><b>−26</b></div>}
+              <small>Base 32 · capped between 18 and 97. Bands are indicative and confirmed per campaign.</small>
+            </div>
+          )}
           <div className="meta rise" style={{ "--i": 6 }}>{c.tags.map((t) => <span key={t} style={{ background: "rgba(216,204,221,.08)" }}>{t}</span>)}</div>
           <div className="dacts rise" style={{ "--i": 7 }}>
-            <a className="btn btn-gold" href={`https://wa.me/${WA}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer">Request {first} on WhatsApp <span className="arr">→</span></a>
+            <button className="btn btn-gold" onClick={onRequest}>Request availability &amp; quote <span className="arr">→</span></button>
             <button className="btn btn-line" onClick={() => toggleSL(c.n)}>{shortlisted ? "✓ Shortlisted" : "+ Add to shortlist"}</button>
+            <a className="link" href={`https://wa.me/${WA}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer">or ask on WhatsApp</a>
           </div>
         </div>
       </aside>
@@ -552,15 +639,50 @@ function Dossier({ item, brand, profile, hasBrief, shortlisted, toggleSL, onClos
 }
 
 /* ================================================================= SHORTLIST */
-function ShortlistBar({ shortlist, byName, brand, toggleSL, hidden }) {
+function ShortlistBar({ shortlist, byName, brand, profile, results, toggleSL, onCompare, onRequest, hidden }) {
   const show = shortlist.length > 0 && !hidden;
-  const msg = `Hi Colatch — ${brand ? `for ${brand.name}, ` : ""}we'd like to explore this shortlist:\n` + shortlist.map((n, i) => `${i + 1}. ${n}`).join("\n");
+  const [copied, setCopied] = useState(false);
+  const fitOf = (n) => results?.find((r) => r.c.n === n)?.fit ?? null;
+  async function share() {
+    const url = location.origin + "/s?d=" + encodeShare({ b: brand?.name || "", cat: brand ? profile.category : "", n: shortlist, f: shortlist.map(fitOf) });
+    try { await navigator.clipboard.writeText(url); setCopied(true); setTimeout(() => setCopied(false), 2400); }
+    catch { window.prompt("Copy this link", url); }
+  }
+  function exportCsv() {
+    csvDownload(`colatch-shortlist${brand?.name ? "-" + brand.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") : ""}.csv`,
+      [["#", "Name", "Role", "Field", "Tier", "Indicative band", "Est. reach", brand ? "Fit %" : "", "Known " + (brand ? profile.category : "") + " association"].filter(Boolean)]
+        .concat(shortlist.map((n, i) => { const c = byName[n]; const r = results?.find((x) => x.c.n === n); return [i + 1, n, c?.role || "", c?.field || "", c?.tier || "", c ? TIER_PRICE[c.tier].band : "", c ? TIER_PRICE[c.tier].reach : "", brand ? (r?.fit ?? "") : null, r?.conflict ? "Yes" : "No"].filter((x) => x !== null); })));
+  }
+  const t = show ? 0 : -1;
   return (
     <div className={"slbar" + (show ? " show" : "")} aria-hidden={!show}>
       <div className="av">{shortlist.slice(0, 5).map((n) => { const c = byName[n]; return <span key={n} title={n}>{c?.ph ? <img src={IMG(c.ph)} alt="" /> : initials(n)}</span>; })}</div>
       <span className="t">{shortlist.length} in your shortlist</span>
-      <button className="link" onClick={() => shortlist.forEach((n) => toggleSL(n))} tabIndex={show ? 0 : -1}>Clear</button>
-      <a className="btn btn-gold btn-sm" href={`https://wa.me/${WA}?text=${encodeURIComponent(msg)}`} target="_blank" rel="noreferrer" tabIndex={show ? 0 : -1}>Send to Colatch <span className="arr">→</span></a>
+      {shortlist.length >= 2 && <button className="btn btn-line btn-sm" onClick={onCompare} tabIndex={t}>Compare{shortlist.length > 4 ? " top 4" : ""}</button>}
+      <button className="link" onClick={share} tabIndex={t}>{copied ? "Link copied" : "Share"}</button>
+      <button className="link sl-x" onClick={exportCsv} tabIndex={t}>CSV</button>
+      <button className="link sl-x" onClick={() => shortlist.forEach((n) => toggleSL(n))} tabIndex={t}>Clear</button>
+      <button className="btn btn-gold btn-sm" onClick={onRequest} tabIndex={t}>Send to Colatch <span className="arr">→</span></button>
     </div>
+  );
+}
+
+/* ================================================================= PARSING */
+function Parsing({ roster }) {
+  const lines = ["Reading the brief", "Finding category, budget and audience", "Mapping it to the Colatch brief", "Checking what's missing"];
+  const [i, setI] = useState(0);
+  useEffect(() => { const id = setInterval(() => setI((x) => Math.min(lines.length - 1, x + 1)), 900); return () => clearInterval(id); }, []);
+  const tiles = useMemo(() => roster.filter((c) => c.ph && c.star).slice(0, 8), [roster]);
+  return (
+    <section className="scan" aria-live="polite">
+      <div className="left">
+        <div className="eyebrow rise">Reading your brief</div>
+        <h2 className="rise" style={{ "--i": 1 }}>Turning words into <span className="light">a brief.</span></h2>
+        <ul className="checks rise" style={{ "--i": 2 }}>
+          {lines.map((l, k) => <li key={l} className={k < i ? "done" : k === i ? "active" : ""}><span className="st">{k < i ? "✓" : ""}</span>{l}</li>)}
+        </ul>
+      </div>
+      <div className="scangrid" aria-hidden="true">{tiles.map((c) => <div key={c.n} className="tile"><Photo c={c} eager /></div>)}<span className="beam" /></div>
+    </section>
   );
 }
