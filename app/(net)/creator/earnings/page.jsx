@@ -4,7 +4,7 @@ import PublicShell from "../../_ui/PublicShell";
 import { env } from "@/lib/net/env";
 import { currentCreator } from "@/lib/net/creatorAuth";
 import { inr, compact } from "@/lib/net/creators";
-import { ensureCode, REF } from "@/lib/net/referral";
+import { ensureCode, REF, BRAND_TIERS, brandTierFor } from "@/lib/net/referral";
 import { creatorRating } from "@/lib/net/trust";
 import { colatchScore } from "@/lib/net/score";
 import { TierBadge } from "../../_ui/Score";
@@ -20,7 +20,7 @@ async function setShowEarnings(fd) {
 
 export const metadata = { title: "Earnings · Colatch", robots: { index: false } };
 
-const reasonLabel = { creator_first_deal: "Creator you referred got their first paid deal", brand_fee_share: "Brand you referred ran a campaign" };
+const reasonLabel = { creator_first_deal: "Creator you referred got their first paid deal", brand_fee_share: "Brand you referred ran a campaign", bypass_report: "Thank you for reporting an off-platform request" };
 const ms = (s) => Date.parse(String(s).replace(" ", "T") + "Z");
 
 export default async function Page() {
@@ -111,7 +111,11 @@ export default async function Page() {
         <h2>Refer and earn</h2>
         <div className="grid2" style={{ alignItems: "start" }}>
           <div>
-            <h3>Bring a brand → earn {REF.brandSharePct}% of our fee for {REF.months} months</h3>
+            <h3>Bring a brand → earn {brandTierFor(nb).pct}% of our fee for {REF.months} months</h3>
+            <div className="row" style={{ gap: 6, margin: "0 0 10px" }}>
+              {[...BRAND_TIERS].reverse().map((t) => <span key={t.pct} className={`pill ${brandTierFor(nb).pct === t.pct ? "good" : ""}`}>{t.label}: {t.pct}%</span>)}
+            </div>
+            {brandTierFor(nb).pct < 15 && <p className="hint" style={{ margin: "0 0 8px" }}>{(nb < 5 ? 5 : 10) - nb} more {(nb < 5 ? 5 : 10) - nb === 1 ? "brand" : "brands"} and every brand you've brought pays you {nb < 5 ? 12 : 15}%.</p>}
             <p className="muted" style={{ margin: "0 0 12px" }}>Every campaign they run pays you, paid from Colatch's own fee, never from creators. You also get first look at their briefs.</p>
             <a className="btn-foil" href={waBrands} target="_blank" rel="noopener">Share with a brand on WhatsApp</a>
           </div>

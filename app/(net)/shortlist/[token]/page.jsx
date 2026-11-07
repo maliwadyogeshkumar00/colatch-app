@@ -5,8 +5,8 @@ import Flash, { flashUrl } from "../../_ui/flash";
 import { env } from "@/lib/net/env";
 import { compact, inr, erBand } from "@/lib/net/creators";
 import { requirementChips, PAY_LABEL } from "@/lib/net/campaign";
-import { quote, railIndex, RAIL, feePct } from "@/lib/net/deal";
-import { dealValue, sumValue, baselines } from "@/lib/net/value";
+import { quote, railIndex, RAIL, feePct, brandFeePct, RUSH_PCT } from "@/lib/net/deal";
+import { dealValue, sumValue, baselines, quoteSavings, budgetFit } from "@/lib/net/value";
 import { ensureCode } from "@/lib/net/referral";
 import { scrubContacts } from "@/lib/net/guard";
 
@@ -16,6 +16,14 @@ const CSS = `
 .pg-shortlist .dots{display:inline-flex;gap:4px}
 .pg-shortlist .dots i{width:10px;height:10px;border-radius:50%;background:var(--line-3);display:inline-block}
 .pg-shortlist .dots i.on{background:var(--p700)}
+.pg-shortlist .save{margin-top:8px;display:flex;flex-direction:column;gap:3px}
+.pg-shortlist .save span{font-size:12px;font-weight:600;color:var(--good)}
+.pg-shortlist .fit{display:inline-block;margin-top:6px;font-size:11px;font-weight:600;padding:2px 9px;border-radius:99px}
+.pg-shortlist .fit.good{background:rgba(31,122,80,.12);color:var(--good)}.pg-shortlist .fit.ok{background:rgba(200,150,46,.15);color:var(--gold-deep)}.pg-shortlist .fit.bad{background:rgba(155,59,59,.1);color:var(--crit)}
+.pg-shortlist .loss{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
+.pg-shortlist .loss div{padding:12px 14px;border-radius:12px;background:var(--paper);border:1px solid var(--line)}
+.pg-shortlist .loss b{display:block;font-size:13.5px}.pg-shortlist .loss span{font-size:12px;color:var(--ink-3)}
+@media(max-width:760px){.pg-shortlist .loss{grid-template-columns:1fr}}
 `;
 
 async function campaignFor(token) {
@@ -67,6 +75,20 @@ async function decide(f, d) {
   redirect(back(token, d === "approved" ? "Approved. The Colatch team will lock this creator in." : d === "declined" ? "Noted. We will suggest a replacement." : "Saved."));
 }
 async function approve(f) { "use server"; await decide(f, "approved"); }
+
+/** #81 Save a creator to this brand's private roster (keyed by the brief's client email). */
+async function saveRoster(f) {
+  "use server";
+  const token = String(f.get("token") ?? "");
+  const k = await campaignFor(token);
+  if (!k) notFound();
+  const email = String(k.client_email || "").toLowerCase();
+  const creator = String(f.get("creator") ?? "");
+  if (email && creator) {
+    await env.DB.prepare("INSERT OR IGNORE INTO brand_roster (id, brand_email, creator_id) VALUES (?,?,?)").bind(crypto.randomUUID(), email, creator).run();
+  }
+  redirect(back(token, "Saved to your roster. Rebook them in one click from My roster."));
+}
 async function decline(f) { "use server"; await decide(f, "declined"); }
 
 const initials = (s) => String(s || "").replace(/[^a-z0-9]/gi, " ").trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
@@ -77,7 +99,7 @@ export default async function Page({ params, searchParams }) {
   if (!k) notFound();
 
   const rows = (await env.DB.prepare(
-    `SELECT a.*, c.profile_pic, c.followers AS cf, c.engagement_rate, c.quality_score, c.verified, c.skills, c.niche AS cniche, c.city AS ccity, c.language, c.portfolio_links, c.bio_pitch, c.avg_views
+    `SELECT a.*, c.profile_pic, c.rate_reel AS crate, c.followers AS cf, c.engagement_rate, c.quality_score, c.verified, c.skills, c.niche AS cniche, c.city AS ccity, c.language, c.portfolio_links, c.bio_pitch, c.avg_views
      FROM campaign_applications a LEFT JOIN creators c ON c.id=a.creator_id WHERE a.campaign_id=? AND a.status IN ('shortlisted','accepted') ORDER BY a.match_score DESC NULLS LAST`
   ).bind(k.id).all()).results ?? [];
   const approved = rows.filter((r) => r.client_decision === "approved");
@@ -103,7 +125,15 @@ export default async function Page({ params, searchParams }) {
   const myCode = brandEmail ? await ensureCode(env, "brand", brandEmail, k.client_company || k.brand).catch(() => null) : null;
   const rated = new Set(((await env.DB.prepare("SELECT deal_id FROM ratings WHERE by_side='brand' AND deal_id IN (SELECT id FROM creator_deals WHERE campaign_id=?)").bind(k.id).all()).results ?? []).map((r) => r.deal_id));
   const dotOn = (i, at) => (i > at ? "" : "on");
-  const allIn = (fee) => (fee ? quote(env, fee, false) : null);
+  const rush = Number(k.rush) === 1;
+  // #65 repeat rate + #85 loyalty ladder, per creator.
+  const fees = Object.fromEntries(await Promise.all(rows.map(async (r) => [r.id, await brandFeePct(env, brandEmail, r.creator_id).catch(() => ({ pct, reason: null, spent: 0, repeat: false }))])));
+  const brandFee = await brandFeePct(env, brandEmail).catch(() => ({ pct, reason: null, spent: 0, repeat: false }));
+  const allIn = (fee, rowId) => (fee ? quote(env, fee, false, fees[rowId]?.pct ?? pct, rush) : null);
+  const saved = new Set(brandEmail ? (((await env.DB.prepare("SELECT creator_id FROM brand_roster WHERE brand_email=?").bind(brandEmail).all()).results ?? []).map((x) => x.creator_id)) : []);
+  // #64 What going direct would cost them, in plain terms.
+  const atStake = deals.reduce((a, d) => a + (d.fee || 0), 0) || spend;
+  const loyaltyGap = Math.max(0, feePct(env) - brandFee.pct);
   const origin = `https://${headers().get("host")}`;
   const darkTag = { background: "rgba(255,255,255,.1)", color: "#F4EFE3" };
   const lblDim = { color: "rgba(244,239,227,.6)" };
@@ -173,12 +203,27 @@ export default async function Page({ params, searchParams }) {
           <div className="panel kpi"><div className="k">Expected views</div><div className="v">{compact(views)}</div><div className="s">{spend && views ? `≈ ₹${(spend / views).toFixed(2)} per view` : "from avg reel views"}</div></div>
         </div>
 
+        {(rows.length > 0 || deals.length > 0) && <div className="panel pad" style={{ marginBottom: 18, background: "var(--ivory-2)", boxShadow: "none" }}>
+          <div className="spread"><h2 style={{ margin: 0 }}>What you'd give up going direct</h2>{brandEmail && <a className="btn sm" href={`/roster/${encodeURIComponent(token)}`}>My roster{saved.size ? ` (${saved.size})` : ""}</a>}</div>
+          <div className="loss">
+            <div><b>Payment protection</b><span>{atStake ? `${inr(atStake)} held safely until each post is verified live` : "Your money is released only after the post is verified live"}</span></div>
+            <div><b>Free replacement</b><span>If a creator drops out, a matched replacement within 24 hours</span></div>
+            <div><b>Cost per view promise</b><span>{k.promised_cpv ? `Above ₹${Number(k.promised_cpv).toFixed(2)} per view, we add posts free` : "Above the promised CPV, we add posts free"}</span></div>
+            <div><b>Signed proof of work</b><span>Dated certificate with views, value and both sign-offs</span></div>
+            <div><b>Repeat booking rate</b><span>Rebook any creator through Colatch at 12% instead of {feePct(env)}%</span></div>
+            <div><b>Loyalty rate</b><span>{loyaltyGap > 0 ? `You're on ${brandFee.pct}% already (${brandFee.reason})` : "1 point off our fee for every ₹5L you spend in a year, down to 10%"}</span></div>
+          </div>
+        </div>}
+
         {myCode && <div className="note info" style={{ marginBottom: 18 }}>Know another brand that needs creators? Share <code className="k">{origin}/r/{myCode}</code>. For 12 months you get credit off your Colatch invoices on every campaign they run.</div>}
         <div className="stack">
           {rows.map((r) => {
             const b = erBand(r.engagement_rate, r.cf ?? r.followers);
             const links = String(r.portfolio_links || "").split(/\s+/).filter((u) => /^https?:\/\//.test(u)).slice(0, 3);
-            const q = allIn(r.rate_quote);
+            const q = allIn(r.rate_quote, r.id);
+            const fr = fees[r.id];
+            const sv = r.rate_quote ? quoteSavings(env, { rate_reel: r.crate, followers: r.cf ?? r.followers }, r.rate_quote, fr?.pct ?? pct) : null;
+            const fit = q ? budgetFit(k.budget_total, k.creators_needed, q.total) : null;
             return (
               <div key={r.id} className="panel pad">
                 <div className="spread" style={{ alignItems: "flex-start" }}>
@@ -193,11 +238,18 @@ export default async function Page({ params, searchParams }) {
                   <div><div className="lbl">Followers</div><b>{compact(r.cf ?? r.followers)}</b>{r.verified ? <div className="hint">From Instagram</div> : <div className="hint">Self-reported</div>}</div>
                   <div><div className="lbl">Engagement</div><b>{r.engagement_rate != null ? `${r.engagement_rate}%` : "—"}</b> {r.engagement_rate != null && <span className={`pill ${b.tone}`}>{b.label}</span>}</div>
                   <div><div className="lbl">Avg reel views</div><b>{compact(r.avg_views)}</b></div>
-                  <div><div className="lbl">Creator quote</div><b>{inr(r.rate_quote)}</b>{q && <details style={{ marginTop: 4 }}><summary className="hint" style={{ cursor: "pointer" }}>All-in {inr(q.total)}</summary><div className="hint" style={{ marginTop: 4 }}>Creator {inr(q.creatorFee)} · Colatch {q.pct}% {inr(q.colatch)} · GST {inr(q.gstOnColatch)}{r.rate_quote && r.avg_views ? " · ₹" + (r.rate_quote / r.avg_views).toFixed(2) + " per view" : ""}</div></details>}</div>
+                  <div><div className="lbl">Creator quote</div><b>{inr(r.rate_quote)}</b>{q && <details style={{ marginTop: 4 }}><summary className="hint" style={{ cursor: "pointer" }}>All-in {inr(q.total)}</summary><div className="hint" style={{ marginTop: 4 }}>Creator {inr(q.creatorFee)} · Colatch {q.basePct}% {inr(q.colatch - q.rushFee)}{q.rushFee ? ` · Rush ${RUSH_PCT}% ${inr(q.rushFee)}` : ""} · GST {inr(q.gstOnColatch)}{r.rate_quote && r.avg_views ? " · ₹" + (r.rate_quote / r.avg_views).toFixed(2) + " per view" : ""}{fr?.reason ? <><br /><b style={{ color: "var(--good)" }}>{fr.reason}</b></> : null}</div></details>}
+                    {sv && (sv.vsMarket || sv.vsAgency) ? <div className="save">{sv.vsMarket ? <span>{inr(sv.vsMarket)} under this creator's usual rate</span> : null}{sv.vsAgency ? <span>{inr(sv.vsAgency)} under agency pricing</span> : null}</div> : null}
+                    {fit && <span className={`fit ${fit.tone}`}>{fit.label}</span>}</div>
                 </div>
                 {r.team_note && <div className="note info" style={{ marginTop: 14 }}><b>Why we picked them:</b> {r.team_note}</div>}
                 {!r.team_note && r.match_reasons && <p className="hint" style={{ margin: "12px 0 0" }}>{r.match_reasons}</p>}
-                {links.length > 0 && <div className="row" style={{ marginTop: 12, gap: 8 }}>{links.map((u, i) => <a key={u} className="btn sm" href={u} target="_blank" rel="noopener">Sample {i + 1} ↗</a>)}</div>}
+                <div className="row" style={{ marginTop: 12, gap: 8 }}>
+                  {links.map((u, i) => <a key={u} className="btn sm" href={u} target="_blank" rel="noopener">Sample {i + 1} ↗</a>)}
+                  {brandEmail && r.creator_id && (saved.has(r.creator_id)
+                    ? <span className="hint" style={{ color: "var(--good)" }}>In your roster ✓</span>
+                    : <form action={saveRoster}><input type="hidden" name="token" value={token} /><input type="hidden" name="creator" value={r.creator_id} /><button className="btn sm">Save to my roster</button></form>)}
+                </div>
                 <form action={approve} className="row" style={{ marginTop: 16 }}>
                   <input type="hidden" name="token" value={token} />
                   <input type="hidden" name="app" value={r.id} />

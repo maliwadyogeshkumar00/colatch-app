@@ -5,7 +5,7 @@ import { AutoSelect } from "../_client";
 import { requireTeam } from "../_guard";
 import { env } from "@/lib/net/env";
 import { inr } from "@/lib/net/creators";
-import { REF } from "@/lib/net/referral";
+import { REF, BRAND_TIERS, brandTierFor } from "@/lib/net/referral";
 
 export const metadata = { title: "Affiliate program · Colatch Connect", robots: { index: false, follow: false } };
 
@@ -37,11 +37,11 @@ export default async function Page({ searchParams }) {
   const owed = rows.filter((r) => r.status === "approved" && r.kind === "cash").reduce((s, r) => s + r.amount, 0);
   const credit = rows.filter((r) => ["approved", "pending"].includes(r.status) && r.kind === "credit").reduce((s, r) => s + r.amount, 0);
   const pendingN = rows.filter((r) => r.status === "pending").length;
-  const reasonLabel = { creator_first_deal: `Creator's first paid deal (₹${REF.creatorBonus})`, brand_fee_share: `${REF.brandSharePct}% of Colatch fee` };
+  const reasonLabel = { creator_first_deal: `Creator's first paid deal (₹${REF.creatorBonus})`, brand_fee_share: "Share of Colatch fee (tiered 10/12/15%)" };
 
   return (
     <TeamShell active="referrals" eyebrow="Creator tools" title="Creators bring brands. <b>Brands bring brands.</b>" email={me.email}>
-      <p className="lead">Every creator and brand has a referral code. Creators earn ₹{REF.creatorBonus} for each creator whose first paid deal clears, and {REF.brandSharePct}% of Colatch's fee for {REF.months} months on any brand they bring. Brands earn the same share as credit off their invoices. Everything is paid from Colatch's fee and booked automatically when a deal is marked paid.</p>
+      <p className="lead">Every creator and brand has a referral code. Creators earn ₹{REF.creatorBonus} for each creator whose first paid deal clears, and a share of Colatch's fee for {REF.months} months on any brand they bring: {[...BRAND_TIERS].reverse().map((t) => `${t.pct}% at ${t.label}`).join(", ")}. Brands earn the same share as credit off their invoices. Everything is paid from Colatch's fee and booked automatically when a deal is marked paid.</p>
       {searchParams?.ok && <div className="note good" style={{ marginBottom: 16 }}>{searchParams.ok}</div>}
       <div className="grid3">
         <div className="panel kpi"><div className="k">Waiting for review</div><div className="v">{pendingN}</div><div className="s">check before approving</div></div>
@@ -59,7 +59,7 @@ export default async function Page({ searchParams }) {
         </div>
         <div className="panel">
           <div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Top referrers</h2></div>
-          {top.length ? <table className="tbl"><tbody>{top.map((t) => <tr key={t.code}><td><b>{t.owner_name || t.code}</b><div className="hint">{t.owner_type} · {t.code}</div></td><td className="num">{t.n} referred<div className="hint">{t.brands} brands</div></td></tr>)}</tbody></table> : <p className="hint" style={{ padding: "0 20px 18px" }}>Nobody has referred anyone yet.</p>}
+          {top.length ? <table className="tbl"><tbody>{top.map((t) => <tr key={t.code}><td><b>{t.owner_name || t.code}</b><div className="hint">{t.owner_type} · {t.code}</div></td><td className="num">{t.n} referred<div className="hint">{t.brands} {Number(t.brands) === 1 ? "brand" : "brands"} · tier {brandTierFor(Number(t.brands)).pct}%</div></td></tr>)}</tbody></table> : <p className="hint" style={{ padding: "0 20px 18px" }}>Nobody has referred anyone yet.</p>}
           <p className="hint" style={{ padding: "0 20px 18px" }}>Watch for self-referrals: the same phone, email domain or UPI on both sides. Void those before approving.</p>
         </div>
       </div>

@@ -55,7 +55,8 @@ export default async function Page({ searchParams }) {
       (SELECT COUNT(*) FROM creators WHERE status <> 'blacklisted') creators_n,
       (SELECT COUNT(*) FROM creator_accounts) accounts_n,
       (SELECT COALESCE(SUM(fee),0) FROM creator_deals WHERE pay_status='paid' AND paid_at >= ?) paid_month,
-      (SELECT COUNT(*) FROM creators WHERE id LIKE 'demo-%') demo_n`, monthStart);
+      (SELECT COUNT(*) FROM creators WHERE id LIKE 'demo-%') demo_n,
+      (SELECT COUNT(*) FROM bypass_reports WHERE status='open') reports_n`, monthStart);
 
   // Briefs that still owe the client a shortlist (oldest promise first).
   const waiting = await many(`SELECT k.id, k.title, k.brand, k.client_company, k.shortlist_due, k.status, k.created_at,
@@ -87,6 +88,11 @@ export default async function Page({ searchParams }) {
       <p className="lead">Briefs from brands, creators who joined, and every deal from terms to payout. What needs you comes first.</p>
       <div style={{ marginBottom: 16 }}><Flash sp={searchParams} /></div>
 
+      {Number(k.reports_n) > 0 && (
+        <div className="note bad" style={{ marginBottom: 16 }}>
+          <b>{k.reports_n} open off-platform {Number(k.reports_n) === 1 ? "report" : "reports"}.</b> Someone says they were asked to deal outside Colatch. <a className="link" href="/team/reports">Review reports →</a>
+        </div>
+      )}
       <div className="grid3">
         <div className="panel kpi"><div className="k">Open campaigns</div><div className="v">{k.open_n ?? 0}</div><div className="s">{k.pending_n ?? 0} waiting for approval</div></div>
         <div className="panel kpi"><div className="k">Shortlists owed</div><div className="v">{owed.length}</div><div className="s">{owed[0]?.shortlist_due ? `Next due ${formatIST(owed[0].shortlist_due)}` : "No promise pending"}</div></div>
