@@ -9,6 +9,9 @@ const security = [
 module.exports = {
   reactStrictMode: true,
   poweredByHeader: false,
+  async rewrites() {
+    return [{ source: "/connect", destination: "/connect.html" }];
+  },
   async headers() {
     return [
       { source: "/(.*)", headers: security },
