@@ -10,6 +10,25 @@ import { cookies } from 'next/headers';
 export const REF = { creatorBonus: 500, brandSharePct: 10, months: 12 };
 export const REF_COOKIE = 'clt_ref';
 
+/** Brand-referral share of Colatch's fee grows with how many brands someone has brought. */
+export const BRAND_TIERS = [
+  { min: 10, pct: 15, label: '10+ brands' },
+  { min: 5, pct: 12, label: '5 to 9 brands' },
+  { min: 0, pct: REF.brandSharePct, label: '1 to 4 brands' },
+];
+export function brandTierFor(brands: number) {
+  return BRAND_TIERS.find((t) => brands >= t.min)!;
+}
+/** How many brands a code (or an owner's code) has brought in. */
+export async function brandsReferred(env: Env, code: string): Promise<number> {
+  const r = await env.DB.prepare("SELECT COUNT(*) n FROM referrals WHERE code=? AND referred_type='brand'").bind(code).first<{ n: number }>();
+  return Number(r?.n ?? 0);
+}
+/** % of Colatch's fee paid to the owner of this code on their referred brands' deals. */
+export async function brandShareFor(env: Env, code: string): Promise<number> {
+  return brandTierFor(await brandsReferred(env, code)).pct;
+}
+
 export async function ensureCode(env: Env, ownerType: 'creator' | 'brand', ownerId: string, name: string | null): Promise<string> {
   const have = await env.DB.prepare('SELECT code FROM referral_codes WHERE owner_type=? AND owner_id=?').bind(ownerType, ownerId).first<{ code: string }>();
   if (have) return have.code;
@@ -48,9 +67,10 @@ export async function accrueOnPaid(env: Env, dealId: string, feePct: number) {
     .bind(crypto.randomUUID(), rc.id, 'first', rc.owner_type, rc.owner_id, REF.creatorBonus, rc.owner_type === 'brand' ? 'credit' : 'cash'));
   // anyone → brand: share of Colatch's fee for REF.months
   if (d.client_email && d.fee) {
-    const rb = await env.DB.prepare("SELECT r.id, r.created_at, c.owner_type, c.owner_id FROM referrals r JOIN referral_codes c ON c.code=r.code WHERE r.referred_type='brand' AND r.referred_id=?").bind(String(d.client_email).toLowerCase()).first<any>();
+    const rb = await env.DB.prepare("SELECT r.id, r.code, r.created_at, c.owner_type, c.owner_id FROM referrals r JOIN referral_codes c ON c.code=r.code WHERE r.referred_type='brand' AND r.referred_id=?").bind(String(d.client_email).toLowerCase()).first<any>();
     if (rb && Date.now() - Date.parse(rb.created_at.replace(' ', 'T') + 'Z') < REF.months * 30.5 * 864e5) {
-      const amount = Math.round((d.fee * feePct / 100) * REF.brandSharePct / 100);
+      const share = await brandShareFor(env, rb.code);
+      const amount = Math.round((d.fee * feePct / 100) * share / 100);
       if (amount > 0) out.push(env.DB.prepare("INSERT OR IGNORE INTO referral_earnings (id, referral_id, deal_id, owner_type, owner_id, amount, kind, reason) VALUES (?,?,?,?,?,?,?,'brand_fee_share')")
         .bind(crypto.randomUUID(), rb.id, d.id, rb.owner_type, rb.owner_id, amount, rb.owner_type === 'brand' ? 'credit' : 'cash'));
     }

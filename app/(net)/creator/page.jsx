@@ -8,6 +8,7 @@ import { compact } from "@/lib/net/creators";
 import { blindBrand } from "@/lib/net/guard";
 import { colatchScore } from "@/lib/net/score";
 import { ScoreStrip } from "../_ui/Score";
+import { brandTrust, payByLine, isFeatured } from "@/lib/net/trust";
 
 export const metadata = { title: "Your opportunities · Colatch", robots: { index: false } };
 
@@ -27,7 +28,9 @@ export default async function Page({ searchParams }) {
   const early = sc.tier === "Icon" ? [] : camps.filter((k) => isFresh(k) && !applied.has(k.id) && match(c, k).eligible);
   const visible = sc.tier === "Icon" ? camps : camps.filter((k) => !isFresh(k) || applied.has(k.id));
   const scored = visible.map((k) => ({ k, m: match(c, k) }));
-  const mine = scored.filter((x) => x.m.eligible).sort((a, b) => b.m.score - a.m.score);
+  // Featured briefs (a paid 7-day slot) sit on top; the rest by match score.
+  const mine = scored.filter((x) => x.m.eligible).sort((a, b) => (isFeatured(b.k) ? 1 : 0) - (isFeatured(a.k) ? 1 : 0) || b.m.score - a.m.score);
+  const trustById = new Map(await Promise.all(mine.slice(0, 40).map(async ({ k }) => [k.id, await brandTrust(env, k).catch(() => null)])));
   // briefs hidden only because the profile is missing something — the creator can unlock these
   const unlockable = scored.filter((x) => !x.m.eligible && x.m.blockers.every((b) => b.startsWith("Add your")));
   const gaps = profileGaps(c);
@@ -79,6 +82,7 @@ export default async function Page({ searchParams }) {
               <div className="top">
                 <div style={{ minWidth: 0 }}><div className="br">{brandLabel(k)}{k.funded ? " · Budget funded ✓" : ""}</div><h3>{k.title}</h3></div>
                 <div className="row" style={{ gap: 10, flex: "none" }}>
+                  {isFeatured(k) && <span className="pill ok">Featured</span>}
                   {sc.tier === "Icon" && isFresh(k) && <span className="pill ok">Early</span>}
                   {applied.has(k.id) && <span className="pill good">Applied</span>}
                   <div className="score sm" style={{ "--v": m.score }} title="Match score"><i>{m.score}</i></div>
@@ -90,7 +94,9 @@ export default async function Page({ searchParams }) {
                 <span className={`pill ${cash ? "good" : ""}`}>{PAY_LABEL[k.pay_type || "cash"]}</span>
                 <span><b>{rewardLine(k)}</b></span>
                 {countdown(k.deadline) && <span className={urgent(k.deadline) ? "pill ok" : ""}>{countdown(k.deadline)}</span>}
-                {cash && <span>Paid in {k.payment_days ?? 30} days</span>}
+                {cash && <span>{payByLine(k)}</span>}
+                {trustById.get(k.id)?.verified && <span className="pill good">Verified brand</span>}
+                {trustById.get(k.id)?.onTimePct != null && <span>Pays on time {trustById.get(k.id).onTimePct}%</span>}
                 {k.deliverables && <span>{k.deliverables}</span>}
                 {k.shoot_date && <span>Shoot {k.shoot_date}</span>}
                 {k.creators_needed ? <span>{k.creators_needed} creators</span> : null}

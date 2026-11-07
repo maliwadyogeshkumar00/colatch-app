@@ -9,6 +9,8 @@ import { int, str, inr, compact, RATE_GUIDE, tierFor } from "@/lib/net/creators"
 import { checkBrief } from "@/lib/net/compliance";
 import { scrubContacts } from "@/lib/net/guard";
 import { readRefCookie, recordReferral, ensureCode } from "@/lib/net/referral";
+import { briefScore, isFreeMail } from "@/lib/net/value";
+import BriefMeter from "./BriefMeter";
 
 export const metadata = {
   title: "Post a creator brief · Colatch",
@@ -56,21 +58,29 @@ async function submitBrief(f) {
       : /\b(giveaway|contest|lucky draw)\b/i.test(raw) ? "giveaway"
       : /\b(event (pass|ticket|entry)|tickets?|passes)\b/i.test(raw) ? "ticket"
       : /\b(barter|product[- ]only|free product|gifting|in exchange for product)\b/i.test(raw) ? "barter" : "cash";
-    const due = shortlistDue();
+    const rush = f.get("rush") ? 1 : 0;
+    const featuredAsk = Boolean(f.get("featured"));
+    // #95 Rush: shortlist in 6 working hours instead of 18.
+    const due = shortlistDue(new Date(), rush ? 6 : 18);
     const bu = str(f.get("brand_url"));
     const brandUrl = bu ? (/^https?:\/\//.test(bu) ? bu : "https://" + bu) : null;
+    const site = str(f.get("site"));
+    // #68 Scam brief shield: free webmail and no website at all → held for a quick human check.
+    const held = isFreeMail(email) && !brandUrl && !site ? "Unverified brand: free email and no website" : null;
+    // #49 Brief quality score from what the brand actually gave.
+    const scored = briefScore({ ...needs, deliverables: needs.deliverables, deadline: str(f.get("when")), mandatories: str(f.get("mandatories")), brand_url: brandUrl || site, pay_type: payType });
     const ref = readRefCookie(str(f.get("ref")));
     id = crypto.randomUUID();
     await env.DB.prepare(
       `INSERT INTO campaigns (id, slug, title, brand, brief, raw_brief, deliverables, talent_types, niche, city, languages, gender, min_followers, max_followers,
        creators_needed, budget_total, shoot_date, status, source, client_name, client_company, client_email, client_phone, ai_notes, is_open, pay_type,
-       mandatories, exclusions, brand_url, shortlist_due, ref_code)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending','client',?,?,?,?,?,0,?,?,?,?,?,?)`
+       mandatories, exclusions, brand_url, shortlist_due, ref_code, rush, held_reason, brief_score)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending','client',?,?,?,?,?,0,?,?,?,?,?,?,?,?,?)`
     ).bind(id, slugify(needs.title), needs.title, company, needs.creator_brief, `${raw}\n\n${extra}`.trim(), needs.deliverables,
       needs.talent_types.join(", ") || null, needs.niche.join(", ") || null, needs.city.join(", ") || null, needs.languages.join(", ") || null,
       needs.gender, needs.min_followers, needs.max_followers, needs.creators_needed, needs.budget_total, str(f.get("when")),
-      name, company, email, phone, JSON.stringify({ engine, questions: needs.questions, flags: flags.map((x) => x.title) }), payType,
-      str(f.get("mandatories")), str(f.get("exclusions")), brandUrl, due, ref).run();
+      name, company, email, phone, JSON.stringify({ engine, questions: needs.questions, flags: flags.map((x) => x.title), featured_request: featuredAsk, website: site }), payType,
+      str(f.get("mandatories")), str(f.get("exclusions")), brandUrl, due, ref, rush, held, scored.score).run();
     await recordReferral(env, ref, "brand", email).catch(() => false);
   } catch (e) {
     // Keep what they typed so a mistake doesn't wipe the brief.
@@ -101,8 +111,19 @@ async function loadDone(id) {
   const n = needs.creators_needed || 1;
   const est = k.pay_type !== "cash" ? null : [lo * n, hi * n];
   const code = k.client_email ? await ensureCode(env, "brand", String(k.client_email).toLowerCase(), k.client_company).catch(() => null) : null;
-  return { needs, pool, est, due: k.shortlist_due, code, low: Boolean(est && needs.budget_total && needs.budget_total < est[0]) };
+  const scored = briefScore({ ...k });
+  return { needs, pool, est, due: k.shortlist_due, code, low: Boolean(est && needs.budget_total && needs.budget_total < est[0]),
+    score: k.brief_score ?? scored.score, missing: scored.missing.slice(0, 3), held: k.held_reason, rush: Number(k.rush) === 1, featured: Boolean(notes.featured_request) };
 }
+
+const CSS = `.pg-brief .bscore{display:flex;gap:16px;align-items:flex-start;padding:16px 18px;border-radius:14px;background:var(--ivory-2);border:1px solid var(--line)}
+.pg-brief .bscore-ring{flex:none;width:68px;height:68px;border-radius:50%;display:grid;place-content:center;text-align:center;border:3px solid var(--gold);line-height:1}
+.pg-brief .bscore-ring b{font-size:22px;color:var(--p900)}.pg-brief .bscore-ring span{font-size:10px;color:var(--ink-4)}
+.pg-brief .bscore-ring.lo{border-color:#c98a3a}.pg-brief .bscore-ring.hi{border-color:var(--good)}
+.pg-brief .addon{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--paper);cursor:pointer}
+.pg-brief .addon input{margin-top:4px}.pg-brief .addon b{display:block}.pg-brief .addon .hint{display:block}
+.pg-brief .meter{margin-top:8px;display:flex;align-items:center;gap:10px;font-size:12.5px;color:var(--ink-3)}
+.pg-brief .meter .bar{flex:1;height:6px;border-radius:99px;background:var(--line);overflow:hidden}.pg-brief .meter .bar i{display:block;height:100%;background:var(--gold-foil);transition:width .3s}`;
 
 export default async function Page({ searchParams }) {
   const sp = searchParams ?? {};
@@ -125,12 +146,24 @@ export default async function Page({ searchParams }) {
 
   return (
     <PublicShell mode="client" hero={hero}>
-      <div className="wrap narrow" style={{ padding: 0 }}>
+      <style dangerouslySetInnerHTML={{ __html: CSS }} />
+      <div className="wrap narrow pg-brief" style={{ padding: 0 }}>
         {done ? (
           <div className="panel pad">
             <h2>Brief received</h2>
             <h3 style={{ fontSize: 24, fontWeight: 300 }}>Thanks. Here's what we understood.</h3>
-            {done.due && <div className="note good" style={{ marginTop: 14 }}><b>Your shortlist will be ready by {formatIST(done.due)}.</b> We'll send it to your email and WhatsApp as a private link where you approve each creator.</div>}
+            {done.held
+              ? <div className="note warn" style={{ marginTop: 14 }}><b>We'll quickly confirm your brand first.</b> You used a personal email and no website, so a Colatch strategist will call or WhatsApp you to verify before creators see this brief. It keeps creators safe from fake-brand scams, and verified brands get more applicants.</div>
+              : done.due && <div className="note good" style={{ marginTop: 14 }}><b>{done.rush ? "Rush shortlist: " : ""}Your shortlist will be ready by {formatIST(done.due)}.</b> We'll send it to your email and WhatsApp as a private link where you approve each creator.</div>}
+            <div className="bscore" style={{ marginTop: 14 }}>
+              <div className={`bscore-ring ${done.score >= 75 ? "hi" : done.score >= 50 ? "mid" : "lo"}`}><b>{done.score}</b><span>/100</span></div>
+              <div><b>Brief strength</b>
+                <div className="hint">{done.score >= 85 ? "Excellent. Creators will know exactly what to make." : "Complete briefs get about twice the applicants. To raise it, add:"}</div>
+                {done.score < 85 && done.missing.length > 0 && <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>{done.missing.map((m) => <li key={m}>{m}</li>)}</ul>}
+                {done.score < 85 && <div className="hint" style={{ marginTop: 6 }}>Just reply to our WhatsApp with these and we'll add them.</div>}
+              </div>
+            </div>
+            {done.featured && <div className="note info" style={{ marginTop: 12 }}>You asked to feature this brief (₹1,999 for 7 days at the top of every matching creator's feed). We'll confirm it with your shortlist.</div>}
             <div className="stack" style={{ marginTop: 18 }}>
               <div><div className="lbl">Looking for</div><div>
                 {done.needs.talent_types.length ? done.needs.talent_types.map((t) => <span key={t} className="tag">{t}</span>) : <span className="tag">Creators of any kind</span>}
@@ -160,7 +193,8 @@ export default async function Page({ searchParams }) {
             {sp.ref && <input type="hidden" name="ref" value={String(sp.ref)} />}
             {err && <div className="note bad" style={{ marginBottom: 16 }}>{err}</div>}
             <h2>What do you need?</h2>
-            <div className="fld"><label>Describe the campaign</label><textarea name="raw" rows={6} required placeholder="We're launching a festive kurta range and need 4 female Bhangra dancers in Delhi or Chandigarh, 50K+ followers, Punjabi audience. 1 reel + 2 stories each, going live 10 Jan." defaultValue={v.raw ?? ""} /><span className="hint">Write it like a WhatsApp message. Talent, city, audience, dates, what to post.</span></div>
+            <div className="fld"><label>Describe the campaign</label><textarea id="brief-raw" name="raw" rows={6} required placeholder="We're launching a festive kurta range and need 4 female Bhangra dancers in Delhi or Chandigarh, 50K+ followers, Punjabi audience. 1 reel + 2 stories each, going live 10 Jan." defaultValue={v.raw ?? ""} /><span className="hint">Write it like a WhatsApp message. Talent, city, audience, dates, what to post.</span></div>
+            <BriefMeter target="brief-raw" />
 
             <details className="box" style={{ marginTop: 18 }} open={Boolean(v.talent || v.cities)}>
               <summary>Add specifics (optional, makes the match sharper)</summary>
@@ -184,6 +218,13 @@ export default async function Page({ searchParams }) {
               <div className="fld"><label>Brand / company</label><input name="company" required defaultValue={v.company ?? ""} /></div>
               <div className="fld"><label>Work email</label><input name="email" type="email" required defaultValue={v.email ?? ""} /></div>
               <div className="fld"><label>Phone / WhatsApp</label><input name="phone" defaultValue={v.phone ?? ""} /></div>
+              <div className="fld full"><label>Company website <span className="opt">— helps us verify you faster</span></label><input name="site" defaultValue={v.site ?? ""} placeholder="yourbrand.com" /></div>
+            </div>
+
+            <h2 style={{ marginTop: 26 }}>Speed it up <span className="opt" style={{ textTransform: "none", letterSpacing: 0 }}>— optional</span></h2>
+            <div className="stack">
+              <label className="addon"><input type="checkbox" name="rush" defaultChecked={Boolean(v.rush)} /><span><b>Rush shortlist in 6 working hours</b><span className="hint">Instead of 2 working days. Adds 5% of the creator fees, shown line by line on your shortlist.</span></span></label>
+              <label className="addon"><input type="checkbox" name="featured" defaultChecked={Boolean(v.featured)} /><span><b>Feature this brief for 7 days, ₹1,999</b><span className="hint">Pinned at the top of every matching creator's feed, so the best people apply first. We confirm before charging.</span></span></label>
             </div>
             <button className="btn-foil" style={{ marginTop: 22 }}>Find my creators →</button>
             <p className="hint" style={{ margin: "12px 0 0" }}>Your budget and contact details stay with the Colatch team. Creators only see the brief.</p>

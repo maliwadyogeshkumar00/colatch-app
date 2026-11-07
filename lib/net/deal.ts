@@ -50,13 +50,49 @@ export function feePct(env: Env): number {
   return isFinite(n) && n >= 0 && n < 60 ? n : 15;
 }
 
-/** Brand-side all-in price. GST 18% on Colatch's fee; creator GST only if the creator is GST-registered. */
-export function quote(env: Env, creatorFee: number, creatorGst: boolean) {
-  const pct = feePct(env);
+/**
+ * The fee a brand actually pays on a creator, with the reason in plain words.
+ *  - Repeat booking: this brand already paid a deal with this creator through Colatch → 12%.
+ *  - Loyalty ladder: 1 point off per ₹5L of creator fees paid in the last 365 days, floor 10%.
+ * The lower of the two applies. Keeps feePct(env) as the base for everyone else.
+ */
+export async function brandFeePct(env: Env, clientEmail: string | null | undefined, creatorId?: string | null): Promise<{ pct: number; reason: string | null; spent: number; repeat: boolean }> {
+  const base = feePct(env);
+  const email = String(clientEmail || '').trim().toLowerCase();
+  if (!email) return { pct: base, reason: null, spent: 0, repeat: false };
+  const row = await env.DB.prepare(
+    "SELECT COALESCE(SUM(d.fee),0) AS spent FROM creator_deals d JOIN campaigns k ON k.id=d.campaign_id WHERE LOWER(k.client_email)=? AND d.pay_status='paid' AND d.paid_at >= datetime('now','-365 days')"
+  ).bind(email).first<{ spent: number }>();
+  const spent = Number(row?.spent || 0);
+  let pct = base, reason: string | null = null;
+  const steps = Math.floor(spent / 500000);
+  if (steps > 0) {
+    const loyal = Math.max(10, base - steps);
+    if (loyal < pct) { pct = loyal; reason = `Loyalty rate ${loyal}%: ${inr(steps * 500000)}+ spent this year`; }
+  }
+  let repeat = false;
+  if (creatorId) {
+    const r = await env.DB.prepare(
+      "SELECT d.id FROM creator_deals d JOIN campaigns k ON k.id=d.campaign_id WHERE LOWER(k.client_email)=? AND d.creator_id=? AND d.pay_status='paid' LIMIT 1"
+    ).bind(email, creatorId).first<{ id: string }>();
+    if (r) { repeat = true; if (12 < pct) { pct = 12; reason = 'Repeat booking rate 12%'; } }
+  }
+  return { pct, reason, spent, repeat };
+}
+
+/** Rush shortlist surcharge, as a % of the creator fee. */
+export const RUSH_PCT = 5;
+
+/** Brand-side all-in price. GST 18% on Colatch's fee; creator GST only if the creator is GST-registered.
+ *  Pass `pctOverride` (from brandFeePct) and `rush` to price loyalty, repeat and rush correctly. */
+export function quote(env: Env, creatorFee: number, creatorGst: boolean, pctOverride?: number | null, rush = false) {
+  const basePct = pctOverride != null ? pctOverride : feePct(env);
+  const pct = basePct + (rush ? RUSH_PCT : 0);
   const colatch = Math.round((creatorFee * pct) / 100);
   const gstOnColatch = Math.round(colatch * 0.18);
   const gstOnCreator = creatorGst ? Math.round(creatorFee * 0.18) : 0;
-  return { creatorFee, pct, colatch, gstOnColatch, gstOnCreator, total: creatorFee + colatch + gstOnColatch + gstOnCreator };
+  const rushFee = rush ? Math.round((creatorFee * RUSH_PCT) / 100) : 0;
+  return { creatorFee, pct, basePct, rushFee, colatch, gstOnColatch, gstOnCreator, total: creatorFee + colatch + gstOnColatch + gstOnCreator };
 }
 
 /** What the creator takes home. TDS is 10% once fees from one payer cross ₹50,000 in a financial year. */

@@ -151,9 +151,9 @@ export default async function Page({ params }) {
             </div>
 
             <div className="grand">
-              <div className="k">Return on Colatch</div>
-              <div className="v mono">{multiple != null ? multiple.toFixed(1) + "×" : "—"}</div>
-              <div className="s">{inr(received)} of value for {inr(spend)} spent</div>
+              <div className="k">Kept in your pocket</div>
+              <div className="v mono">{inr(tot.saved)}</div>
+              <div className="s">{inr(received)} of value for {inr(spend)} spent{multiple != null ? ` · ${multiple.toFixed(1)}× return` : ""}</div>
             </div>
             <p className="foot-note">How we count: market rate is each creator's own rate card, or the typical rate for their follower size. The agency baseline is a {base.agencyPct}% markup (the usual range is 15 to 30%). Paid-ads value prices your views at ₹{base.cpm} per 1,000. Sales come only from your tracked Colatch codes and links. Nothing is counted twice.</p>
           </>)}

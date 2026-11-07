@@ -6,7 +6,7 @@ import { match } from "@/lib/net/match";
 import { requirementChips, PAY_LABEL, daysLeft, rewardLine, NON_CASH } from "@/lib/net/campaign";
 import { DISCLOSURE_LINE } from "@/lib/net/compliance";
 import { scrubContacts, blindBrand } from "@/lib/net/guard";
-import { brandTrust } from "@/lib/net/trust";
+import { brandTrust, payByLine, isFeatured, goingDirectLosses } from "@/lib/net/trust";
 import { int, str, inr } from "@/lib/net/creators";
 import { flashUrl } from "../../../_ui/flash";
 
@@ -14,6 +14,9 @@ const CSS = `
 .pg-brief .trust{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
 .pg-brief .trust span{font-size:12.5px;padding:6px 12px;border-radius:999px;background:var(--ivory-2);color:var(--ink-2)}
 .pg-brief .trust span.ok{background:rgba(31,122,80,.1);color:#16573a;font-weight:600}
+.pg-brief .loss{margin-top:18px;padding:16px 18px;border-radius:14px;border:1px dashed rgba(155,59,59,.35);background:rgba(155,59,59,.03)}
+.pg-brief .loss h4{margin:0 0 10px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#7a2c2c}
+.pg-brief .loss div{font-size:13.5px;color:var(--ink-2);padding:4px 0}
 .pg-brief .deal{margin-top:24px;padding:18px 20px;border-radius:14px;background:var(--ivory-2);border:1px solid var(--line)}
 .pg-brief .deal ul{margin:0;padding:0;list-style:none}
 .pg-brief .deal li{position:relative;padding:0 0 10px 24px;font-size:14px;color:var(--ink-2);line-height:1.5}
@@ -126,9 +129,13 @@ export default async function Page({ params, searchParams }) {
           <div className="panel pad">
             <div className="trust">
               <span className={trust.funded ? "ok" : ""}>{trust.funded ? "✓ Budget funded with Colatch" : "Funding confirmed before you start"}</span>
+              {trust.verified && <span className="ok">✓ Verified brand</span>}
+              {isFeatured(k) && <span>Featured brief</span>}
+              {!NON_CASH.includes(k.pay_type || "cash") && <span className="ok">{payByLine(k)}</span>}
               <span>{trust.avgPayDays != null ? `Pays creators in ${trust.avgPayDays} days on average` : `Paid within ${k.payment_days ?? 30} days of going live`}</span>
+              {trust.onTimePct != null && <span>{trust.onTimePct}% of payouts on time</span>}
               <span>{trust.rating != null ? `★ ${trust.rating} from ${trust.ratings} ${trust.ratings === 1 ? "creator" : "creators"}` : "New brand on Colatch"}</span>
-              <span>{trust.campaigns > 1 ? `${trust.campaigns} campaigns on Colatch` : "Verified by the Colatch team"}</span>
+              <span>{trust.campaigns > 1 ? `${trust.campaigns} campaigns on Colatch` : "Brief checked by the Colatch team"}</span>
             </div>
             {!accepted && <p className="hint" style={{ margin: "-4px 0 16px" }}>The brand's name and contact stay hidden until you're selected and accept the terms. All talk happens through Colatch, so nobody can pull you off-platform or skip your payment.</p>}
             <h2>The brief</h2>
@@ -148,6 +155,10 @@ export default async function Page({ params, searchParams }) {
                 <li><b>Disclosure:</b> {DISCLOSURE_LINE}</li>
                 <li><b>Tax:</b> TDS is deducted where the law requires it, and you get the certificate. If you're GST-registered, GST is paid on top of your fee.</li>
               </ul>
+            </div>
+            <div className="loss">
+              <h4>What you'd lose going direct</h4>
+              {goingDirectLosses({ funded: Boolean(k.funded), fee: existing?.rate_quote ?? c?.rate_reel ?? null, payDays: k.payment_days }).map((x) => <div key={x.title}><b>{x.title}.</b> {x.line}</div>)}
             </div>
             <p className="hint" style={{ margin: "14px 0 0" }}>Colatch never charges creators to apply or join. We only contact you from @colatch on Instagram, a @colatch.com email or the WhatsApp number in your portal.</p>
           </div>

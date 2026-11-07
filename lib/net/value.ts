@@ -46,3 +46,51 @@ export function sumValue(vs: DealValue[]) {
   }), { fee: 0, savedVsMarket: 0, savedVsAgency: 0, adsEquivalent: 0, sales: 0, rewards: 0, views: 0 });
   return { ...s, saved: s.savedVsMarket + s.savedVsAgency, roas: s.fee ? s.sales / s.fee : null, adsMultiple: s.fee ? s.adsEquivalent / s.fee : null };
 }
+
+/**
+ * #1 Savings meter for one creator quote: what the brand saves vs the creator's usual rate and vs agency pricing.
+ * Only positive savings are returned (null otherwise), so the UI never shows a "saving" that isn't one.
+ */
+export function quoteSavings(env: Env, c: { rate_reel?: number | null; followers?: number | null }, quoteFee: number, colatchPct: number) {
+  const b = baselines(env);
+  const market = marketRate(c);
+  const vsMarket = market && market > quoteFee ? market - quoteFee : null;
+  const agencyGap = Math.round((quoteFee * (b.agencyPct - colatchPct)) / 100);
+  return { vsMarket, vsAgency: agencyGap > 0 ? agencyGap : null, agencyPct: b.agencyPct };
+}
+
+/** #46 Budget fit: the brand's per-creator budget vs this creator's all-in price. */
+export function budgetFit(budgetTotal: number | null | undefined, creatorsNeeded: number | null | undefined, allIn: number): { label: string; tone: 'good' | 'ok' | 'bad' } | null {
+  const total = Number(budgetTotal || 0), n = Math.max(1, Number(creatorsNeeded || 1));
+  if (!total || !allIn) return null;
+  const per = total / n;
+  if (allIn <= per) return { label: 'Fits your budget', tone: 'good' };
+  if (allIn <= per * 1.2) return { label: 'Stretch', tone: 'ok' };
+  return { label: 'Over budget', tone: 'bad' };
+}
+
+/** #49 Brief quality score, 0–100, from what the brand gave. Returns the score and what's missing, most valuable first. */
+export function briefScore(k: Record<string, any>): { score: number; missing: string[] } {
+  const checks: [boolean, number, string][] = [
+    [!!String(k.talent_types || '').trim(), 15, 'the kind of creator you need (dancer, chef, comedian…)'],
+    [!!String(k.deliverables || '').trim(), 15, 'what each creator posts (e.g. 1 Reel + 2 Stories)'],
+    [!!(k.budget_total || String(k.budget_note || '').trim()), 15, 'a budget or per-creator range'],
+    [!!String(k.city || '').trim(), 10, 'the cities your buyers live in'],
+    [!!(k.min_followers || k.max_followers), 10, 'a follower range'],
+    [!!(k.deadline || k.shoot_date), 10, 'a go-live or shoot date'],
+    [!!String(k.mandatories || '').trim(), 10, 'must-say lines or must-show shots'],
+    [!!String(k.brand_url || '').trim(), 5, 'a landing page for tracked links'],
+    [!!String(k.pay_type || '').trim() && k.pay_type !== 'cash' ? true : !!k.budget_total, 5, 'how creators are rewarded (cash, product, tickets)'],
+    [!!String(k.languages || '').trim(), 5, 'the language creators should speak in'],
+  ];
+  let score = 0; const missing: string[] = [];
+  for (const [ok, pts, label] of checks) { if (ok) score += pts; else missing.push(label); }
+  return { score: Math.min(100, score), missing };
+}
+
+/** #68 Free webmail domains that, with no website, put a brief on hold for a quick check. */
+export const FREE_MAIL = ['gmail.com', 'googlemail.com', 'yahoo.com', 'yahoo.co.in', 'outlook.com', 'hotmail.com', 'live.com', 'rediffmail.com', 'icloud.com', 'me.com', 'proton.me', 'protonmail.com'];
+export function isFreeMail(email: string | null | undefined): boolean {
+  const d = String(email || '').toLowerCase().split('@')[1] || '';
+  return FREE_MAIL.includes(d);
+}

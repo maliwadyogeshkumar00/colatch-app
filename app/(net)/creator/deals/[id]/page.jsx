@@ -9,6 +9,7 @@ import { takeHome, fyStart, logEvent, applyAutoApprove, countdown, checklist, li
 import { DISCLOSURE_LINE } from "@/lib/net/compliance";
 import { PAY_LABEL } from "@/lib/net/campaign";
 import { scrubContacts } from "@/lib/net/guard";
+import { goingDirectLosses } from "@/lib/net/trust";
 
 export const metadata = { title: "Deal · Colatch", robots: { index: false } };
 
@@ -72,6 +73,19 @@ async function postLive(fd) {
   await env.DB.prepare("UPDATE creator_deals SET post_url=?, updated_at=datetime('now') WHERE id=?").bind(url, d.id).run();
   await logEvent(env, d.id, "creator", "note", `Posted: ${url}`);
   redirect(back(d.id, "good", "Thanks! We will verify the post and start your payment clock."));
+}
+
+async function reportBypass(fd) {
+  "use server";
+  const { d } = await ctx(fd);
+  const note = str(fd.get("note"));
+  if (!note || note.length < 10) redirect(back(d.id, "bad", "Tell us in a line what happened, for example who asked and how."));
+  const dup = await env.DB.prepare("SELECT id FROM bypass_reports WHERE deal_id=? AND reporter_side='creator' AND status='open'").bind(d.id).first();
+  if (dup) redirect(back(d.id, "good", "We already have your report for this deal. The team is looking into it."));
+  await env.DB.prepare("INSERT INTO bypass_reports (id, deal_id, campaign_id, reporter_side, reporter_id, note) VALUES (?,?,?,?,?,?)")
+    .bind(crypto.randomUUID(), d.id, d.campaign_id, "creator", d.creator_id, note.slice(0, 1000)).run();
+  await logEvent(env, d.id, "creator", "note", "Reported an off-platform contact attempt");
+  redirect(back(d.id, "good", "Thank you. The Colatch team will look into it within 72 hours. If it's confirmed, ₹500 is added to your earnings."));
 }
 
 export default async function Page({ params, searchParams }) {
@@ -185,6 +199,19 @@ export default async function Page({ params, searchParams }) {
             <h2>Timeline</h2>
             {events.length ? events.map((e) => <div key={e.id} style={{ padding: "8px 0", borderTop: "1px solid var(--line-2)" }}><div className="spread"><b className="small">{kindLabel[e.kind] || e.kind}</b><span className="hint">{String(e.created_at).slice(5, 16)}</span></div>{e.note && e.kind !== "paid" && <div className="small muted" style={{ whiteSpace: "pre-line", marginTop: 2 }}>{e.note}</div>}</div>) : <p className="hint">Nothing yet.</p>}
           </div>
+          <div className="panel pad" style={{ borderStyle: "dashed", borderColor: "rgba(155,59,59,.35)" }}>
+            <h2>What you'd lose going direct</h2>
+            {goingDirectLosses({ funded: d.pay_status !== "unfunded", fee: d.fee, payDays }).map((x) => <div key={x.title} className="small" style={{ padding: "5px 0", color: "var(--ink-2)" }}><b>{x.title}.</b> {x.line}</div>)}
+          </div>
+          <details className="panel pad">
+            <summary style={{ cursor: "pointer", fontWeight: 600 }}>Someone asked to deal outside Colatch?</summary>
+            <form action={reportBypass} style={{ marginTop: 12 }}>
+              {hid}
+              <p className="small muted" style={{ margin: "0 0 10px" }}>Asked for your number, to move to DMs, or to be paid directly? Tell us. It stays private, and a confirmed report adds ₹500 to your earnings.</p>
+              <div className="fld"><label>What happened</label><textarea name="note" rows={3} required minLength={10} maxLength={1000} placeholder="The brand's manager asked for my WhatsApp to send the product directly…" /></div>
+              <button className="btn sm" style={{ marginTop: 10 }}>Send report</button>
+            </form>
+          </details>
           <p className="hint">Questions about this deal? WhatsApp the Colatch team from the number in your welcome message. Colatch never asks you to pay anything.</p>
         </div>
       </div>

@@ -1,5 +1,5 @@
 /* Colatch Connect network pages. Every rule is scoped under .net so nothing leaks into Colatch Match. */
-.net :is(.btn,.card,.chip,.col,.empty,.fld,.foot,.hero,.lead,.link,.meta,.note,.opt,.panel,.why,.wrap){all:revert}
+.net :is(.mono,.btn,.card,.chip,.col,.empty,.fld,.foot,.hero,.lead,.link,.meta,.note,.opt,.panel,.why,.wrap){all:revert}
 .net h1,.net h2,.net h3,.net p,.net ul,.net ol,.net table{margin:revert;padding:revert}
 .net *,.net *::before,.net *::after{box-sizing:border-box}
 .net{margin:0;padding:0}
