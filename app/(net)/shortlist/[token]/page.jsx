@@ -134,7 +134,7 @@ export default async function Page({ params, searchParams }) {
         </div>}
 
         {deals.length > 0 && <div style={{ marginBottom: 34 }}>
-          <div className="spread" style={{ marginBottom: 12 }}><div className="h2" style={{ margin: 0 }}>Campaign live</div><a className="btn sm" href={`/brief?again=${encodeURIComponent(k.slug)}`}>Book again</a></div>
+          <div className="spread" style={{ marginBottom: 12 }}><div className="h2" style={{ margin: 0 }}>Campaign live</div><div className="row" style={{ gap: 8 }}><a className="btn sm" href={`/receipt/${params.token}`}>Value receipt</a><a className="btn sm" href={`/brief?again=${encodeURIComponent(k.slug)}`}>Book again</a></div></div>
           <div className="grid3">
             <div className="panel kpi"><div className="k">Spend</div><div className="v">{inr(tSpend)}</div><div className="s">creator fees, {deals.length} {deals.length === 1 ? "creator" : "creators"}</div></div>
             <div className="panel kpi"><div className="k">Views</div><div className="v">{compact(tViews)}</div><div className="s">{live.length} of {deals.length} posts live</div></div>
