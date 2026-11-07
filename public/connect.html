@@ -2511,7 +2511,11 @@ var NAV = [
   { sep: 'Money and insight' },
   { k: 'money', label: 'Money', icon: 'wallet' },
   { k: 'reports', label: 'Reports', icon: 'chart' },
-  { k: 'brandiq', label: 'Brand IQ', icon: 'target' }
+  { k: 'brandiq', label: 'Brand IQ', icon: 'target' },
+  { sep: 'Live creator network' },
+  { k: 'net-team', href: '/team', label: 'Network desk', icon: 'layers' },
+  { k: 'net-brief', href: '/brief', label: 'Brand brief form', icon: 'megaphone' },
+  { k: 'net-join', href: '/join', label: 'Creator sign-up', icon: 'star' }
 ];
 function parseHash(){ var h = location.hash.replace(/^#\/?/, ''); var q = ''; var qi = h.indexOf('?'); if (qi >= 0){ q = h.slice(qi + 1); h = h.slice(0, qi); } var parts = h.split('/').filter(Boolean); var params = {}; q.split('&').forEach(function(kv){ if (!kv) return; var p = kv.split('='); params[decodeURIComponent(p[0])] = decodeURIComponent((p[1] || '').replace(/\+/g, ' ')); }); return { name: parts[0] || 'home', id: parts[1] || null, q: params }; }
 function go(path){ if (location.hash === '#/' + path) render(true); else location.hash = '#/' + path; }
@@ -2549,7 +2553,7 @@ function runCounts(changed){
 function renderNav(active){
   var h = '<span class="marker" id="marker" style="opacity:0"></span>';
   NAV.forEach(function(n){ if (n.sep){ h += '<div class="lbl">' + e(n.sep) + '</div>'; return; } var ct = n.ct ? n.ct() : '';
-    h += '<a href="#/' + n.k + '" data-nav="' + n.k + '" class="' + (active === n.k ? 'on' : '') + '"' + (active === n.k ? ' aria-current="page"' : '') + '>' + ic(n.icon, 18) + '<span>' + n.label + '</span><span class="ct">' + (ct === 0 ? '' : ct) + '</span></a>'; });
+    h += '<a href="' + (n.href || ('#/' + n.k)) + '" data-nav="' + n.k + '" class="' + (active === n.k ? 'on' : '') + '"' + (active === n.k ? ' aria-current="page"' : '') + '>' + ic(n.icon, 18) + '<span>' + n.label + '</span><span class="ct">' + (ct === 0 ? '' : ct) + '</span></a>'; });
   var nav = document.getElementById('nav'); var prevTop = nav.dataset.mt;
   nav.innerHTML = h;
   var on = nav.querySelector('a.on'), mk = document.getElementById('marker');
