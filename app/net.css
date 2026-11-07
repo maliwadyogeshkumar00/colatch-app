@@ -213,3 +213,4 @@
 .net details.box>.inner{padding:0 16px 16px}
 .net code.k{font-family:ui-monospace,Menlo,monospace;font-size:12px;background:var(--ivory-2);padding:3px 7px;border-radius:6px;color:var(--p700);word-break:break-all}
 .net{min-height:100vh}
+.net a.link,.net a.card,.net a.chip,.net a.btn,.net a.opt{text-decoration:none}

@@ -28,6 +28,10 @@ async function setup(fd) {
   const email = String(fd.get("email") ?? "").trim().toLowerCase();
   const pw = String(fd.get("password") ?? "");
   if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) redirect(flashUrl("/team/login", "err", "Add your name and a valid email."));
+  // The owner account can only be claimed by a Colatch address (or one listed in TEAM_OWNER_EMAILS), so a stranger
+  // who finds this page first can't take over the desk.
+  const allowed = String(process.env.TEAM_OWNER_EMAILS || "maliwadyogeshkumar00@gmail.com").toLowerCase().split(/[\s,]+/).filter(Boolean);
+  if (!email.endsWith("@colatch.com") && !allowed.includes(email)) redirect(flashUrl("/team/login", "err", "The first team login must use a @colatch.com email."));
   if (pw.length < 10) redirect(flashUrl("/team/login", "err", "Use a password of at least 10 characters."));
   const { hash, salt } = await hashPassword(pw);
   const id = crypto.randomUUID();
