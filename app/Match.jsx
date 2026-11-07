@@ -170,6 +170,7 @@ export default function Match({ roster, source, syncedAt }) {
           )}
           <div className="navr">
             {stage !== "browse" && <button className="btn btn-line btn-sm nav-explore" onClick={() => { setOpen(null); go("browse"); }}>Explore the roster</button>}
+            <a className="btn btn-gold btn-sm nav-connect" href="/connect">Colatch Connect</a>
             <a className="btn btn-line btn-sm nav-wa" href={`https://wa.me/${WA}`} target="_blank" rel="noreferrer">Start a partnership</a>
           </div>
         </nav>
