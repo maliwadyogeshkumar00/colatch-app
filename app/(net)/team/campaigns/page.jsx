@@ -43,7 +43,7 @@ export default async function Page({ searchParams }) {
     camps = (await env.DB.prepare(
       `SELECT k.*, (SELECT COUNT(*) FROM campaign_applications a WHERE a.campaign_id=k.id) apps,
               (SELECT COUNT(*) FROM campaign_applications a WHERE a.campaign_id=k.id AND a.status='new') newapps
-       FROM campaigns k ORDER BY CASE k.status WHEN 'pending' THEN 0 WHEN 'open' THEN 1 ELSE 2 END, k.created_at DESC LIMIT 200`
+       FROM campaigns k ORDER BY CASE k.status WHEN 'pending' THEN 0 WHEN 'open' THEN 1 ELSE 2 END, k.rush DESC, k.created_at DESC LIMIT 200`
     ).all()).results ?? [];
   } catch (e) { dbErr = e instanceof Error ? e.message : String(e); }
   const counts = { pending: camps.filter((c) => c.status === "pending").length, open: camps.filter((c) => c.status === "open").length };
@@ -77,6 +77,9 @@ export default async function Page({ searchParams }) {
                 <h3>{k.title}</h3>
               </div>
               <div className="row" style={{ gap: 8, flex: "none" }}>
+                {k.held_reason && <span className="pill bad" title={k.held_reason}>On hold: verify brand</span>}
+                {Number(k.rush) === 1 && k.status === "pending" && <span className="pill bad">Rush</span>}
+                {k.featured_until && String(k.featured_until) > new Date().toISOString().replace("T", " ").slice(0, 19) && <span className="pill ok">Featured</span>}
                 {k.newapps > 0 && <span className="pill ok">{k.newapps} new</span>}
                 <span className={`pill ${k.status === "open" ? "good" : k.status === "pending" ? "ok" : ""}`}>{CAMPAIGN_STATUS_LABEL[k.status] || k.status}</span>
               </div>

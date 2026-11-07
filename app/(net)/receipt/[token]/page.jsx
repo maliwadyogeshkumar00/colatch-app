@@ -97,7 +97,7 @@ export default async function Page({ params }) {
   const mailBody = [
     `Colatch value receipt ${receiptNo} for "${k.title}" (${brand}).`,
     "",
-    `Total spend: ${inr(spend)} (creator fees ${inr(tot.fee)}, Colatch fee ${inr(q.colatch)}, GST ${inr(q.gst)})`,
+    `Total spend: ${inr(spend)} (creator fees ${inr(tot.fee)}, Colatch fee ${inr(q.colatch)}${q.rush ? `, rush ${inr(q.rush)}` : ""}, GST ${inr(q.gst)})`,
     `Value received: ${inr(received)}`,
     `  Saved vs creators' market rates: ${inr(tot.savedVsMarket)}`,
     `  Saved vs a ${base.agencyPct}% agency markup: ${inr(tot.savedVsAgency)}`,

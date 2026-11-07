@@ -42,6 +42,17 @@ async function handle(fd, forced) {
       // A booked creator idea (pitch_id set) is a private deal with that creator: never publish it to the open feed.
       await env.DB.prepare("UPDATE campaigns SET status=?, is_open=CASE WHEN pitch_id IS NULL AND ?=1 THEN 1 ELSE 0 END WHERE id=?").bind(st, st === "open" ? 1 : 0, id).run();
       msg = `Marked ${CAMPAIGN_STATUS_LABEL[st].toLowerCase()}.`;
+    } else if (action === "verify") {
+      // #69 Verified brand: clears the scam-shield hold.
+      await env.DB.prepare("UPDATE campaigns SET brand_verified=1, held_reason=NULL WHERE id=?").bind(id).run();
+      msg = "Brand marked verified. The hold is cleared; creators will see a Verified brand badge.";
+    } else if (action === "feature") {
+      // #94 Featured brief: pinned for 7 days.
+      await env.DB.prepare("UPDATE campaigns SET featured_until=datetime('now','+7 days') WHERE id=?").bind(id).run();
+      msg = "Featured for 7 days. Remember to invoice ₹1,999.";
+    } else if (action === "unfeature") {
+      await env.DB.prepare("UPDATE campaigns SET featured_until=NULL WHERE id=?").bind(id).run();
+      msg = "No longer featured.";
     } else if (action === "share") {
       await env.DB.prepare("UPDATE campaigns SET share_token=COALESCE(share_token, ?) WHERE id=?").bind(newToken() + newToken(), id).run();
       msg = "Client shortlist link ready. Copy it below and send it to the client.";
@@ -109,6 +120,7 @@ export default async function Page({ params, searchParams }) {
   const eligibleN = ranked.filter((r) => r.m.eligible).length;
   const hidden = (a) => <><input type="hidden" name="id" value={id} /><input type="hidden" name="action" value={a} /></>;
   const esc = (s) => String(s).replace(/</g, "&lt;");
+  const nowTs = new Date().toISOString().replace("T", " ").slice(0, 19);
 
   return (
     <TeamShell active="campaigns" eyebrow={CAMPAIGN_STATUS_LABEL[k.status] || k.status} title={esc(k.title)} email={me.email}
@@ -120,6 +132,20 @@ export default async function Page({ params, searchParams }) {
       </>}>
 
       {flash && <div className={`note ${tone}`} style={{ marginBottom: 16 }}>{flash}</div>}
+
+      {k.held_reason && <div className="note bad" style={{ marginBottom: 16 }}>
+        <div className="spread"><div><b>On hold: {k.held_reason}.</b> Call or WhatsApp {k.client_name || "the client"}{k.client_phone ? ` on ${k.client_phone}` : ""} and check the company (GST, website, LinkedIn) before publishing.{ai.website ? ` They gave the website ${ai.website}.` : ""}</div>
+          <form action={act}>{hidden("verify")}<button className="btn plum">Mark brand verified</button></form></div>
+      </div>}
+
+      <div className="row" style={{ gap: 8, marginBottom: 16 }}>
+        {Number(k.brand_verified) === 1 ? <span className="pill good">Verified brand</span> : !k.held_reason && <form action={act}>{hidden("verify")}<button className="btn sm">Mark brand verified</button></form>}
+        {Number(k.rush) === 1 && <span className="pill bad">Rush: shortlist in 6 working hours (+5% fee)</span>}
+        {k.brief_score != null && <span className="pill">Brief strength {k.brief_score}/100</span>}
+        {k.featured_until && k.featured_until > nowTs
+          ? <><span className="pill ok">Featured until {String(k.featured_until).slice(0, 10)}</span><form action={act}>{hidden("unfeature")}<button className="btn sm">Stop featuring</button></form></>
+          : <>{ai.featured_request && <span className="pill ok">Client asked to feature (₹1,999)</span>}<form action={act}>{hidden("feature")}<button className="btn sm">Feature for 7 days</button></form></>}
+      </div>
 
       <div className="grid4">
         <div className="panel kpi"><div className="k">Applicants</div><div className="v">{apps.length}</div><div className="s">{eligibleN} meet every requirement</div></div>
