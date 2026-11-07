@@ -4,7 +4,7 @@ import PublicShell from "../../_ui/PublicShell";
 import PrintButton from "./PrintButton";
 import { env } from "@/lib/net/env";
 import { inr, compact } from "@/lib/net/creators";
-import { quote, feePct } from "@/lib/net/deal";
+import { quote, feePct, brandFeePct } from "@/lib/net/deal";
 import { dealValue, sumValue, baselines } from "@/lib/net/value";
 import { ensureCode } from "@/lib/net/referral";
 
@@ -63,8 +63,13 @@ export default async function Page({ params }) {
   const tot = sumValue(deals.map((d) => dealValue(env, d, pct)));
 
   // What the brand spends: creator fees, Colatch's fee, GST on Colatch's fee.
-  const q = deals.reduce((a, d) => { const x = quote(env, d.fee || 0, false); return { colatch: a.colatch + x.colatch, gst: a.gst + x.gstOnColatch }; }, { colatch: 0, gst: 0 });
-  const spend = tot.fee + q.colatch + q.gst;
+  // #65 / #85: each creator is priced at this brand's own rate (repeat 12%, loyalty ladder), plus rush if asked.
+  const email = String(k.client_email || "").toLowerCase();
+  const rates = await Promise.all(deals.map((d) => brandFeePct(env, email, d.creator_id, k.id).catch(() => ({ pct, reason: null }))));
+  const q = deals.reduce((a, d, i) => { const x = quote(env, d.fee || 0, false, rates[i].pct, Number(k.rush) === 1); return { colatch: a.colatch + x.colatch - x.rushFee, rush: a.rush + x.rushFee, gst: a.gst + x.gstOnColatch }; }, { colatch: 0, rush: 0, gst: 0 });
+  const reasons = [...new Set(rates.map((r) => r.reason).filter(Boolean))];
+  const effPct = tot.fee ? Math.round((q.colatch / tot.fee) * 1000) / 10 : pct;
+  const spend = tot.fee + q.colatch + q.rush + q.gst;
   const received = tot.saved + tot.adsEquivalent + tot.sales;
   const multiple = spend > 0 ? received / spend : null;
 
@@ -128,7 +133,8 @@ export default async function Page({ params }) {
           ) : (<>
             <div className="sect">What you spent</div>
             {deals.map((d) => <Line key={d.id} l={d.name || "@" + d.handle} sub={d.deliverable} v={inr(d.fee || 0)} />)}
-            <Line l={`Colatch fee (${pct}%)`} v={inr(q.colatch)} />
+            <Line l={`Colatch fee (${effPct}%)`} sub={reasons.length ? reasons.join(" · ") : undefined} v={inr(q.colatch)} />
+            {q.rush > 0 && <Line l="Rush shortlist (5%)" v={inr(q.rush)} />}
             <Line l="GST on Colatch fee (18%)" v={inr(q.gst)} />
             <div className="rule" />
             <div className="tot mono"><span>Total spend</span><span>{inr(spend)}</span></div>

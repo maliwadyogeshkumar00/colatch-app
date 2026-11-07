@@ -102,6 +102,7 @@ export default async function Page({ params, searchParams }) {
   const trackUrl = `${origin}/go/${d.track_code}`;
   const draftLabel = ({ none: "Not yet", submitted: "In review", changes: "Changes asked", approved: "Approved" })[d.draft_status] ?? d.draft_status;
   const extraRound = d.revisions_used >= d.revisions_included;
+  const openReports = Number((await env.DB.prepare("SELECT COUNT(*) n FROM bypass_reports WHERE deal_id=? AND status='open'").bind(d.id).first().catch(() => null))?.n ?? 0);
   const kindLabel = { funded: "Funded", sow: "Terms accepted", draft: "Draft submitted", changes: "Changes requested", approved: "Draft approved", live: "Went live", released: "Payment released", paid: "Paid", note: "Note", results: "Results updated" };
   const esc = (s) => String(s).replace(/</g, "&lt;");
   const hidden = (a) => <><input type="hidden" name="id" value={d.id} /><input type="hidden" name="action" value={a} /></>;
@@ -112,6 +113,7 @@ export default async function Page({ params, searchParams }) {
         {wa && <a className="btn" href={wa} target="_blank" rel="noopener">WhatsApp nudge ↗</a>}
         <a className="btn" href={`/team/creators/${d.creator_id}`}>Creator</a>
         {k && <a className="btn" href={`/team/campaigns/${k.id}`}>Campaign</a>}
+        <a className="btn" href="/team/reports" title="Off-platform reports">{openReports ? `Report (${openReports} open)` : "Reports"}</a>
       </>}>
 
       {flash && <div className={`note ${tone}`} style={{ marginBottom: 16 }}>{flash}</div>}

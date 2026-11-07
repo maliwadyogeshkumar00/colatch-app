@@ -56,13 +56,13 @@ export function feePct(env: Env): number {
  *  - Loyalty ladder: 1 point off per ₹5L of creator fees paid in the last 365 days, floor 10%.
  * The lower of the two applies. Keeps feePct(env) as the base for everyone else.
  */
-export async function brandFeePct(env: Env, clientEmail: string | null | undefined, creatorId?: string | null): Promise<{ pct: number; reason: string | null; spent: number; repeat: boolean }> {
+export async function brandFeePct(env: Env, clientEmail: string | null | undefined, creatorId?: string | null, excludeCampaignId?: string | null): Promise<{ pct: number; reason: string | null; spent: number; repeat: boolean }> {
   const base = feePct(env);
   const email = String(clientEmail || '').trim().toLowerCase();
   if (!email) return { pct: base, reason: null, spent: 0, repeat: false };
   const row = await env.DB.prepare(
-    "SELECT COALESCE(SUM(d.fee),0) AS spent FROM creator_deals d JOIN campaigns k ON k.id=d.campaign_id WHERE LOWER(k.client_email)=? AND d.pay_status='paid' AND d.paid_at >= datetime('now','-365 days')"
-  ).bind(email).first<{ spent: number }>();
+    "SELECT COALESCE(SUM(d.fee),0) AS spent FROM creator_deals d JOIN campaigns k ON k.id=d.campaign_id WHERE LOWER(k.client_email)=? AND d.pay_status='paid' AND d.paid_at >= datetime('now','-365 days') AND k.id <> ?"
+  ).bind(email, excludeCampaignId || '').first<{ spent: number }>();
   const spent = Number(row?.spent || 0);
   let pct = base, reason: string | null = null;
   const steps = Math.floor(spent / 500000);
@@ -73,8 +73,8 @@ export async function brandFeePct(env: Env, clientEmail: string | null | undefin
   let repeat = false;
   if (creatorId) {
     const r = await env.DB.prepare(
-      "SELECT d.id FROM creator_deals d JOIN campaigns k ON k.id=d.campaign_id WHERE LOWER(k.client_email)=? AND d.creator_id=? AND d.pay_status='paid' LIMIT 1"
-    ).bind(email, creatorId).first<{ id: string }>();
+      "SELECT d.id FROM creator_deals d JOIN campaigns k ON k.id=d.campaign_id WHERE LOWER(k.client_email)=? AND d.creator_id=? AND d.pay_status='paid' AND k.id <> ? LIMIT 1"
+    ).bind(email, creatorId, excludeCampaignId || '').first<{ id: string }>();
     if (r) { repeat = true; if (12 < pct) { pct = 12; reason = 'Repeat booking rate 12%'; } }
   }
   return { pct, reason, spent, repeat };

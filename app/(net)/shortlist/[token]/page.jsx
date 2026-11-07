@@ -127,8 +127,8 @@ export default async function Page({ params, searchParams }) {
   const dotOn = (i, at) => (i > at ? "" : "on");
   const rush = Number(k.rush) === 1;
   // #65 repeat rate + #85 loyalty ladder, per creator.
-  const fees = Object.fromEntries(await Promise.all(rows.map(async (r) => [r.id, await brandFeePct(env, brandEmail, r.creator_id).catch(() => ({ pct, reason: null, spent: 0, repeat: false }))])));
-  const brandFee = await brandFeePct(env, brandEmail).catch(() => ({ pct, reason: null, spent: 0, repeat: false }));
+  const fees = Object.fromEntries(await Promise.all(rows.map(async (r) => [r.id, await brandFeePct(env, brandEmail, r.creator_id, k.id).catch(() => ({ pct, reason: null, spent: 0, repeat: false }))])));
+  const brandFee = await brandFeePct(env, brandEmail, null, k.id).catch(() => ({ pct, reason: null, spent: 0, repeat: false }));
   const allIn = (fee, rowId) => (fee ? quote(env, fee, false, fees[rowId]?.pct ?? pct, rush) : null);
   const saved = new Set(brandEmail ? (((await env.DB.prepare("SELECT creator_id FROM brand_roster WHERE brand_email=?").bind(brandEmail).all()).results ?? []).map((x) => x.creator_id)) : []);
   // #64 What going direct would cost them, in plain terms.

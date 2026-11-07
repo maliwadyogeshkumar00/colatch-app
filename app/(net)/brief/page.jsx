@@ -135,6 +135,11 @@ export default async function Page({ searchParams }) {
     const prev = await env.DB.prepare("SELECT raw_brief, client_company, mandatories, exclusions, brand_url FROM campaigns WHERE slug=?").bind(String(sp.again)).first();
     if (prev) v = { raw: String(prev.raw_brief || "").split("\n\n")[0], company: prev.client_company || "", mandatories: prev.mandatories || "", exclusions: prev.exclusions || "", brand_url: prev.brand_url || "" };
   }
+  // From "Book again" on the roster: name the creator up front so the team rebooks them at the repeat rate.
+  if (!done && !err && sp.creator) {
+    const h = String(sp.creator).replace(/[^a-z0-9._]/gi, "").slice(0, 40);
+    if (h) v = { ...v, raw: `Rebooking @${h} at the Colatch repeat rate. ${v.raw ?? ""}`.trim() };
+  }
   const has = (k, x) => (v[k] ?? "").split(", ").includes(x);
   const origin = `https://${headers().get("host")}`;
 
