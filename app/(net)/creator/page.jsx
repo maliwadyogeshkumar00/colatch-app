@@ -6,6 +6,8 @@ import { match, profileGaps } from "@/lib/net/match";
 import { requirementChips, PAY_LABEL, daysLeft, rewardLine, NON_CASH } from "@/lib/net/campaign";
 import { compact } from "@/lib/net/creators";
 import { blindBrand } from "@/lib/net/guard";
+import { colatchScore } from "@/lib/net/score";
+import { ScoreStrip } from "../_ui/Score";
 
 export const metadata = { title: "Your opportunities · Colatch", robots: { index: false } };
 
@@ -18,7 +20,13 @@ export default async function Page({ searchParams }) {
   const applied = new Set(((await env.DB.prepare("SELECT campaign_id FROM campaign_applications WHERE creator_id=? OR handle=?").bind(c.id, c.handle).all()).results ?? []).map((r) => r.campaign_id));
   const revealed = new Set(((await env.DB.prepare("SELECT campaign_id FROM creator_deals WHERE creator_id=? AND sow_accepted_at IS NOT NULL").bind(c.id).all()).results ?? []).map((r) => r.campaign_id));
   const brandLabel = (k) => (revealed.has(k.id) ? k.brand || blindBrand(k) : blindBrand(k));
-  const scored = camps.map((k) => ({ k, m: match(c, k) }));
+  const sc = await colatchScore(env, c.id);
+  // Icon early access: briefs younger than 24 hours are shown only to Icon creators (and to anyone already in them).
+  const cutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString().replace("T", " ").slice(0, 19);
+  const isFresh = (k) => String(k.created_at || "") > cutoff;
+  const early = sc.tier === "Icon" ? [] : camps.filter((k) => isFresh(k) && !applied.has(k.id) && match(c, k).eligible);
+  const visible = sc.tier === "Icon" ? camps : camps.filter((k) => !isFresh(k) || applied.has(k.id));
+  const scored = visible.map((k) => ({ k, m: match(c, k) }));
   const mine = scored.filter((x) => x.m.eligible).sort((a, b) => b.m.score - a.m.score);
   // briefs hidden only because the profile is missing something — the creator can unlock these
   const unlockable = scored.filter((x) => !x.m.eligible && x.m.blockers.every((b) => b.startsWith("Add your")));
@@ -38,6 +46,15 @@ export default async function Page({ searchParams }) {
 
   return (
     <PublicShell creatorName={c.name || c.handle} path="/creator" hero={hero}>
+      <ScoreStrip s={sc} />
+      {early.length > 0 && (
+        <div className="note info" style={{ marginBottom: 20 }}>
+          <b>{early.length} new {early.length === 1 ? "brief that fits you is" : "briefs that fit you are"} open to Icon creators right now.</b> {early.length === 1 ? "It opens" : "They open"} to you within 24 hours. Icon creators see every brief a day early. <a className="link" href="/creator/score">How to get there →</a>
+        </div>
+      )}
+      {sc.tier === "Icon" && camps.some(isFresh) && (
+        <div className="note good" style={{ marginBottom: 20 }}><b>Icon early access:</b> briefs marked “Early” below are visible only to Icon creators for their first 24 hours.</div>
+      )}
       {gaps.length > 0 && (
         <div className="note warn" style={{ marginBottom: 20 }}>
           <b>Complete your profile to see more briefs.</b> Missing: {gaps.slice(0, 4).join(", ")}.
@@ -62,6 +79,7 @@ export default async function Page({ searchParams }) {
               <div className="top">
                 <div style={{ minWidth: 0 }}><div className="br">{brandLabel(k)}{k.funded ? " · Budget funded ✓" : ""}</div><h3>{k.title}</h3></div>
                 <div className="row" style={{ gap: 10, flex: "none" }}>
+                  {sc.tier === "Icon" && isFresh(k) && <span className="pill ok">Early</span>}
                   {applied.has(k.id) && <span className="pill good">Applied</span>}
                   <div className="score sm" style={{ "--v": m.score }} title="Match score"><i>{m.score}</i></div>
                 </div>

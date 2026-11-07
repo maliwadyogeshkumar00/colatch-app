@@ -3,6 +3,8 @@ import PublicShell from "../../_ui/PublicShell";
 import { env } from "@/lib/net/env";
 import { compact, inr, erBand } from "@/lib/net/creators";
 import { list } from "@/lib/net/match";
+import { colatchScore } from "@/lib/net/score";
+import { TierBadge } from "../../_ui/Score";
 
 // Public media kit, auto-built from the creator's Colatch profile. Only creators with a portal login get one.
 const getCreator = (raw) => {
@@ -25,6 +27,7 @@ export default async function Page({ params }) {
   const b = erBand(c.engagement_rate, c.followers);
   const links = String(c.portfolio_links || "").split(/\s+/).filter((u) => /^https?:\/\//.test(u)).slice(0, 6);
   const name = c.name || c.handle;
+  const sc = await colatchScore(env, c.id);
   const hero = (
     <section className="hero"><div className="hero-in">
       <div className="eb">Colatch media kit{c.verified ? " · Instagram verified ✓" : ""}</div>
@@ -38,6 +41,12 @@ export default async function Page({ params }) {
   );
   return (
     <PublicShell mode="client" hero={hero}>
+      <div className="panel" style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 20px", marginBottom: 18, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 11, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--ink-4)", fontWeight: 600 }}>Colatch Score</div>
+        <div style={{ fontSize: 26, fontWeight: 300, color: "var(--p900)", fontVariantNumeric: "tabular-nums" }}>{sc.score}<span style={{ fontSize: 14, color: "var(--ink-4)" }}> / 100</span></div>
+        <TierBadge tier={sc.tier} />
+        <div style={{ flex: 1, minWidth: 220, fontSize: 13, color: "var(--ink-3)" }}>Built only from work Colatch verified: live posts, brand sign-offs, star ratings and on-time delivery. It can't be bought or self-reported.</div>
+      </div>
       <div className="grid4">
         <div className="panel kpi"><div className="k">Followers</div><div className="v">{compact(c.followers)}</div><div className="s">{c.verified ? "From Instagram" : "Self-reported"}</div></div>
         <div className="panel kpi"><div className="k">Engagement</div><div className="v">{c.engagement_rate != null ? `${c.engagement_rate}%` : "—"}</div><div className="s">{c.engagement_rate != null ? <span className={`pill ${b.tone}`}>{b.label}</span> : "Not measured yet"}</div></div>

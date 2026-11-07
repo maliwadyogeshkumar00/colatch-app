@@ -73,11 +73,13 @@ export default async function Page({ searchParams }) {
   const unfunded = await many(`SELECT d.id, d.brand, d.fee, c.name, c.handle FROM creator_deals d JOIN creators c ON c.id=d.creator_id
     WHERE d.stage IN ('confirmed','live') AND d.pay_status='unfunded' ORDER BY d.updated_at DESC LIMIT 10`);
   const team = await many("SELECT name, email, role FROM team_users ORDER BY created_at");
+  const pitchReqs = await many(`SELECT k.id, k.title, k.client_company, k.budget_total, k.shortlist_due, p.requests FROM campaigns k
+    LEFT JOIN creator_pitches p ON p.id=k.pitch_id WHERE k.source='pitch' AND k.status='pending' ORDER BY k.created_at DESC LIMIT 10`);
 
   const h = headers();
   const origin = `${h.get("x-forwarded-proto") || "https"}://${h.get("host")}`;
   const nameOf = (r) => r.name || "@" + r.handle;
-  const nothing = !owed.length && !newApps.length && !drafts.length && !toPay.length && !unfunded.length;
+  const nothing = !pitchReqs.length && !owed.length && !newApps.length && !drafts.length && !toPay.length && !unfunded.length;
 
   return (
     <TeamShell active="home" title="Your creator <b>network</b>, at a glance." email={me.email}
@@ -98,6 +100,9 @@ export default async function Page({ searchParams }) {
         <div className="h2">Needs you</div>
         {nothing && <div className="panel empty"><b>Nothing waiting.</b>Share the brief link with brands and the join link with creators to get things moving.</div>}
         <div className="grid2" style={{ alignItems: "start" }}>
+          {pitchReqs.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Pitch requests from the idea board</h2></div>
+            <table className="tbl"><tbody>{pitchReqs.map((r) => <tr key={r.id}><td><a className="link" href={`/team/campaigns/${r.id}`}>{r.title}</a><div className="hint">{r.client_company || "Brand"} wants this idea · confirm the creator's dates</div></td>
+              <td className="num">{r.budget_total ? inr(r.budget_total) : ""}{r.shortlist_due ? <div className="hint">Due {formatIST(r.shortlist_due)}</div> : null}</td></tr>)}</tbody></table></div>}
           {owed.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Shortlists owed to clients</h2></div>
             <table className="tbl"><tbody>{owed.map((w) => {
               const late = w.shortlist_due && Date.parse(w.shortlist_due) < now;

@@ -6,6 +6,17 @@ import { currentCreator } from "@/lib/net/creatorAuth";
 import { inr, compact } from "@/lib/net/creators";
 import { ensureCode, REF } from "@/lib/net/referral";
 import { creatorRating } from "@/lib/net/trust";
+import { colatchScore } from "@/lib/net/score";
+import { TierBadge } from "../../_ui/Score";
+
+async function setShowEarnings(fd) {
+  "use server";
+  const me = await currentCreator();
+  if (!me) redirect("/creator/login?next=/creator/earnings");
+  const on = String(fd.get("show") ?? "") === "1" ? 1 : 0;
+  await env.DB.prepare("UPDATE creators SET show_earnings=?, updated_at=datetime('now') WHERE id=?").bind(on, me.creator.id).run();
+  redirect("/creator/earnings#flex");
+}
 
 export const metadata = { title: "Earnings · Colatch", robots: { index: false } };
 
@@ -43,6 +54,11 @@ export default async function Page() {
   const waBrands = `https://wa.me/?text=${encodeURIComponent(`If you need creators for a campaign, Colatch shortlists the right ones in 2 working days, holds payment until the work is approved and shows real cost per view. Post a brief: ${origin}/r/${code}?to=brief`)}`;
   const nb = refs.filter((r) => r.referred_type === "brand").length;
   const nc = refs.filter((r) => r.referred_type === "creator").length;
+  const sc = await colatchScore(env, c.id);
+  const showEarn = Number(c.show_earnings) === 1;
+  const cardUrl = `/c/${code}/card`;
+  const caption = `${sc.stats.delivered ? `${sc.stats.delivered} brand ${sc.stats.delivered === 1 ? "deal" : "deals"} done through @colatch` : "I've joined @colatch"} 💛 You only see briefs that fit you, pay is shown upfront and every payment goes through Colatch. Join free with my code ${code}: ${origin}/c/${code}`;
+  const waCard = `https://wa.me/?text=${encodeURIComponent(caption)}`;
 
   return (
     <PublicShell creatorName={c.name || c.handle} path="/creator/earnings">
@@ -65,6 +81,30 @@ export default async function Page() {
           <div className="panel kpi"><div className="k">Rate growth</div><div className="v">{growth != null ? (growth > 0 ? "+" : "") + growth + "%" : "—"}</div><div className="s">first deal vs latest · {proofs} verified {proofs === 1 ? "proof" : "proofs"}</div></div>
         </div>
         <p className="hint" style={{ margin: "10px 0 0" }}>Your record is verified by Colatch: brand-approved posts, real views and payouts. It shows on your <a className="link" href={`/m/${c.handle}`}>media kit</a>, and you can't get it from deals done off-platform.</p>
+      </div>
+
+      <div className="sec panel pad" id="flex">
+        <div className="grid2" style={{ alignItems: "center", gridTemplateColumns: "minmax(0,1fr) 260px" }}>
+          <div>
+            <div className="row" style={{ gap: 10 }}><h2 style={{ margin: 0 }}>Your flex card</h2><TierBadge tier={sc.tier} size="sm" /></div>
+            <h3 style={{ marginTop: 14 }}>Post it on your story. Every creator who joins with it earns you ₹{REF.creatorBonus}.</h3>
+            <p className="muted" style={{ margin: "0 0 14px" }}>A story-sized card with your tier, verified deals and rating, plus your code in big letters. Everything on it is checked by Colatch, so it's a flex nobody can fake.</p>
+            <div className="row" style={{ gap: 10 }}>
+              <a className="btn-foil" href={`${cardUrl}?download=1`}>Download card</a>
+              <a className="btn plum" href={waCard} target="_blank" rel="noopener">Send on WhatsApp</a>
+              <a className="link small" href={`/c/${code}`} target="_blank" rel="noopener">See your invite page ↗</a>
+            </div>
+            <form action={setShowEarnings} className="row" style={{ marginTop: 16, gap: 10 }}>
+              <input type="hidden" name="show" value={showEarn ? "0" : "1"} />
+              <span className="small">{showEarn ? "Your card shows your earnings, rounded down (like ₹50K+)." : "Your earnings are hidden on the card."}</span>
+              <button className="btn sm">{showEarn ? "Hide earnings" : "Show earnings, rounded"}</button>
+            </form>
+            <div className="fld" style={{ marginTop: 16 }}><label>Caption, ready to paste</label><textarea readOnly rows={3} defaultValue={caption} style={{ width: "100%", fontSize: 13.5 }} /></div>
+          </div>
+          <a href={cardUrl} target="_blank" rel="noopener" style={{ display: "block" }}>
+            <img src={cardUrl} alt="Your Colatch flex card" width={1080} height={1920} style={{ width: "100%", height: "auto", borderRadius: 18, boxShadow: "0 24px 48px -26px rgba(31,21,36,.6)", background: "#1E1128", aspectRatio: "9/16" }} />
+          </a>
+        </div>
       </div>
 
       <div className="sec panel pad">

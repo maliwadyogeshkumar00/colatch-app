@@ -22,6 +22,10 @@ export default async function Page() {
   const deals = (await env.DB.prepare("SELECT d.id, CASE WHEN d.sow_accepted_at IS NOT NULL THEN d.brand ELSE 'Brand revealed after you accept' END AS brand, d.deliverable, d.fee, d.pay_status, d.draft_status, d.sow_accepted_at, d.live_at FROM creator_deals d WHERE d.creator_id=? AND d.stage <> 'dropped' ORDER BY d.updated_at DESC").bind(c.id).all()).results ?? [];
   return (
     <PublicShell creatorName={c.name || c.handle} path="/creator/applications">
+      <div className="panel pad" style={{ marginBottom: 26, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap", background: "linear-gradient(135deg,#2E1B36,#1E1128)", color: "#F4EFE3", border: 0 }}>
+        <div><div className="lbl" style={{ color: "var(--gold-2)" }}>New · Idea board</div><div style={{ fontSize: 17, marginTop: 4 }}>Got a content idea a brand would love? Pitch it with your price and let brands book you.</div></div>
+        <a className="btn-foil" href="/creator/pitch">Pitch an idea</a>
+      </div>
       {deals.length > 0 && <div style={{ marginBottom: 30 }}><div className="lbl">My deals</div>
         <div className="stack" style={{ marginTop: 10 }}>{deals.map((d) => {
           const [st, cls] = dealState(d);

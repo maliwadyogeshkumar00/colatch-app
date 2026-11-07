@@ -33,13 +33,14 @@ async function handle(fd, forced) {
       if (blocked) return back(id, "err", "Not published: this brief promotes betting or real-money gaming, which Colatch does not run. Reject it, or remove that content first.");
       await env.DB.prepare(
         `UPDATE campaigns SET title=?, brand=?, brief=?, deliverables=?, talent_types=?, niche=?, city=?, languages=?, gender=?, min_followers=?, max_followers=?,
-         creators_needed=?, budget_note=?, budget_total=?, deadline=?, shoot_date=?, pay_type=?, revisions=?, usage_rights=?, payment_days=?, approve_hours=?, mandatories=?, exclusions=?, brand_url=?, promised_cpv=?, brand_category=?, reward_value=?, commission_pct=?, funded=? ${action === "approve" ? ", status='open', is_open=1" : ""} WHERE id=?`
+         creators_needed=?, budget_note=?, budget_total=?, deadline=?, shoot_date=?, pay_type=?, revisions=?, usage_rights=?, payment_days=?, approve_hours=?, mandatories=?, exclusions=?, brand_url=?, promised_cpv=?, brand_category=?, reward_value=?, commission_pct=?, funded=? ${action === "approve" ? ", status='open', is_open=CASE WHEN pitch_id IS NULL THEN 1 ELSE 0 END" : ""} WHERE id=?`
       ).bind(v.title, v.brand, v.brief, v.deliverables, v.talent_types, v.niche, v.city, v.languages, v.gender, v.min_followers, v.max_followers,
         v.creators_needed, v.budget_note, v.budget_total, v.deadline, v.shoot_date, v.pay_type, v.revisions, v.usage_rights, v.payment_days, v.approve_hours, v.mandatories, v.exclusions, v.brand_url, v.promised_cpv, v.brand_category, v.reward_value, v.commission_pct, v.funded, id).run();
       msg = (action === "approve" ? "Published. Matching creators can see it now." : "Saved.") + (sb.found ? ` ${sb.found} contact detail(s) were hidden from the creator brief.` : "");
     } else if (["close", "reject", "reopen"].includes(action)) {
       const st = action === "close" ? "closed" : action === "reject" ? "rejected" : "open";
-      await env.DB.prepare("UPDATE campaigns SET status=?, is_open=? WHERE id=?").bind(st, st === "open" ? 1 : 0, id).run();
+      // A booked creator idea (pitch_id set) is a private deal with that creator: never publish it to the open feed.
+      await env.DB.prepare("UPDATE campaigns SET status=?, is_open=CASE WHEN pitch_id IS NULL AND ?=1 THEN 1 ELSE 0 END WHERE id=?").bind(st, st === "open" ? 1 : 0, id).run();
       msg = `Marked ${CAMPAIGN_STATUS_LABEL[st].toLowerCase()}.`;
     } else if (action === "share") {
       await env.DB.prepare("UPDATE campaigns SET share_token=COALESCE(share_token, ?) WHERE id=?").bind(newToken() + newToken(), id).run();

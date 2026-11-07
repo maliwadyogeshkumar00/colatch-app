@@ -10,12 +10,14 @@ export default function PublicShell({ mode = "creator", creatorName = null, path
         </a>
         <nav className="tnav">
           {isClient ? (
-            <><a href="/join">I'm a creator</a><a className="cta" href="/brief">Post a brief</a></>
+            <><a href="/pitches">Creator ideas</a><a href="/join">I'm a creator</a><a className="cta" href="/brief">Post a brief</a></>
           ) : creatorName ? (
             <>
               <a className={path === "/creator" ? "on" : ""} href="/creator">Opportunities</a>
               <a className={path.startsWith("/creator/applications") ? "on" : ""} href="/creator/applications">My deals</a>
               <a className={path.startsWith("/creator/earnings") ? "on" : ""} href="/creator/earnings">Earnings</a>
+              <a className={path.startsWith("/creator/score") ? "on" : ""} href="/creator/score">Score</a>
+              <a className={path.startsWith("/creator/pitch") ? "on" : ""} href="/creator/pitch">Pitch</a>
               <a className={path.startsWith("/creator/profile") ? "on" : ""} href="/creator/profile">Profile</a>
               <a href="/creator/logout">Log out</a>
             </>
