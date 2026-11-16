@@ -1,3 +1,4 @@
+import { nextMove } from "@/lib/net/moves";
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import TeamShell from "../_ui/TeamShell";
@@ -58,12 +59,14 @@ export default async function Page({ searchParams }) {
 
   const newApps = await many(`SELECT k.id, k.title, COUNT(*) n FROM campaign_applications a JOIN campaigns k ON k.id=a.campaign_id
     WHERE a.status='new' GROUP BY k.id, k.title ORDER BY COUNT(*) DESC LIMIT 10`);
-  const drafts = await many(`SELECT d.id, d.brand, d.auto_approve_at, c.name, c.handle FROM creator_deals d JOIN creators c ON c.id=d.creator_id
-    WHERE d.draft_status='submitted' ORDER BY d.auto_approve_at ASC LIMIT 10`);
-  const toPay = await many(`SELECT d.id, d.brand, d.fee, d.pay_status, c.name, c.handle FROM creator_deals d JOIN creators c ON c.id=d.creator_id
-    WHERE ((d.live_at IS NOT NULL AND d.pay_status='funded') OR d.pay_status='released') AND d.stage <> 'cancelled' ORDER BY d.live_at ASC LIMIT 10`);
-  const unfunded = await many(`SELECT d.id, d.brand, d.fee, c.name, c.handle FROM creator_deals d JOIN creators c ON c.id=d.creator_id
-    WHERE d.sow_accepted_at IS NOT NULL AND d.pay_status='unfunded' AND d.stage NOT IN ('cancelled','dropped') ORDER BY d.updated_at DESC LIMIT 10`);
+  // Deal lists come from the deal state machine (lib/net/moves.ts): each open deal sits under its next step.
+  const openDeals = await many(`SELECT d.*, c.name, c.handle FROM creator_deals d JOIN creators c ON c.id=d.creator_id
+    WHERE d.stage NOT IN ('cancelled','dropped') AND d.pay_status NOT IN ('paid','refunded') ORDER BY d.updated_at ASC LIMIT 300`);
+  const byStep = (...steps) => openDeals.filter((d) => { const m = nextMove(d); return m && steps.includes(m.step); });
+  const toPay = byStep("approve_payout", "record_payout");
+  const toVerify = byStep("verify_live");
+  const drafts = byStep("approve_draft");
+  const unfunded = byStep("record_funding").filter((d) => d.sow_accepted_at);
   const team = await many("SELECT name, email, role FROM team_users ORDER BY created_at");
   const pitchReqs = await many(`SELECT k.id, k.title, k.client_company, k.budget_total, k.shortlist_due, p.requests FROM campaigns k
     LEFT JOIN creator_pitches p ON p.id=k.pitch_id WHERE k.source='pitch' AND k.status='pending' ORDER BY k.created_at DESC LIMIT 10`);
@@ -71,7 +74,7 @@ export default async function Page({ searchParams }) {
   const h = headers();
   const origin = `${h.get("x-forwarded-proto") || "https"}://${h.get("host")}`;
   const nameOf = (r) => r.name || "@" + r.handle;
-  const nothing = !pitchReqs.length && !owed.length && !newApps.length && !drafts.length && !toPay.length && !unfunded.length;
+  const nothing = !pitchReqs.length && !owed.length && !newApps.length && !drafts.length && !toPay.length && !unfunded.length && !toVerify.length;
 
   return (
     <TeamShell active="home" title="Your creator <b>network</b>, at a glance." email={me.email}
@@ -89,7 +92,9 @@ export default async function Page({ searchParams }) {
         {nothing && <div className="panel empty"><b>Nothing waiting.</b>Share the brief link with brands and the join link with creators to get things moving.</div>}
         <div className="grid2" style={{ alignItems: "start" }}>
           {toPay.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Ready to pay out</h2></div>
-            <table className="tbl"><tbody>{toPay.slice(0, 5).map((d) => <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{nameOf(d)} × {d.brand}</a><div className="hint">{d.pay_status === "released" ? "Payout approved: send it, then record the UTR" : "Live and funded: verify the post, approve the payout"}</div></td><td className="num">{inr(d.fee)}</td></tr>)}</tbody></table>{toPay.length > 5 && <div className="pad" style={{ padding: "10px 16px" }}><a className="link small" href="/team/crm">See all payouts</a></div>}</div>}
+            <table className="tbl"><tbody>{toPay.slice(0, 5).map((d) => <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{nameOf(d)} × {d.brand}</a><div className="hint">{d.pay_status === "released" ? "Payout approved: send it, then record the UTR" : "Post verified: approve the payout"}</div></td><td className="num">{inr(d.fee)}</td></tr>)}</tbody></table>{toPay.length > 5 && <div className="pad" style={{ padding: "10px 16px" }}><a className="link small" href="/team/crm">See all payouts</a></div>}</div>}
+          {toVerify.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Live posts to verify</h2></div>
+            <table className="tbl"><tbody>{toVerify.slice(0, 5).map((d) => <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{nameOf(d)} × {d.brand}</a><div className="hint">Check the post against the brief, then verify</div></td><td className="num">{inr(d.fee)}</td></tr>)}</tbody></table>{toVerify.length > 5 && <div className="pad" style={{ padding: "10px 16px" }}><a className="link small" href="/team/crm">See all live posts</a></div>}</div>}
           {unfunded.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Terms accepted, brand not paid yet</h2></div>
             <table className="tbl"><tbody>{unfunded.slice(0, 5).map((d) => <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{nameOf(d)} × {d.brand}</a><div className="hint">Collect the brand payment before the creator shoots</div></td><td className="num">{inr(d.fee)}</td></tr>)}</tbody></table>{unfunded.length > 5 && <div className="pad" style={{ padding: "10px 16px" }}><a className="link small" href="/team/crm">See all unpaid deals</a></div>}</div>}
           {drafts.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Drafts in review</h2></div>
