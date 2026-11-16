@@ -70,6 +70,7 @@ jobs:
       - name: Summary
         if: always()
         run: |
+          set +e +o pipefail
           for f in install unit integration build e2e; do
             [ -f ci-logs/$f.txt ] || continue
             { echo "### $f"; echo '```'; grep -vE '^\s*$' ci-logs/$f.txt | tail -n 60 | cut -c1-300; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
@@ -77,7 +78,7 @@ jobs:
           # Annotations are public on the run page; one per step with its last lines.
           for f in unit integration build e2e; do
             [ -f ci-logs/$f.txt ] || continue
-            body=$(grep -E 'pass |fail |passed|failed|skipped|flaky|Error|✘|✖|error' ci-logs/$f.txt | tail -n 25 | cut -c1-200 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')
+            body=$(grep -E 'pass |fail |passed|failed|skipped|flaky|Error|✘|✖|error|did not run' ci-logs/$f.txt | tail -n 40 | cut -c1-200 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}' || true)
             echo "::notice title=$f results::$body"
           done
           if [ -f server.log ]; then { echo "### server.log"; echo '```'; tail -n 40 server.log | cut -c1-300; echo '```'; } >> "$GITHUB_STEP_SUMMARY"; fi
