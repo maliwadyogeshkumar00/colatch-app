@@ -1,5 +1,5 @@
 import Shared from "./Shared";
-import { loadRoster } from "../../lib/roster";
+import { loadRoster } from "../../../lib/roster";
 
 export const revalidate = 3600;
 export const metadata = { title: "Shortlist from Colatch", robots: { index: false, follow: false } };

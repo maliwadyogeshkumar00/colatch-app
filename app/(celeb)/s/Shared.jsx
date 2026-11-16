@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
-import { TIER_PRICE, IMG, initials } from "../../lib/engine";
+import { TIER_PRICE, IMG, initials } from "../../../lib/engine";
 
 const WA = "919764140627";
 
