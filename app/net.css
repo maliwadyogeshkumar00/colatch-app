@@ -375,3 +375,9 @@ html:has(.net){scroll-padding-top:80px}
 }
 .net .flexcard{grid-template-columns:minmax(0,1fr) 260px}
 @media(max-width:640px){.net .flexcard{grid-template-columns:1fr}.net .flexcard>:last-child{order:-1;max-width:220px;margin:0 auto}}
+/* phones: wide tables scroll inside their panel with the first column pinned, so the row's name stays in view */
+@media(max-width:640px){
+  .net .tbl th:first-child,.net .tbl td:first-child{position:sticky;left:0;z-index:1;background:var(--surface);box-shadow:1px 0 0 var(--line)}
+  .net .tbl th:first-child{background:var(--ivory-2)}
+  .net .tbl td,.net .tbl th{padding:10px 12px}
+}
