@@ -40,7 +40,7 @@ export default function Calc() {
           </div>
         ))}
       </div>
-      {res.length > 1 && <div className="note info sec"><b>{res[0].n}</b> gives the cheapest view at {rs(res[0].cpv, 2)}, {Math.round((res[res.length - 1].cpv / res[0].cpv - 1) * 100)}% cheaper than {res[res.length - 1].n}.</div>}
+      {res.length > 1 && <div className="note info sec"><b>{res[0].n}</b> gives the cheapest view at {rs(res[0].cpv, 2)}, {Math.round((1 - res[0].cpv / res[res.length - 1].cpv) * 100)}% cheaper per view than {res[res.length - 1].n}. CPV here is the creator fee divided by views.</div>}
     </>
   );
 }

@@ -108,7 +108,7 @@ export default async function Page({ params, searchParams }) {
   const views = d.actual_views || d.expected_views;
   // CPV = creator fee / views (what the content cost per view). Planned when there are no actual views yet.
   const cpv = d.fee && views ? d.fee / views : null;
-  const cpvLine = (cpv ? "₹" + cpv.toFixed(2) + " per view" + (d.actual_views ? "" : " (planned)") : "—") + (k?.promised_cpv && cpv ? (cpv > k.promised_cpv ? " · over ₹" + k.promised_cpv + " promise" : " · beats promise ✓") : "");
+  const cpvLine = (cpv ? "₹" + cpv.toFixed(2) + " per view" + (d.actual_views ? "" : " (planned)") : "—") + (k?.promised_cpv && cpv && d.actual_views ? (cpv > k.promised_cpv ? " · over the ₹" + k.promised_cpv + " promise" : " · beats the promise ✓") : "");
   const h = headers();
   const origin = `${h.get("x-forwarded-proto") || "https"}://${h.get("host")}`;
   const name = c?.name || c?.handle || "Creator";

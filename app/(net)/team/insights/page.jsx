@@ -90,7 +90,7 @@ export default async function Page() {
         <div className="stack">
           <div className="panel">
             <div className="pad" style={{ padding: "18px 20px 6px" }}><h2>CPV delivered vs promised</h2></div>
-            {cpvRows.length ? <table className="tbl"><tbody>{cpvRows.map((r, i) => <tr key={i}><td>{r.title}</td><td className="num">₹{r.actual.toFixed(2)} vs ₹{r.promised.toFixed(2)}</td><td><span className={`pill ${r.actual > r.promised ? "low" : "good"}`}>{r.actual > r.promised ? "Make good" : "Hit"}</span></td></tr>)}</tbody></table>
+            {cpvRows.length ? <table className="tbl"><tbody>{cpvRows.map((r, i) => <tr key={i}><td>{r.title}</td><td className="num">₹{r.actual.toFixed(2)} vs ₹{r.promised.toFixed(2)}</td><td><span className={`pill ${r.actual > r.promised ? "low" : "good"}`}>{r.actual > r.promised ? "Missed promise" : "Hit"}</span></td></tr>)}</tbody></table>
               : <p className="hint" style={{ padding: "0 20px 18px" }}>Set a promised CPV on a campaign and add real views to its deals.</p>}
           </div>
           <div className="panel">
