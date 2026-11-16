@@ -39,3 +39,13 @@ export function blindBrand(k: { brand_category?: string | null; niche?: string |
   const n = String(k.niche || '').split(',')[0].trim();
   return n ? `A ${n.toLowerCase()} brand` : 'A verified brand';
 }
+
+/**
+ * A link that is safe to put in an href: only http(s) URLs. Anything else (javascript:, data:, vbscript:,
+ * relative tricks) returns null so the caller renders plain text instead of a link.
+ */
+export function safeUrl(u: unknown): string | null {
+  const s = String(u ?? '').trim();
+  if (!/^https?:\/\/[^\s<>"']+$/i.test(s)) return null;
+  try { const x = new URL(s); return x.protocol === 'https:' || x.protocol === 'http:' ? x.toString() : null; } catch { return null; }
+}

@@ -16,6 +16,10 @@ let esbuild;
 try { esbuild = createRequire(import.meta.url)("esbuild"); }
 catch { esbuild = createRequire("/opt/npm-tools/node_modules/")("esbuild"); }
 
+// Integration tests use the real `pg` when it is installed (CI); otherwise a tiny local stand-in.
+let hasPg = true;
+try { createRequire(join(root, "package.json")).resolve("pg"); } catch { hasPg = false; }
+
 const files = readdirSync(dir).filter((f) => /\.test\.(m?js|ts)$/.test(f));
 for (const f of files) {
   esbuild.buildSync({
@@ -23,8 +27,8 @@ for (const f of files) {
     outfile: join(out, f.replace(/\.ts$/, ".mjs").replace(/\.js$/, ".mjs")),
     alias: kind === "unit"
       ? { "@": root, pg: join(root, "tests/stubs/pg.js"), "next/headers": join(root, "tests/stubs/next-headers.js") }
-      : { "@": root },
-    external: kind === "unit" ? ["next", "react", "react-dom"] : ["pg", "next", "next/*", "react", "react-dom"],
+      : { "@": root, "next/headers": join(root, "tests/stubs/next-headers.js"), ...(hasPg ? {} : { pg: join(root, "tests/stubs/pg-wire.js") }) },
+    external: kind === "unit" ? ["next", "react", "react-dom"] : [...(hasPg ? ["pg"] : []), "next", "react", "react-dom"],
     logLevel: "error",
     banner: { js: "import { createRequire as __cr } from 'module'; const require = __cr(import.meta.url);" },
   });

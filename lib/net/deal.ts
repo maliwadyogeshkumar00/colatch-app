@@ -95,10 +95,16 @@ export function quote(env: Env, creatorFee: number, creatorGst: boolean, pctOver
   return { creatorFee, pct, basePct, rushFee, colatch, gstOnColatch, gstOnCreator, total: creatorFee + colatch + gstOnColatch + gstOnCreator };
 }
 
-/** What the creator takes home. TDS is 10% once fees from one payer cross ₹50,000 in a financial year. */
+/**
+ * ESTIMATE of what the creator takes home. The TDS rate and threshold are settings
+ * (TDS_PCT, TDS_THRESHOLD) because the right section and rate are for Colatch's CA to confirm.
+ * Pages must label this "estimate"; the actual TDS is whatever finance records with the payout.
+ */
 export function takeHome(fee: number, fyPaidSoFar: number) {
-  const crosses = fyPaidSoFar + fee > 50_000;
-  const tds = crosses ? Math.round(fee * 0.1) : 0;
+  const rate = Number(process.env.TDS_PCT ?? 10);
+  const threshold = Number(process.env.TDS_THRESHOLD ?? 50_000);
+  const crosses = fyPaidSoFar + fee > (isFinite(threshold) ? threshold : 50_000);
+  const tds = crosses ? Math.round((fee * (isFinite(rate) ? rate : 10)) / 100) : 0;
   return { fee, tds, net: fee - tds, crosses };
 }
 
@@ -120,7 +126,9 @@ export async function logEvent(env: Env, dealId: string, actor: string, kind: st
 /** Drafts the brand hasn't reviewed in time are approved automatically. Runs whenever a deal is opened. */
 export async function applyAutoApprove(env: Env, d: DealRow): Promise<boolean> {
   if (d.draft_status === 'submitted' && d.auto_approve_at && Date.parse(d.auto_approve_at) < Date.now()) {
-    await env.DB.prepare("UPDATE creator_deals SET draft_status='approved', updated_at=datetime('now') WHERE id=?").bind(d.id).run();
+    // Only flips a draft that is still waiting, so two page loads can't both log it.
+    const r = await env.DB.prepare("UPDATE creator_deals SET draft_status='approved', updated_at=datetime('now') WHERE id=? AND draft_status='submitted'").bind(d.id).run();
+    if (!r.meta?.changes) { d.draft_status = 'approved'; return false; }
     await logEvent(env, d.id, 'system', 'approved', 'Auto-approved: the review window passed without feedback');
     d.draft_status = 'approved';
     return true;

@@ -47,33 +47,54 @@ export function readRefCookie(param?: string | null): string | null {
   return c || null;
 }
 
-/** Record who referred this new creator/brand. First referral wins; self-referral is ignored. */
+/**
+ * Record who referred this new creator/brand. First referral wins; self-referral is ignored.
+ * A brand only counts as referred if this is the first campaign ever posted from that email, so
+ * nobody can claim an existing Colatch client by submitting a brief with their code attached.
+ */
 export async function recordReferral(env: Env, code: string | null, referredType: 'creator' | 'brand', referredId: string): Promise<boolean> {
   if (!code) return false;
   const owner = await env.DB.prepare('SELECT owner_type, owner_id FROM referral_codes WHERE code=?').bind(code).first<{ owner_type: string; owner_id: string }>();
-  if (!owner || (owner.owner_type === referredType && owner.owner_id === referredId)) return false;
-  const r = await env.DB.prepare('INSERT OR IGNORE INTO referrals (id, code, referred_type, referred_id) VALUES (?,?,?,?)').bind(crypto.randomUUID(), code, referredType, referredId.toLowerCase()).run();
+  const id = String(referredId || '').toLowerCase();
+  if (!owner || !id || (owner.owner_type === referredType && String(owner.owner_id).toLowerCase() === id)) return false;
+  if (referredType === 'brand') {
+    const prior = await env.DB.prepare('SELECT COUNT(*) AS n FROM campaigns WHERE LOWER(client_email)=?').bind(id).first<{ n: number }>();
+    if (Number(prior?.n || 0) > 1) return false;
+    // Someone referring their own company address (same email domain) earns nothing.
+    const ownerEmail = owner.owner_type === 'brand' ? String(owner.owner_id).toLowerCase() : '';
+    if (ownerEmail && ownerEmail.split('@')[1] && ownerEmail.split('@')[1] === id.split('@')[1]) return false;
+  }
+  const r = await env.DB.prepare('INSERT OR IGNORE INTO referrals (id, code, referred_type, referred_id) VALUES (?,?,?,?)').bind(crypto.randomUUID(), code, referredType, id).run();
   return Boolean(r.meta?.changes);
 }
 
-/** Called when a deal is marked paid: books any referral earnings it unlocks. */
-export async function accrueOnPaid(env: Env, dealId: string, feePct: number) {
-  const d = await env.DB.prepare('SELECT d.id, d.fee, d.creator_id, k.client_email FROM creator_deals d LEFT JOIN campaigns k ON k.id=d.campaign_id WHERE d.id=?').bind(dealId).first<any>();
+/**
+ * Books the referral earnings a paid deal unlocks. Runs inside the payout transaction (t), so the
+ * earnings exist if and only if the payout does. Unique indexes make it safe to call twice.
+ * The brand share is a % of the fee Colatch actually charged on this deal (frozen at funding).
+ */
+export async function accrueOnPaidTx(t: any, dealId: string) {
+  const d = await t.prepare('SELECT d.id, d.fee, d.fee_pct, d.creator_id, k.client_email FROM creator_deals d LEFT JOIN campaigns k ON k.id=d.campaign_id WHERE d.id=?').bind(dealId).first();
   if (!d) return;
-  const out = [];
   // creator → creator: one-off bonus on the referred creator's first paid deal
-  const rc = await env.DB.prepare("SELECT r.id, c.owner_type, c.owner_id FROM referrals r JOIN referral_codes c ON c.code=r.code WHERE r.referred_type='creator' AND r.referred_id=?").bind(String(d.creator_id).toLowerCase()).first<any>();
-  if (rc) out.push(env.DB.prepare("INSERT OR IGNORE INTO referral_earnings (id, referral_id, deal_id, owner_type, owner_id, amount, kind, reason) VALUES (?,?,?,?,?,?,?,'creator_first_deal')")
-    .bind(crypto.randomUUID(), rc.id, 'first', rc.owner_type, rc.owner_id, REF.creatorBonus, rc.owner_type === 'brand' ? 'credit' : 'cash'));
+  const rc = await t.prepare("SELECT r.id, c.owner_type, c.owner_id FROM referrals r JOIN referral_codes c ON c.code=r.code WHERE r.referred_type='creator' AND r.referred_id=?").bind(String(d.creator_id).toLowerCase()).first();
+  if (rc) await t.prepare("INSERT INTO referral_earnings (id, referral_id, deal_id, owner_type, owner_id, amount, kind, reason) VALUES (?,?,?,?,?,?,?,'creator_first_deal') ON CONFLICT DO NOTHING")
+    .bind(crypto.randomUUID(), rc.id, 'first', rc.owner_type, rc.owner_id, REF.creatorBonus, rc.owner_type === 'brand' ? 'credit' : 'cash').run();
   // anyone → brand: share of Colatch's fee for REF.months
-  if (d.client_email && d.fee) {
-    const rb = await env.DB.prepare("SELECT r.id, r.code, r.created_at, c.owner_type, c.owner_id FROM referrals r JOIN referral_codes c ON c.code=r.code WHERE r.referred_type='brand' AND r.referred_id=?").bind(String(d.client_email).toLowerCase()).first<any>();
-    if (rb && Date.now() - Date.parse(rb.created_at.replace(' ', 'T') + 'Z') < REF.months * 30.5 * 864e5) {
-      const share = await brandShareFor(env, rb.code);
-      const amount = Math.round((d.fee * feePct / 100) * share / 100);
-      if (amount > 0) out.push(env.DB.prepare("INSERT OR IGNORE INTO referral_earnings (id, referral_id, deal_id, owner_type, owner_id, amount, kind, reason) VALUES (?,?,?,?,?,?,?,'brand_fee_share')")
-        .bind(crypto.randomUUID(), rb.id, d.id, rb.owner_type, rb.owner_id, amount, rb.owner_type === 'brand' ? 'credit' : 'cash'));
+  const pct = d.fee_pct != null ? Number(d.fee_pct) : null;
+  if (d.client_email && d.fee && pct != null) {
+    const rb = await t.prepare("SELECT r.id, r.code, r.created_at, c.owner_type, c.owner_id FROM referrals r JOIN referral_codes c ON c.code=r.code WHERE r.referred_type='brand' AND r.referred_id=?").bind(String(d.client_email).toLowerCase()).first();
+    if (rb && Date.now() - Date.parse(String(rb.created_at).replace(' ', 'T') + 'Z') < REF.months * 30.5 * 864e5) {
+      const n = await t.prepare("SELECT COUNT(*) AS n FROM referrals WHERE code=? AND referred_type='brand'").bind(rb.code).first();
+      const share = brandTierFor(Number(n?.n || 0)).pct;
+      const amount = Math.round(((Number(d.fee) * pct) / 100) * share / 100);
+      if (amount > 0) await t.prepare("INSERT INTO referral_earnings (id, referral_id, deal_id, owner_type, owner_id, amount, kind, reason) VALUES (?,?,?,?,?,?,?,'brand_fee_share') ON CONFLICT DO NOTHING")
+        .bind(crypto.randomUUID(), rb.id, d.id, rb.owner_type, rb.owner_id, amount, rb.owner_type === 'brand' ? 'credit' : 'cash').run();
     }
   }
-  if (out.length) await env.DB.batch(out);
+}
+
+/** @deprecated Use accrueOnPaidTx inside the payout transaction (lib/net/dealflow.ts). */
+export async function accrueOnPaid(env: Env, dealId: string, _feePct?: number) {
+  await env.DB.tx((t: any) => accrueOnPaidTx(t, dealId));
 }
