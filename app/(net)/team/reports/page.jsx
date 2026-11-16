@@ -4,6 +4,7 @@ import Flash, { flashUrl } from "../../_ui/flash";
 import { requireTeam } from "../_guard";
 import { env } from "@/lib/net/env";
 import { logEvent } from "@/lib/net/deal";
+import { audit } from "@/lib/net/security";
 
 export const metadata = { title: "Off-platform reports · Colatch Connect", robots: { index: false, follow: false } };
 
@@ -11,24 +12,35 @@ const BOUNTY = 500;
 
 async function confirm(fd) {
   "use server";
-  await requireTeam();
+  // Confirming creates money owed, so it needs the finance permission.
+  const me = await requireTeam("finance", "/team/reports");
   const id = String(fd.get("id") ?? "");
-  const r = await env.DB.prepare("SELECT * FROM bypass_reports WHERE id=? AND status='open'").bind(id).first();
-  if (!r) redirect("/team/reports");
-  await env.DB.prepare("UPDATE bypass_reports SET status='confirmed' WHERE id=?").bind(id).run();
-  // The thank-you credit rides the referral earnings ledger so it shows on the creator's Earnings page and pays out the same way.
-  if (r.reporter_side === "creator" && r.reporter_id) {
-    await env.DB.prepare("INSERT OR IGNORE INTO referral_earnings (id, referral_id, deal_id, owner_type, owner_id, amount, kind, reason, status) VALUES (?,?,?,?,?,?,?,?,?)")
-      .bind(crypto.randomUUID(), "bypass:" + id, r.deal_id || "none", "creator", r.reporter_id, BOUNTY, "cash", "bypass_report", "approved").run();
-  }
+  let bounty = false;
+  // Atomic and idempotent: the report flips from open once, and the credit has a unique key, so a refresh or double click adds nothing.
+  const r = await env.DB.tx(async (t) => {
+    const r = await t.prepare("UPDATE bypass_reports SET status='confirmed' WHERE id=? AND status='open' RETURNING *").bind(id).first();
+    if (!r) return null;
+    // The thank-you credit rides the referral earnings ledger so it shows on the creator's Earnings page and pays out the same way.
+    if (r.reporter_side === "creator" && r.reporter_id) {
+      const e = await t.prepare("INSERT INTO referral_earnings (id, referral_id, deal_id, owner_type, owner_id, amount, kind, reason, status) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING")
+        .bind(crypto.randomUUID(), "bypass:" + id, r.deal_id || "none", "creator", r.reporter_id, BOUNTY, "cash", "bypass_report", "approved").run();
+      bounty = Boolean(e.meta?.changes);
+    }
+    await audit({ kind: "team", id: me.email }, "bypass.confirm", "bypass_report", id, { bounty }, t);
+    return r;
+  });
+  if (!r) redirect(flashUrl("/team/reports", "err", "This report was already handled."));
   if (r.deal_id) await logEvent(env, r.deal_id, "team", "note", "Off-platform report confirmed by the Colatch team");
-  redirect(flashUrl("/team/reports", "ok", `Confirmed. ₹${BOUNTY} added to the reporter's earnings.`));
+  redirect(flashUrl("/team/reports", "ok", bounty ? `Confirmed. ₹${BOUNTY} added to the reporter's earnings (approved, waiting for payout).` : "Confirmed."));
 }
 
 async function dismiss(fd) {
   "use server";
-  await requireTeam();
-  await env.DB.prepare("UPDATE bypass_reports SET status='dismissed' WHERE id=? AND status='open'").bind(String(fd.get("id") ?? "")).run();
+  const me = await requireTeam("shortlist", "/team/reports");
+  const id = String(fd.get("id") ?? "");
+  const r = await env.DB.prepare("UPDATE bypass_reports SET status='dismissed' WHERE id=? AND status='open'").bind(id).run();
+  if (!r.meta?.changes) redirect(flashUrl("/team/reports", "err", "This report was already handled."));
+  await audit({ kind: "team", id: me.email }, "bypass.dismiss", "bypass_report", id, null);
   redirect(flashUrl("/team/reports", "ok", "Dismissed."));
 }
 

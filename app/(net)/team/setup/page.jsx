@@ -6,7 +6,7 @@ import { currentTeam, startTeamSession } from "@/lib/net/creatorAuth";
 import { audit, isEmail } from "@/lib/net/security";
 import { clientIp, overLimit, sameSecret, TOO_MANY } from "../../reset/_lib";
 
-export const metadata = { title: "Set up the team login · Colatch Connect", robots: { index: false, follow: false } };
+export const metadata = { title: "Set up the team login", robots: { index: false, follow: false } };
 
 const setupCode = () => String(process.env.TEAM_SETUP_CODE || "").trim();
 

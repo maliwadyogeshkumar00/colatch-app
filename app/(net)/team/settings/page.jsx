@@ -8,7 +8,7 @@ import { audit, ROLE_LABEL } from "@/lib/net/security";
 import { requireTeam } from "../_guard";
 import { checkLogin, setPassword, TOO_MANY } from "../../reset/_lib";
 
-export const metadata = { title: "My settings · Colatch Connect", robots: { index: false, follow: false } };
+export const metadata = { title: "My settings", robots: { index: false, follow: false } };
 const BACK = "/team/settings";
 
 async function changePassword(fd) {

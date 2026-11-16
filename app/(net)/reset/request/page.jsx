@@ -6,7 +6,7 @@ import { createResetToken, isEmail, RESET_HOURS, audit } from "@/lib/net/securit
 import { notify } from "@/lib/net/notify";
 import { clientIp, overLimit, mailBase, TOO_MANY } from "../_lib";
 
-export const metadata = { title: "Reset your password · Colatch", robots: { index: false } };
+export const metadata = { title: "Reset your password", robots: { index: false } };
 
 // Shown whether or not the email has an account, so this page can't be used to find out who has one.
 const SENT = `If that email has a Colatch creator account, we have sent it a reset link. It works once and expires in ${RESET_HOURS} hours. Nothing after 10 minutes? Check spam, or write to marketing@colatch.com from that email.`;

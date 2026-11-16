@@ -8,7 +8,7 @@ import { audit } from "@/lib/net/security";
 import { checkLogin, setPassword, TOO_MANY } from "../../reset/_lib";
 import { claimStatus, ClaimNote } from "../../join/_claim";
 
-export const metadata = { title: "Account settings · Colatch", robots: { index: false } };
+export const metadata = { title: "Account settings", robots: { index: false } };
 const BACK = "/creator/settings";
 
 async function changePassword(fd) {

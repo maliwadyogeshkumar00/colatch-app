@@ -4,40 +4,31 @@ import TeamShell from "../_ui/TeamShell";
 import Flash, { flashUrl } from "../_ui/flash";
 import { requireTeam } from "./_guard";
 import { env } from "@/lib/net/env";
-import { hashPassword } from "@/lib/net/auth";
+import { newToken } from "@/lib/net/tokens";
+import { audit } from "@/lib/net/security";
 import { inr } from "@/lib/net/creators";
 import { formatIST } from "@/lib/net/brief";
 import { DEMO_INSERTS, DEMO_DELETES } from "./demo";
 
 export const metadata = { title: "Network overview · Colatch Connect", robots: { index: false, follow: false } };
 
-async function addMember(fd) {
-  "use server";
-  await requireTeam();
-  const name = String(fd.get("name") ?? "").trim();
-  const email = String(fd.get("email") ?? "").trim().toLowerCase();
-  const pw = String(fd.get("password") ?? "");
-  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) redirect(flashUrl("/team", "err", "Add a valid email."));
-  if (pw.length < 10) redirect(flashUrl("/team", "err", "Use a temporary password of at least 10 characters."));
-  const exists = await env.DB.prepare("SELECT id FROM team_users WHERE email=?").bind(email).first();
-  if (exists) redirect(flashUrl("/team", "err", "That email already has a team login."));
-  const { hash, salt } = await hashPassword(pw);
-  await env.DB.prepare("INSERT INTO team_users (id, email, name, password_hash, salt, role) VALUES (?,?,?,?,?,'admin')").bind(crypto.randomUUID(), email, name || null, hash, salt).run();
-  redirect(flashUrl("/team", "ok", `${email} can now log in at /team/login. Send them the temporary password privately.`));
-}
-
 async function loadDemo() {
   "use server";
-  await requireTeam();
+  // Demo rows live in the same database as real data, so only an owner can load or remove them.
+  const me = await requireTeam("owner");
+  // A fresh shortlist token each time, so no demo link is guessable from the source code.
+  const token = newToken() + newToken();
   for (const s of DEMO_DELETES) await env.DB.prepare(s).run();
-  for (const s of DEMO_INSERTS) await env.DB.prepare(s).run();
+  for (const s of DEMO_INSERTS) await env.DB.prepare(s.replaceAll("__DEMO_TOKEN__", token)).run();
+  await audit({ kind: "team", id: me.email }, "demo.load", null, null, null);
   redirect(flashUrl("/team", "ok", "Demo data loaded: one campaign, four creators, three deals. Everything is named DEMO."));
 }
 
 async function removeDemo() {
   "use server";
-  await requireTeam();
+  const me = await requireTeam("owner");
   for (const s of DEMO_DELETES) await env.DB.prepare(s).run();
+  await audit({ kind: "team", id: me.email }, "demo.remove", null, null, null);
   redirect(flashUrl("/team", "ok", "Demo data removed."));
 }
 
@@ -70,9 +61,9 @@ export default async function Page({ searchParams }) {
   const drafts = await many(`SELECT d.id, d.brand, d.auto_approve_at, c.name, c.handle FROM creator_deals d JOIN creators c ON c.id=d.creator_id
     WHERE d.draft_status='submitted' ORDER BY d.auto_approve_at ASC LIMIT 10`);
   const toPay = await many(`SELECT d.id, d.brand, d.fee, d.pay_status, c.name, c.handle FROM creator_deals d JOIN creators c ON c.id=d.creator_id
-    WHERE (d.live_at IS NOT NULL AND d.pay_status='funded') OR d.pay_status='released' ORDER BY d.live_at ASC LIMIT 10`);
+    WHERE ((d.live_at IS NOT NULL AND d.pay_status='funded') OR d.pay_status='released') AND d.stage <> 'cancelled' ORDER BY d.live_at ASC LIMIT 10`);
   const unfunded = await many(`SELECT d.id, d.brand, d.fee, c.name, c.handle FROM creator_deals d JOIN creators c ON c.id=d.creator_id
-    WHERE d.stage IN ('confirmed','live') AND d.pay_status='unfunded' ORDER BY d.updated_at DESC LIMIT 10`);
+    WHERE d.sow_accepted_at IS NOT NULL AND d.pay_status='unfunded' AND d.stage NOT IN ('cancelled','dropped') ORDER BY d.updated_at DESC LIMIT 10`);
   const team = await many("SELECT name, email, role FROM team_users ORDER BY created_at");
   const pitchReqs = await many(`SELECT k.id, k.title, k.client_company, k.budget_total, k.shortlist_due, p.requests FROM campaigns k
     LEFT JOIN creator_pitches p ON p.id=k.pitch_id WHERE k.source='pitch' AND k.status='pending' ORDER BY k.created_at DESC LIMIT 10`);
@@ -120,8 +111,8 @@ export default async function Page({ searchParams }) {
           {drafts.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Drafts in review</h2></div>
             <table className="tbl"><tbody>{drafts.map((d) => <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{nameOf(d)} × {d.brand}</a></td><td className="num hint">{d.auto_approve_at ? `auto-approves ${formatIST(d.auto_approve_at)}` : ""}</td></tr>)}</tbody></table></div>}
           {toPay.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Ready to pay out</h2></div>
-            <table className="tbl"><tbody>{toPay.map((d) => <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{nameOf(d)} × {d.brand}</a><div className="hint">{d.pay_status === "released" ? "Released, add the UTR" : "Live and funded, check and release"}</div></td><td className="num">{inr(d.fee)}</td></tr>)}</tbody></table></div>}
-          {unfunded.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Confirmed but not funded</h2></div>
+            <table className="tbl"><tbody>{toPay.map((d) => <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{nameOf(d)} × {d.brand}</a><div className="hint">{d.pay_status === "released" ? "Payout approved: send it, then record the UTR" : "Live and funded: verify the post, approve the payout"}</div></td><td className="num">{inr(d.fee)}</td></tr>)}</tbody></table></div>}
+          {unfunded.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Terms accepted, brand not paid yet</h2></div>
             <table className="tbl"><tbody>{unfunded.map((d) => <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{nameOf(d)} × {d.brand}</a><div className="hint">Collect the brand payment before the creator shoots</div></td><td className="num">{inr(d.fee)}</td></tr>)}</tbody></table></div>}
         </div>
       </div>
@@ -131,24 +122,19 @@ export default async function Page({ searchParams }) {
           <h2>Share links</h2>
           <p className="small" style={{ margin: "0 0 8px" }}>Brands post a brief: <code className="k">{origin}/brief</code></p>
           <p className="small" style={{ margin: 0 }}>Creators join free: <code className="k">{origin}/join</code></p>
-          <div className="lbl" style={{ marginTop: 18 }}>Demo data</div>
+          {me.role === "owner" && <><div className="lbl" style={{ marginTop: 18 }}>Demo data</div>
           <p className="hint" style={{ margin: "6px 0 10px" }}>One festive Bhangra campaign with four creators and three deals (paid, live, draft in review), so you can click through every screen. All rows are named DEMO and ids start with demo-.</p>
           <div className="row">
             <form action={loadDemo}><button className="btn sm">{k.demo_n ? "Reload demo data" : "Load demo data"}</button></form>
             {k.demo_n > 0 && <form action={removeDemo}><button className="btn sm danger">Remove demo data</button></form>}
             {k.demo_n > 0 && <a className="btn sm" href="/team/campaigns/demo-camp-1">Open demo campaign</a>}
-          </div>
+          </div></>}
         </div>
-        <form className="panel pad" action={addMember}>
-          <h2>Add a team member</h2>
-          <div className="form-grid">
-            <div className="fld"><label>Name</label><input name="name" /></div>
-            <div className="fld"><label>Email</label><input name="email" type="email" required /></div>
-            <div className="fld full"><label>Temporary password <span className="opt">— at least 10 characters, send it privately</span></label><input name="password" type="text" minLength={10} required autoComplete="off" /></div>
-          </div>
-          <button className="btn plum" style={{ marginTop: 14 }}>Add member</button>
-          <p className="hint" style={{ margin: "14px 0 0" }}>Team: {team.map((t) => t.name || t.email).join(", ")}</p>
-        </form>
+        <div className="panel pad">
+          <h2>Team</h2>
+          <p className="small" style={{ margin: "0 0 10px" }}>{team.map((t) => t.name || t.email).join(", ")}</p>
+          <a className="btn sm" href="/team/members">Manage members and roles</a>
+        </div>
       </div>
     </TeamShell>
   );

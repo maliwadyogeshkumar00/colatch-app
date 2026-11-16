@@ -13,7 +13,7 @@ import { profileFromForm, saveProfile, upsertFromInstagram, str } from "@/lib/ne
 import { currentCreator, startCreatorSession } from "@/lib/net/creatorAuth";
 import { readRefCookie, recordReferral } from "@/lib/net/referral";
 
-export const metadata = { title: "Join Colatch as a creator · Colatch", description: "Join Colatch's creator network and get paid brand deals that fit what you do." };
+export const metadata = { title: "Join Colatch as a creator", description: "Join Colatch's creator network and get paid brand deals that fit what you do." };
 
 async function join(fd) {
   "use server";

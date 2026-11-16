@@ -13,6 +13,9 @@ import { checkBrief } from "@/lib/net/compliance";
 import { newToken } from "@/lib/net/tokens";
 import { scrubContacts } from "@/lib/net/guard";
 import { marketRate } from "@/lib/net/value";
+import { colatchScore } from "@/lib/net/score";
+import { notify } from "@/lib/net/notify";
+import { audit } from "@/lib/net/security";
 
 export const metadata = { title: "Campaign · Colatch Connect", robots: { index: false, follow: false } };
 
@@ -20,9 +23,11 @@ const back = (id, key, msg) => flashUrl(`/team/campaigns/${id}`, key, msg);
 
 /** Every form on this page posts here; `action` says what to do. Mirrors the POST handler of the Astro page. */
 async function handle(fd, forced) {
-  await requireTeam();
   const id = String(fd.get("id") ?? "");
   const action = forced || String(fd.get("action") ?? "");
+  // Checked inside the action: Server Actions can be called without loading the page.
+  const me = await requireTeam("shortlist", `/team/campaigns/${encodeURIComponent(id)}`);
+  const actor = { kind: "team", id: me.email };
   let msg = "";
   try {
     if (action === "save" || action === "approve") {
@@ -39,16 +44,26 @@ async function handle(fd, forced) {
       msg = (action === "approve" ? "Published. Matching creators can see it now." : "Saved.") + (sb.found ? ` ${sb.found} contact detail(s) were hidden from the creator brief.` : "");
     } else if (["close", "reject", "reopen"].includes(action)) {
       const st = action === "close" ? "closed" : action === "reject" ? "rejected" : "open";
+      if (st === "open") {
+        // Reopening publishes again, so the same compliance check as approving applies.
+        const cur = await env.DB.prepare("SELECT raw_brief, brief, title, brand FROM campaigns WHERE id=?").bind(id).first();
+        if (!cur) return back(id, "err", "That campaign does not exist.");
+        if (checkBrief([cur.raw_brief, cur.brief, cur.title, cur.brand].join(" ")).some((x) => x.level === "block"))
+          return back(id, "err", "Not reopened: this brief promotes betting or real-money gaming, which Colatch does not run.");
+      }
       // A booked creator idea (pitch_id set) is a private deal with that creator: never publish it to the open feed.
       await env.DB.prepare("UPDATE campaigns SET status=?, is_open=CASE WHEN pitch_id IS NULL AND ?=1 THEN 1 ELSE 0 END WHERE id=?").bind(st, st === "open" ? 1 : 0, id).run();
+      await audit(actor, `campaign.${action}`, "campaign", id, null);
       msg = `Marked ${CAMPAIGN_STATUS_LABEL[st].toLowerCase()}.`;
     } else if (action === "verify") {
       // #69 Verified brand: clears the scam-shield hold.
       await env.DB.prepare("UPDATE campaigns SET brand_verified=1, held_reason=NULL WHERE id=?").bind(id).run();
+      await audit(actor, "campaign.verify_brand", "campaign", id, null);
       msg = "Brand marked verified. The hold is cleared; creators will see a Verified brand badge.";
     } else if (action === "feature") {
       // #94 Featured brief: pinned for 7 days.
       await env.DB.prepare("UPDATE campaigns SET featured_until=datetime('now','+7 days') WHERE id=?").bind(id).run();
+      await audit(actor, "campaign.feature", "campaign", id, null);
       msg = "Featured for 7 days. Remember to invoice ₹1,999.";
     } else if (action === "unfeature") {
       await env.DB.prepare("UPDATE campaigns SET featured_until=NULL WHERE id=?").bind(id).run();
@@ -62,25 +77,41 @@ async function handle(fd, forced) {
     } else if (action === "app") {
       const appId = String(fd.get("app") ?? "");
       const st = String(fd.get("status") ?? "");
-      if (["shortlisted", "rejected", "accepted", "new"].includes(st)) {
-        const reason = String(fd.get("reason") ?? "");
-        if (st === "rejected" && !REJECT_REASONS[reason]) return back(id, "err", "Pick a reason before rejecting. The creator sees it with a tip.");
-        await env.DB.prepare("UPDATE campaign_applications SET status=?, reject_reason=? WHERE id=? AND campaign_id=?").bind(st, st === "rejected" ? reason : null, appId, id).run();
-        if (st === "shortlisted" || st === "accepted") {
-          const a = await env.DB.prepare("SELECT a.creator_id, a.rate_quote, k.brand, k.client_company, k.deliverables, k.revisions, k.shoot_date, k.reward_value, c.rate_reel, c.followers FROM campaign_applications a JOIN campaigns k ON k.id=a.campaign_id LEFT JOIN creators c ON c.id=a.creator_id WHERE a.id=?").bind(appId).first();
-          if (a?.creator_id) {
-            const existing = await env.DB.prepare("SELECT id FROM creator_deals WHERE creator_id=? AND campaign_id=?").bind(a.creator_id, id).first();
-            const stage = st === "accepted" ? "confirmed" : "shortlisted";
-            if (existing) await env.DB.prepare("UPDATE creator_deals SET stage=?, updated_at=datetime('now') WHERE id=?").bind(stage, existing.id).run();
-            else await env.DB.prepare("INSERT INTO creator_deals (id, creator_id, campaign_id, application_id, brand, deliverable, stage, fee, revisions_included, go_live_date, market_rate, reward_value) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)")
-              .bind(crypto.randomUUID(), a.creator_id, id, appId, a.brand || a.client_company || "Confidential", a.deliverables, stage, a.rate_quote, a.revisions ?? 2, a.shoot_date, marketRate(a), a.reward_value).run();
-          }
-        }
-        msg = st === "accepted" ? "Accepted and added to the CRM as confirmed." : st === "shortlisted" ? "Shortlisted and added to the CRM." : "Updated.";
+      if (!["shortlisted", "rejected", "accepted", "new"].includes(st)) return back(id, "err", "Pick a status.");
+      const reason = String(fd.get("reason") ?? "");
+      if (st === "rejected" && !REJECT_REASONS[reason]) return back(id, "err", "Pick a reason before rejecting. The creator sees it with a tip.");
+      const before = await env.DB.prepare("SELECT a.status, a.creator_id, a.email, a.name, k.title FROM campaign_applications a JOIN campaigns k ON k.id=a.campaign_id WHERE a.id=? AND a.campaign_id=?").bind(appId, id).first();
+      if (!before) return back(id, "err", "That application is not on this campaign.");
+      if (before.status === "withdrawn") return back(id, "err", "The creator withdrew this application.");
+      const deal = await env.DB.prepare("SELECT id, pay_status FROM creator_deals WHERE application_id=?").bind(appId).first();
+      if (deal && (st === "rejected" || st === "new")) return back(id, "err", "This creator already has a deal. Cancel the deal first.");
+      // Shortlisting never creates a deal: the brand approves on the shortlist page, or the team uses "Create deal".
+      await env.DB.prepare("UPDATE campaign_applications SET status=?, reject_reason=? WHERE id=? AND campaign_id=?").bind(st, st === "rejected" ? reason : null, appId, id).run();
+      await audit(actor, "application.status", "application", appId, { from: before.status, to: st });
+      if (before.status !== st && before.email) {
+        if (st === "shortlisted") await notify({ template: "creator_shortlisted", to: before.email, toKind: "creator", toId: before.creator_id, payload: { name: before.name, title: before.title }, dedupeKey: `shortlisted:${appId}` });
+        if (st === "rejected") await notify({ template: "creator_declined", to: before.email, toKind: "creator", toId: before.creator_id, payload: { name: before.name, title: before.title, reason: REJECT_REASONS[reason]?.[0] }, dedupeKey: `declined:${appId}` });
       }
+      msg = st === "shortlisted" ? "Shortlisted. The client sees them on the shortlist link." : st === "accepted" ? "Marked accepted. Use Create deal when the terms are agreed." : "Updated.";
+    } else if (action === "deal") {
+      // Explicit, idempotent: one deal per application (unique index), only for shortlisted or accepted applicants.
+      const appId = String(fd.get("app") ?? "");
+      const a = await env.DB.prepare("SELECT a.status, a.creator_id, a.email, a.name, a.rate_quote, k.title, k.brand, k.client_company, k.deliverables, k.revisions, k.shoot_date, k.reward_value, c.rate_reel, c.followers FROM campaign_applications a JOIN campaigns k ON k.id=a.campaign_id LEFT JOIN creators c ON c.id=a.creator_id WHERE a.id=? AND a.campaign_id=?").bind(appId, id).first();
+      if (!a) return back(id, "err", "That application is not on this campaign.");
+      if (!a.creator_id) return back(id, "err", "This applicant has no Colatch account yet, so they can't accept a deal.");
+      if (!["shortlisted", "accepted"].includes(a.status)) return back(id, "err", "Shortlist or accept the creator first.");
+      const dealId = crypto.randomUUID();
+      const r = await env.DB.prepare("INSERT INTO creator_deals (id, creator_id, campaign_id, application_id, brand, deliverable, stage, fee, revisions_included, go_live_date, market_rate, reward_value) VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT DO NOTHING")
+        .bind(dealId, a.creator_id, id, appId, a.brand || a.client_company || "Confidential", a.deliverables, "negotiating", a.rate_quote, a.revisions ?? 2, a.shoot_date, marketRate(a), a.reward_value).run();
+      if (!r.meta?.changes) return back(id, "err", "A deal for this creator already exists. Open it from the CRM.");
+      await env.DB.prepare("UPDATE campaign_applications SET status='accepted' WHERE id=?").bind(appId).run();
+      await audit(actor, "deal.create", "deal", dealId, { application: appId });
+      if (a.email) await notify({ template: "deal_created", to: a.email, toKind: "creator", toId: a.creator_id, payload: { name: a.name, title: a.title, dealId }, dedupeKey: `deal_created:${dealId}` });
+      return flashUrl(`/team/deals/${dealId}`, "ok", "Deal created. Check the fee and terms, then the creator accepts in their portal.");
     }
   } catch (e) {
-    return back(id, "err", e instanceof Error ? e.message : "Something went wrong.");
+    console.error("[team/campaign]", action, e);
+    return back(id, "err", "Something went wrong, the change may not have been saved. Reload and check.");
   }
   return msg ? back(id, "ok", msg) : `/team/campaigns/${id}`;
 }
@@ -102,8 +133,13 @@ export default async function Page({ params, searchParams }) {
      FROM campaign_applications a LEFT JOIN creators c ON c.id=a.creator_id WHERE a.campaign_id=? ORDER BY a.created_at DESC`
   ).bind(id).all()).results ?? [];
   // Re-score applicants against the current brief so edits to the brief re-rank them.
-  const ranked = apps.map((a) => ({ a, m: match({ skills: a.skills, niche: a.cniche, city: a.ccity ?? a.city, language: a.language, gender: a.gender, followers: a.cf ?? a.followers, engagement_rate: a.engagement_rate, quality_score: a.quality_score, verified: a.verified, status: a.cstatus, portfolio_links: a.portfolio_links, rate_reel: a.rate_reel, bio_pitch: a.bio_pitch, open_to_barter: a.open_to_barter }, k) }))
-    .sort((x, y) => (y.m.eligible ? 1 : 0) - (x.m.eligible ? 1 : 0) || y.m.score - x.m.score);
+  const ranked = apps.filter((a) => a.status !== "withdrawn").map((a) => ({ a, m: match({ skills: a.skills, niche: a.cniche, city: a.ccity ?? a.city, language: a.language, gender: a.gender, followers: a.cf ?? a.followers, engagement_rate: a.engagement_rate, quality_score: a.quality_score, verified: a.verified, status: a.cstatus, portfolio_links: a.portfolio_links, rate_reel: a.rate_reel, bio_pitch: a.bio_pitch, open_to_barter: a.open_to_barter }, k) }))
+  ;
+  // Colatch Score perk: Trusted-and-above creators are listed first among eligible applicants.
+  const tiers = new Map(await Promise.all([...new Set(apps.map((a) => a.creator_id).filter(Boolean))].map(async (cid) => [cid, (await colatchScore(env, cid).catch(() => null))?.tier || "Rising"])));
+  const trusted = (a) => (a.creator_id && tiers.get(a.creator_id) && tiers.get(a.creator_id) !== "Rising" ? 1 : 0);
+  ranked.sort((x, y) => (y.m.eligible ? 1 : 0) - (x.m.eligible ? 1 : 0) || trusted(y.a) - trusted(x.a) || y.m.score - x.m.score);
+  const deals = new Map(((await env.DB.prepare("SELECT id, application_id FROM creator_deals WHERE campaign_id=?").bind(id).all()).results ?? []).map((d) => [d.application_id, d.id]));
   const appliedHandles = new Set(apps.map((a) => a.handle));
   const pool = (await rankCreators(env, k, 40)).filter((x) => !appliedHandles.has(x.c.handle));
   let ai = {};
@@ -197,7 +233,7 @@ export default async function Page({ params, searchParams }) {
             <tbody>{ranked.map(({ a, m }) => (
               <tr key={a.id}>
                 <td><div className="score sm" style={{ "--v": m.score }}><i>{m.score}</i></div></td>
-                <td><a className="who" href={a.creator_id ? `/team/creators/${a.creator_id}` : `https://instagram.com/${a.handle}`}><div className="ava">{a.profile_pic ? <img src={a.profile_pic} alt="" /> : initials(a.name || a.handle)}</div><div><b>{a.name || a.handle}{a.verified ? " ✓" : ""}</b><span>@{a.handle}{a.ccity || a.city ? ` · ${a.ccity || a.city}` : ""}</span></div></a>
+                <td><a className="who" href={a.creator_id ? `/team/creators/${a.creator_id}` : `https://instagram.com/${a.handle}`}><div className="ava">{a.profile_pic ? <img src={a.profile_pic} alt="" /> : initials(a.name || a.handle)}</div><div><b>{a.name || a.handle}{a.verified ? " ✓" : ""}{a.creator_id && tiers.get(a.creator_id) && tiers.get(a.creator_id) !== "Rising" ? <span className="pill good" style={{ marginLeft: 6 }}>{tiers.get(a.creator_id)}</span> : null}</b><span>@{a.handle}{a.ccity || a.city ? ` · ${a.ccity || a.city}` : ""}</span></div></a>
                   {a.pitch && <div className="hint" style={{ maxWidth: 360, marginTop: 6 }}>"{a.pitch}"</div>}</td>
                 <td className="num">{compact(a.cf ?? a.followers)}</td>
                 <td className="num">{a.engagement_rate != null ? `${a.engagement_rate}%` : "—"}</td>
@@ -205,6 +241,8 @@ export default async function Page({ params, searchParams }) {
                 <td style={{ maxWidth: 260 }}>{m.reasons.slice(0, 2).map((r) => <span key={r} className="tag">{r}</span>)}{m.blockers.map((b) => <span key={b} className="tag" style={{ background: "rgba(155,59,59,.08)", color: "#7a2c2c" }}>{b}</span>)}</td>
                 <td>{a.client_decision && <span className={`pill ${a.client_decision === "approved" ? "good" : "low"}`} style={{ marginBottom: 6 }}>Client {a.client_decision}</span>}{a.client_note && <div className="hint" style={{ maxWidth: 200 }}>"{a.client_note}"</div>}
                   {["shortlisted", "accepted"].includes(a.status) && <form action={act} className="row" style={{ margin: "6px 0", gap: 6, flexWrap: "nowrap" }}>{hidden("note")}<input type="hidden" name="app" value={a.id} /><input className="in" name="team_note" defaultValue={a.team_note ?? ""} placeholder="Why we picked them" style={{ padding: "6px 8px", fontSize: 12.5, minWidth: 180 }} /><button className="btn sm">Save</button></form>}
+                  {deals.get(a.id) ? <a className="btn sm" href={`/team/deals/${deals.get(a.id)}`} style={{ marginBottom: 6 }}>Open deal</a>
+                    : ["shortlisted", "accepted"].includes(a.status) && a.creator_id && <form action={act} style={{ marginBottom: 6 }}>{hidden("deal")}<input type="hidden" name="app" value={a.id} /><button className="btn sm">Create deal</button></form>}
                   <form action={act}>{hidden("app")}<input type="hidden" name="app" value={a.id} />
                     <select className="in" name="reason" defaultValue={a.reject_reason ?? ""} style={{ width: "auto", padding: "6px 8px", fontSize: 12, marginBottom: 4 }}><option value="">Reason if rejecting…</option>{Object.entries(REJECT_REASONS).map(([key, val]) => <option key={key} value={key}>{val[0]}</option>)}</select>
                     <AutoSelect className="in" name="status" defaultValue={a.status} style={{ width: "auto", padding: "6px 8px", fontSize: 12.5 }}>{[["new", "New"], ["shortlisted", "Shortlist"], ["accepted", "Accept"], ["rejected", "Reject"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</AutoSelect></form></td>

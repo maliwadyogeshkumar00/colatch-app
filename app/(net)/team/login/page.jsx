@@ -5,7 +5,7 @@ import { currentTeam, startTeamSession } from "@/lib/net/creatorAuth";
 import { audit, safeNext } from "@/lib/net/security";
 import { checkLogin, TOO_MANY } from "../../reset/_lib";
 
-export const metadata = { title: "Team log in · Colatch Connect", robots: { index: false, follow: false } };
+export const metadata = { title: "Team log in", robots: { index: false, follow: false } };
 
 const teamCount = async () => Number((await env.DB.prepare("SELECT COUNT(*) n FROM team_users").first())?.n ?? 0);
 

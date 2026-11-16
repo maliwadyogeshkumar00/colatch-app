@@ -6,7 +6,7 @@ import { peekResetToken, consumeResetToken, audit } from "@/lib/net/security";
 import { setPassword } from "../_lib";
 
 // The token is in the URL: keep it out of Referer headers and search engines.
-export const metadata = { title: "Set a new password · Colatch", robots: { index: false, follow: false }, referrer: "no-referrer" };
+export const metadata = { title: "Set a new password", robots: { index: false, follow: false }, referrer: "no-referrer" };
 
 async function save(fd) {
   "use server";

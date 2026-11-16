@@ -6,26 +6,62 @@ import { requireTeam } from "../_guard";
 import { env } from "@/lib/net/env";
 import { inr } from "@/lib/net/creators";
 import { REF, BRAND_TIERS, brandTierFor } from "@/lib/net/referral";
+import { audit } from "@/lib/net/security";
+
+// Allowed status moves. "paid" is final and only reached through the Record payout form (with a UTR).
+const MOVES = { pending: ["approved", "void"], approved: ["pending", "void"], void: ["pending"], paid: [] };
 
 export const metadata = { title: "Affiliate program · Colatch Connect", robots: { index: false, follow: false } };
 
 async function setStatus(fd) {
   "use server";
-  await requireTeam();
+  // Approving or voiding money owed is a finance decision.
+  const me = await requireTeam("finance", "/team/referrals");
   const id = String(fd.get("id") ?? ""), st = String(fd.get("status") ?? "");
-  if (["approved", "paid", "void", "pending"].includes(st)) {
-    await env.DB.prepare("UPDATE referral_earnings SET status=? WHERE id=?").bind(st, id).run();
-    redirect(flashUrl("/team/referrals", "ok", "Updated."));
+  const cur = await env.DB.prepare("SELECT status FROM referral_earnings WHERE id=?").bind(id).first();
+  if (!cur) redirect(flashUrl("/team/referrals", "err", "That earning does not exist."));
+  if (cur.status === st) redirect("/team/referrals");
+  if (!(MOVES[cur.status] || []).includes(st)) redirect(flashUrl("/team/referrals", "err", st === "paid" ? "Use Record payout, with the bank reference." : `Can't move from ${cur.status} to ${st}.`));
+  const r = await env.DB.prepare("UPDATE referral_earnings SET status=? WHERE id=? AND status=?").bind(st, id, cur.status).run();
+  if (!r.meta?.changes) redirect(flashUrl("/team/referrals", "err", "It changed while you were looking. Reload and try again."));
+  await audit({ kind: "team", id: me.email }, "referral_earning.status", "referral_earning", id, { from: cur.status, to: st });
+  redirect(flashUrl("/team/referrals", "ok", "Updated."));
+}
+
+/** Records a referral payout that was actually sent (cash) or applied (brand credit). Once only. */
+async function recordPaid(fd) {
+  "use server";
+  const me = await requireTeam("finance", "/team/referrals");
+  const id = String(fd.get("id") ?? "");
+  const utr = String(fd.get("utr") ?? "").trim().toUpperCase();
+  let err = "";
+  try {
+    await env.DB.tx(async (t) => {
+      const e = await t.prepare("UPDATE referral_earnings SET status='paid' WHERE id=? AND status='approved' RETURNING *").bind(id).first();
+      if (!e) throw Object.assign(new Error("Only an approved earning can be paid, and only once."), { user: true });
+      if (e.kind === "cash") {
+        if (!/^[A-Z0-9]{6,30}$/.test(utr)) throw Object.assign(new Error("Enter the bank reference (UTR): 6 to 30 letters and numbers."), { user: true });
+        const deal = e.deal_id && !["first", "none"].includes(e.deal_id) ? e.deal_id : null;
+        await t.prepare("INSERT INTO finance_ledger (kind, deal_id, amount_paise, utr, method, note, actor_id, idempotency_key) VALUES ('referral_payout_sent',?,?,?,?,?,?,?)")
+          .bind(deal, Math.round(Number(e.amount) * 100), utr, "bank_transfer", `${e.reason} to ${e.owner_type} ${e.owner_id}`, me.email, `refpay:${e.id}`).run();
+      }
+      await audit({ kind: "team", id: me.email }, "referral_earning.paid", "referral_earning", id, { amount: e.amount, kind: e.kind, utr: e.kind === "cash" ? utr : null }, t);
+    });
+  } catch (e) {
+    if (e?.user) err = e.message;
+    else if (e?.code === "23505") err = /utr/i.test(String(e?.constraint || e?.detail)) ? "That bank reference (UTR) is already recorded on another payment." : "This payout is already recorded.";
+    else { console.error("[team/referrals] pay", e); err = "Something went wrong, nothing was recorded."; }
   }
-  redirect("/team/referrals");
+  redirect(flashUrl("/team/referrals", err ? "err" : "ok", err || "Payout recorded."));
 }
 
 export default async function Page({ searchParams }) {
   const me = await requireTeam();
+  const money = me.role === "owner" || me.role === "admin" || me.role === "finance";
   const rows = (await env.DB.prepare(
     `SELECT e.*, c.owner_name, c.code, r.referred_type, r.referred_id,
             (SELECT name FROM creators WHERE id = r.referred_id) AS referred_name
-     FROM referral_earnings e JOIN referrals r ON r.id = e.referral_id JOIN referral_codes c ON c.code = r.code
+     FROM referral_earnings e LEFT JOIN referrals r ON r.id = e.referral_id LEFT JOIN referral_codes c ON c.code = r.code
      ORDER BY CASE e.status WHEN 'pending' THEN 0 WHEN 'approved' THEN 1 ELSE 2 END, e.created_at DESC LIMIT 300`
   ).all().catch(() => ({ results: [] }))).results ?? [];
   // Postgres: HAVING cannot use the select alias, and every selected column must be grouped.
@@ -37,12 +73,14 @@ export default async function Page({ searchParams }) {
   const owed = rows.filter((r) => r.status === "approved" && r.kind === "cash").reduce((s, r) => s + r.amount, 0);
   const credit = rows.filter((r) => ["approved", "pending"].includes(r.status) && r.kind === "credit").reduce((s, r) => s + r.amount, 0);
   const pendingN = rows.filter((r) => r.status === "pending").length;
-  const reasonLabel = { creator_first_deal: `Creator's first paid deal (₹${REF.creatorBonus})`, brand_fee_share: "Share of Colatch fee (tiered 10/12/15%)" };
+  const reasonLabel = { creator_first_deal: `Creator's first paid deal (₹${REF.creatorBonus})`, brand_fee_share: "Share of Colatch fee (tiered 10/12/15%)", bypass_report: "Confirmed off-platform report" };
+  const ownerName = new Map(((await env.DB.prepare("SELECT id, name, handle FROM creators WHERE id IN (SELECT owner_id FROM referral_earnings WHERE owner_type='creator')").all().catch(() => ({ results: [] }))).results ?? []).map((c) => [c.id, c.name || c.handle]));
 
   return (
     <TeamShell active="referrals" eyebrow="Creator tools" title="Creators bring brands. <b>Brands bring brands.</b>" email={me.email}>
-      <p className="lead">Every creator and brand has a referral code. Creators earn ₹{REF.creatorBonus} for each creator whose first paid deal clears, and a share of Colatch's fee for {REF.months} months on any brand they bring: {[...BRAND_TIERS].reverse().map((t) => `${t.pct}% at ${t.label}`).join(", ")}. Brands earn the same share as credit off their invoices. Everything is paid from Colatch's fee and booked automatically when a deal is marked paid.</p>
+      <p className="lead">Every creator and brand has a referral code. Creators earn ₹{REF.creatorBonus} for each creator whose first paid deal clears, and a share of Colatch's fee for {REF.months} months on any brand they bring: {[...BRAND_TIERS].reverse().map((t) => `${t.pct}% at ${t.label}`).join(", ")}. Brands earn the same share as credit off their invoices. Everything is paid from Colatch's fee and booked automatically, in the same step, when a creator payout is recorded.</p>
       {searchParams?.ok && <div className="note good" style={{ marginBottom: 16 }}>{searchParams.ok}</div>}
+      {searchParams?.err && <div className="note bad" style={{ marginBottom: 16 }}>{searchParams.err}</div>}
       <div className="grid3">
         <div className="panel kpi"><div className="k">Waiting for review</div><div className="v">{pendingN}</div><div className="s">check before approving</div></div>
         <div className="panel kpi"><div className="k">Cash owed to creators</div><div className="v">{inr(owed)}</div><div className="s">approved, not yet paid</div></div>
@@ -53,8 +91,12 @@ export default async function Page({ searchParams }) {
         <div className="panel scroll-x">
           <div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Earnings ledger</h2></div>
           {rows.length ? <table className="tbl"><thead><tr><th>Earner</th><th>For</th><th className="num">Amount</th><th>Status</th></tr></thead><tbody>
-            {rows.map((r) => <tr key={r.id}><td><b>{r.owner_name || r.owner_id}</b><div className="hint">{r.owner_type} · {r.code}</div></td><td>{reasonLabel[r.reason] || r.reason}<div className="hint">{r.referred_type}: {r.referred_name || r.referred_id}</div></td><td className="num">{inr(r.amount)}<div className="hint">{r.kind}</div></td>
-              <td><form action={setStatus}><input type="hidden" name="id" value={r.id} /><AutoSelect className="in" name="status" defaultValue={r.status} style={{ width: "auto", padding: "5px 8px", fontSize: 12.5 }}>{["pending", "approved", "paid", "void"].map((s) => <option key={s}>{s}</option>)}</AutoSelect></form></td></tr>)}
+            {rows.map((r) => <tr key={r.id}><td><b>{r.owner_name || ownerName.get(r.owner_id) || r.owner_id}</b><div className="hint">{r.owner_type}{r.code ? ` · ${r.code}` : ""}</div></td><td>{reasonLabel[r.reason] || r.reason}{r.referred_type && <div className="hint">{r.referred_type}: {r.referred_name || r.referred_id}</div>}</td><td className="num">{inr(r.amount)}<div className="hint">{r.kind}</div></td>
+              <td>{r.status === "paid" ? <span className="pill good">paid</span> : !money ? <span className="pill">{r.status}</span> : <>
+                <form action={setStatus}><input type="hidden" name="id" value={r.id} /><AutoSelect className="in" name="status" defaultValue={r.status} style={{ width: "auto", padding: "5px 8px", fontSize: 12.5 }}>{[r.status, ...(MOVES[r.status] || [])].map((s) => <option key={s}>{s}</option>)}</AutoSelect></form>
+                {r.status === "approved" && <form action={recordPaid} className="row" style={{ gap: 6, marginTop: 6, flexWrap: "nowrap" }}><input type="hidden" name="id" value={r.id} />
+                  {r.kind === "cash" && <input className="in" name="utr" required pattern="[A-Za-z0-9]{6,30}" placeholder="UTR" style={{ padding: "5px 8px", fontSize: 12.5, width: 130 }} />}
+                  <button className="btn sm">{r.kind === "cash" ? "Record payout" : "Mark credit applied"}</button></form>}</>}</td></tr>)}
           </tbody></table> : <p className="hint" style={{ padding: "0 20px 18px" }}>No referral earnings yet. They appear when a referred creator or brand completes a paid deal.</p>}
         </div>
         <div className="panel">

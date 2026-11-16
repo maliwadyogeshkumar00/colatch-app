@@ -6,7 +6,7 @@ import { startCreatorSession, currentCreator } from "@/lib/net/creatorAuth";
 import { audit, safeNext } from "@/lib/net/security";
 import { checkLogin, TOO_MANY } from "../../reset/_lib";
 
-export const metadata = { title: "Creator log in · Colatch", robots: { index: false } };
+export const metadata = { title: "Creator log in", robots: { index: false } };
 
 const safe = (next) => safeNext(next, "/creator", "/creator");
 
