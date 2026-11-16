@@ -14,8 +14,8 @@ export default function CreatorProfileFields({ v = {} }) {
     </fieldset>
   );
   const part = (n, title, sub) => (
-    <div className="full" style={{ display: "flex", alignItems: "baseline", gap: 12, marginTop: n === 1 ? 0 : 16, paddingTop: n === 1 ? 0 : 20, borderTop: n === 1 ? 0 : "1px solid var(--line)" }}>
-      <span className="num" style={{ color: "var(--ink-4)", fontSize: 13 }}>{n} of 3</span><b style={{ color: "var(--head)", fontSize: 17 }}>{title}</b>{sub && <span className="hint">{sub}</span>}
+    <div className="full" style={{ display: "flex", flexWrap: "wrap", alignItems: "baseline", gap: "4px 12px", marginTop: n === 1 ? 0 : 16, paddingTop: n === 1 ? 0 : 20, borderTop: n === 1 ? 0 : "1px solid var(--line)" }}>
+      <span className="num" style={{ color: "var(--ink-4)", fontSize: 13, whiteSpace: "nowrap" }}>{n} of 3</span><b style={{ color: "var(--head)", fontSize: 17 }}>{title}</b>{sub && <span className="hint">{sub}</span>}
     </div>
   );
   return (

@@ -245,7 +245,7 @@ export default async function Page({ params, searchParams }) {
                     : ["shortlisted", "accepted"].includes(a.status) && a.creator_id && <form action={act} style={{ marginBottom: 6 }}>{hidden("deal")}<input type="hidden" name="app" value={a.id} /><button className="btn sm">Create deal</button></form>}
                   <form action={act}>{hidden("app")}<input type="hidden" name="app" value={a.id} />
                     <select className="in" name="reason" defaultValue={a.reject_reason ?? ""} style={{ width: "auto", padding: "6px 8px", fontSize: 12, marginBottom: 4 }}><option value="">Reason if rejecting…</option>{Object.entries(REJECT_REASONS).map(([key, val]) => <option key={key} value={key}>{val[0]}</option>)}</select>
-                    <AutoSelect className="in" name="status" defaultValue={a.status} style={{ width: "auto", padding: "6px 8px", fontSize: 12.5 }}>{[["new", "New"], ["shortlisted", "Shortlist"], ["accepted", "Accept"], ["rejected", "Reject"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</AutoSelect></form></td>
+                    <AutoSelect className="in" name="status" defaultValue={a.status} style={{ width: "auto", padding: "6px 8px", fontSize: 12.5 }}>{[["new", "New"], ["shortlisted", "Shortlisted"], ["accepted", "Selected"], ["rejected", "Not selected"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</AutoSelect></form></td>
               </tr>
             ))}</tbody>
           </table></div>
@@ -269,7 +269,7 @@ export default async function Page({ params, searchParams }) {
               </tr>
             ))}</tbody>
           </table></div>
-        ) : <div className="panel empty"><b>No one in the database fits yet.</b>Loosen a hard requirement, import more creators, or share <code className="k">{origin}/join</code> with {chips[0]?.toLowerCase() || "creator"} communities.</div>}
+        ) : <div className="panel empty"><b>No one else in the database fits yet.</b>Loosen a hard requirement, import more creators, or share <code className="k">{origin}/join</code> with {chips[0]?.toLowerCase() || "creator"} communities.</div>}
       </div>
     </TeamShell>
   );

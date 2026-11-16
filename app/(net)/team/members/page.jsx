@@ -145,7 +145,7 @@ export default async function Page({ searchParams }) {
           <form action={dismissLink} style={{ marginTop: 10 }}><button className="btn sm">I've sent it, hide the link</button></form>
         </div>
       )}
-      <div className="panel" style={{ marginBottom: 18, overflowX: "auto" }}>
+      <div className="panel scroll-x" style={{ marginBottom: 18 }}>
         <table className="tbl">
           <thead><tr><th>Member</th><th>Role</th><th>Status</th><th></th></tr></thead>
           <tbody>

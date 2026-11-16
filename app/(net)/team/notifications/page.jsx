@@ -59,7 +59,7 @@ export default async function Page({ searchParams }) {
         <a className={`btn sm${!where ? " on" : ""}`} href={BACK}>All</a>
         {Object.keys(LABEL).map((s) => <a key={s} className={`btn sm${status === s ? " on" : ""}`} href={`${BACK}?status=${s}`}>{LABEL[s]} ({counts[s] || 0})</a>)}
       </div>
-      <div className="panel" style={{ overflowX: "auto" }}>
+      <div className="panel scroll-x">
         {rows.length === 0 ? <p className="pad hint">Nothing here yet.</p> : (
           <table className="tbl">
             <thead><tr><th>When</th><th>Message</th><th>To</th><th>Status</th><th>Error</th><th></th></tr></thead>
