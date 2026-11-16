@@ -20,8 +20,8 @@ async function save(fd) {
   if (!who) redirect(flashUrl("/reset/request", "err", "That link has expired or was already used. Ask for a new one."));
   const err = await setPassword(who.user_kind, who.user_id, pw);
   if (err) redirect(flashUrl("/reset/request", "err", err));
-  await audit({ kind: who.user_kind, id: who.user_id }, `${who.user_kind}.password_reset`, who.user_kind === "team" ? "team_user" : "creator_account", who.user_id);
-  const login = who.user_kind === "team" ? "/team/login" : "/creator/login";
+  await audit({ kind: who.user_kind, id: who.user_id }, `${who.user_kind}.password_reset`, { team: "team_user", brand: "brand_account" }[who.user_kind] || "creator_account", who.user_id);
+  const login = { team: "/team/login", brand: "/brand/login" }[who.user_kind] || "/creator/login";
   redirect(flashUrl(login, "ok", "Password set. Log in with your new password."));
 }
 
@@ -35,13 +35,13 @@ export default async function Page({ params, searchParams }) {
           <div className="panel pad">
             <h2>This link doesn't work any more</h2>
             <p className="muted">Reset links work once and expire after a couple of hours.</p>
-            <p><a className="link" href="/reset/request">Ask for a new creator reset link</a> · Team members: ask an owner or admin for a new link.</p>
+            <p><a className="link" href="/reset/request">Ask for a new reset link</a> (creators and brands) · Team members: ask an owner or admin for a new link.</p>
           </div>
         ) : (
           <form className="panel pad" action={save}>
             <input type="hidden" name="token" value={token} />
             <h2>Set a new password</h2>
-            <p className="muted" style={{ margin: "-4px 0 18px" }}>{who.user_kind === "team" ? "For your Colatch team login." : "For your Colatch creator account."} You'll be signed out on other devices.</p>
+            <p className="muted" style={{ margin: "-4px 0 18px" }}>{{ team: "For your Colatch team login.", brand: "For your Colatch brand account." }[who.user_kind] || "For your Colatch creator account."} You'll be signed out on other devices.</p>
             <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
             <div className="stack">
               <div className="fld"><label htmlFor="f-reset-token-password-1">New password <span className="opt">— at least 10 characters</span></label><input id="f-reset-token-password-1" name="password" type="password" minLength={10} required autoComplete="new-password" /></div>

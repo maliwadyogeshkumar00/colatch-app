@@ -8,7 +8,7 @@ const ICON = {
   me: <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5" stroke="currentColor" strokeWidth="1.5" /><path d="M5 20c1-3.6 3.8-5.5 7-5.5s6 1.9 7 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>,
 };
 
-export default function PublicShell({ mode = "creator", creatorName = null, path = "", hero = null, narrow = false, moves = 0, children }) {
+export default function PublicShell({ mode = "creator", creatorName = null, brandName = null, path = "", hero = null, narrow = false, moves = 0, children }) {
   const isClient = mode === "client";
   const on = (p, exact = false) => (exact ? path === p : path.startsWith(p)) ? "on" : "";
   const creatorLinks = [
@@ -24,7 +24,16 @@ export default function PublicShell({ mode = "creator", creatorName = null, path
           <small>{isClient ? "For brands" : "Creators"}</small>
         </a>
         {isClient ? (
-          <nav className="tnav" aria-label="Main"><a className="tnav-full" href="/pitches">Creator ideas</a><a className="tnav-full" href="/join">I'm a creator</a><a className="cta" href="/brief">Post a brief</a></nav>
+          brandName ? (
+            <nav className="tnav" aria-label="Main">
+              <a className={on("/brand", true)} aria-current={on("/brand", true) ? "page" : undefined} href="/brand">My campaigns</a>
+              <a className={`tnav-full ${on("/brand/settings")}`} href="/brand/settings">Settings</a>
+              <a className="tnav-full" href="/brand/logout">Log out</a>
+              <a className="cta" href="/brief">Post a brief</a>
+            </nav>
+          ) : (
+            <nav className="tnav" aria-label="Main"><a className="tnav-full" href="/pitches">Creator ideas</a><a className="tnav-full" href="/join">I'm a creator</a><a className={on("/brand/login", true)} href="/brand/login">Log in</a><a className="cta" href="/brief">Post a brief</a></nav>
+          )
         ) : creatorName ? (
           <nav className="tnav creator-nav" aria-label="Main">
             {creatorLinks.map(([href, label, exact]) => <a key={href} className={on(href, exact)} aria-current={on(href, exact) ? "page" : undefined} href={href}>{label}</a>)}
@@ -37,6 +46,13 @@ export default function PublicShell({ mode = "creator", creatorName = null, path
       {hero}
       <main id="main" tabIndex={-1} className={narrow ? "wrap narrow" : "wrap"}>{children}</main>
       <footer className="foot">
+        {brandName && isClient && (
+          <nav className="bar-in" aria-label="More" style={{ paddingBottom: 0 }}>
+            <span className="row" style={{ gap: 16 }}>
+              <a className="link" href="/brand">My campaigns</a><a className="link" href="/brand/settings">Settings</a><a className="link" href="/brand/logout">Log out</a>
+            </span>
+          </nav>
+        )}
         {creatorName && !isClient && (
           <nav className="bar-in" aria-label="More" style={{ paddingBottom: 0 }}>
             <span className="row" style={{ gap: 16 }}>

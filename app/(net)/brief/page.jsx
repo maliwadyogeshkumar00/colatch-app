@@ -13,6 +13,8 @@ import { briefScore, isFreeMail } from "@/lib/net/value";
 import { newToken } from "@/lib/net/tokens";
 import { notify, teamInbox } from "@/lib/net/notify";
 import BriefMeter from "./BriefMeter";
+import { currentBrand } from "@/lib/net/creatorAuth";
+import { logError } from "@/lib/net/security";
 
 export const metadata = {
   title: "Post a creator brief",
@@ -34,17 +36,22 @@ async function overAiLimit(ip) {
 }
 const noteAiUse = (ip) => env.DB.prepare("INSERT INTO login_attempts (key, ok) VALUES (?, 0)").bind(`ai:${ip}`).run();
 
+class Shown extends Error {}
+
 async function submitBrief(f) {
   "use server";
   const v = Object.fromEntries([...new Set(f.keys())].map((k) => [k, f.getAll(k).map(String).join(", ")]));
   let id = null;
   try {
-    if (str(f.get("website"))) throw new Error("Something went wrong.");
-    const name = str(f.get("name")), company = str(f.get("company")), email = str(f.get("email"))?.toLowerCase() ?? null, phone = str(f.get("phone"));
+    if (str(f.get("website"))) throw new Shown("Something went wrong.");
+    // A logged-in brand's briefs go to its account, always under the account's own email.
+    const account = await currentBrand().catch(() => null);
+    const name = str(f.get("name")), company = str(f.get("company")), phone = str(f.get("phone"));
+    const email = account ? account.email : str(f.get("email"))?.toLowerCase() ?? null;
     const raw = String(f.get("raw") ?? "").trim();
-    if (!name || !company) throw new Error("Add your name and brand.");
-    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("Add a valid work email.");
-    if (raw.length < 20) throw new Error("Tell us in a few lines what you need. The more detail, the better the match.");
+    if (!name || !company) throw new Shown("Add your name and brand.");
+    if (!email || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Shown("Add a valid work email.");
+    if (raw.length < 20) throw new Shown("Tell us in a few lines what you need. The more detail, the better the match.");
     const picked = f.getAll("talent").map(String);
     const pickedCities = f.getAll("cities").map(String);
     const pickedLangs = f.getAll("languages").map(String);
@@ -55,7 +62,7 @@ async function submitBrief(f) {
       str(f.get("when")) ? `Go-live: ${f.get("when")}.` : "",
     ].filter(Boolean).join(" ");
     const ip = clientIp();
-    if (await overAiLimit(ip)) throw new Error(`You've sent ${AI_LIMIT.perHour} briefs from this connection in the last hour. Please wait a little, or email marketing@colatch.com and we'll take it from there.`);
+    if (await overAiLimit(ip)) throw new Shown(`You've sent ${AI_LIMIT.perHour} briefs from this connection in the last hour. Please wait a little, or email marketing@colatch.com and we'll take it from there.`);
     await noteAiUse(ip);
     const { needs, engine } = await extractNeeds(env, `${raw}\n${extra}`);
     // What the client ticked always beats what was read from the text.
@@ -71,7 +78,7 @@ async function submitBrief(f) {
     needs.creator_brief = scrubContacts(needs.creator_brief).text;
     needs.title = scrubContacts(needs.title).text;
     const flags = checkBrief(raw);
-    if (flags.some((x) => x.level === "block")) throw new Error("Colatch doesn't run campaigns for betting or real-money gaming. Advertising them is an offence under India's Online Gaming Act, for brands and creators alike.");
+    if (flags.some((x) => x.level === "block")) throw new Shown("Colatch doesn't run campaigns for betting or real-money gaming. Advertising them is an offence under India's Online Gaming Act, for brands and creators alike.");
     const payType = /\b(commission|affiliate|per sale|% of sales)\b/i.test(raw) ? "commission"
       : /\b(giveaway|contest|lucky draw)\b/i.test(raw) ? "giveaway"
       : /\b(event (pass|ticket|entry)|tickets?|passes)\b/i.test(raw) ? "ticket"
@@ -94,22 +101,26 @@ async function submitBrief(f) {
     await env.DB.prepare(
       `INSERT INTO campaigns (id, slug, title, brand, brief, raw_brief, deliverables, talent_types, niche, city, languages, gender, min_followers, max_followers,
        creators_needed, budget_total, shoot_date, status, source, client_name, client_company, client_email, client_phone, ai_notes, is_open, pay_type,
-       mandatories, exclusions, brand_url, shortlist_due, ref_code, rush, held_reason, brief_score, share_token)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending','client',?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?)`
+       mandatories, exclusions, brand_url, shortlist_due, ref_code, rush, held_reason, brief_score, share_token, brand_account_id)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending','client',?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?,?)`
     ).bind(campaignId, slugify(needs.title), needs.title, company, needs.creator_brief, `${raw}\n\n${extra}`.trim(), needs.deliverables,
       needs.talent_types.join(", ") || null, needs.niche.join(", ") || null, needs.city.join(", ") || null, needs.languages.join(", ") || null,
       needs.gender, needs.min_followers, needs.max_followers, needs.creators_needed, needs.budget_total, str(f.get("when")),
       name, company, email, phone, JSON.stringify({ engine, questions: needs.questions, flags: flags.map((x) => x.title), featured_request: featuredAsk, website: site }), payType,
-      str(f.get("mandatories")), str(f.get("exclusions")), brandUrl, due, ref, rush, held, scored.score, id).run();
+      str(f.get("mandatories")), str(f.get("exclusions")), brandUrl, due, ref, rush, held, scored.score, id, account?.id ?? null).run();
+    // A brand Colatch has already verified carries that mark onto every new brief.
+    if (account) await env.DB.prepare("UPDATE campaigns SET brand_verified=1 WHERE id=? AND EXISTS (SELECT 1 FROM brand_accounts WHERE id=? AND verified_by IS NOT NULL)").bind(campaignId, account.id).run();
     await recordReferral(env, ref, "brand", email).catch(() => false);
     // Never blocks the brief: notify() records the outcome (sent / not_configured / failed) in the outbox.
     await notify({ template: "brief_received", to: email, toKind: "brand", payload: { name, title: needs.title, due: formatIST(due), token: id }, dedupeKey: `brief:${campaignId}` });
     await notify({ template: "account_alert", to: teamInbox(), toKind: "team", dedupeKey: `brief_team:${campaignId}`,
       payload: { subject: `New brief: ${needs.title}${held ? " (held: verify brand)" : ""}${rush ? " (RUSH)" : ""}`, text: `${company} (${name}, ${email}) sent a brief.\n\n${held ? `Held: ${held}\n\n` : ""}Review: ${(process.env.SITE_URL || "https://colatch-app.vercel.app").replace(/\/$/, "")}/team/campaigns/${campaignId}` } });
   } catch (e) {
+    // Messages we wrote are shown as they are; anything unexpected is logged for the team and shown generically.
+    if (!(e instanceof Shown)) await logError("brief", e);
     // Keep what they typed so a mistake doesn't wipe the brief.
     cookies().set(DRAFT, JSON.stringify(v).slice(0, 3800), { httpOnly: true, secure: true, sameSite: "lax", path: "/brief", maxAge: 600 });
-    redirect(`/brief?err=${encodeURIComponent(e instanceof Error ? e.message : "Something went wrong.")}`);
+    redirect(`/brief?err=${encodeURIComponent(e instanceof Shown ? e.message : "Something went wrong on our side. Your brief is saved below; please try again.")}`);
   }
   cookies().set(DRAFT, "", { path: "/brief", maxAge: 0 });
   redirect(`/brief?done=${id}`);
@@ -168,6 +179,12 @@ export default async function Page({ searchParams }) {
     const h = String(sp.creator).replace(/[^a-z0-9._]/gi, "").slice(0, 40);
     if (h) v = { ...v, raw: `Rebooking @${h} at the Colatch repeat rate. ${v.raw ?? ""}`.trim() };
   }
+  // Logged-in brand: fill in who they are (their own values from the form still win after an error).
+  const account = await currentBrand().catch(() => null);
+  if (account) {
+    const extra = await env.DB.prepare("SELECT phone, website FROM brand_accounts WHERE id=?").bind(account.id).first().catch(() => null);
+    v = { name: account.name || "", company: account.company || "", phone: extra?.phone || "", site: extra?.website || "", ...v, email: account.email };
+  }
   const has = (k, x) => (v[k] ?? "").split(", ").includes(x);
   const origin = `https://${headers().get("host")}`;
 
@@ -178,7 +195,7 @@ export default async function Page({ searchParams }) {
   );
 
   return (
-    <PublicShell mode="client" hero={hero}>
+    <PublicShell mode="client" brandName={account ? (account.name || account.email) : null} path="/brief" hero={hero}>
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
       <div className="wrap narrow pg-brief" style={{ padding: 0 }}>
         {done ? (
@@ -247,10 +264,11 @@ export default async function Page({ searchParams }) {
             </details>
 
             <h2 style={{ marginTop: 26 }}>About you</h2>
+            {!account && <p className="hint" style={{ margin: "-4px 0 12px" }}>Have a brand account? <a className="link" href="/brand/login?next=/brief">Log in</a> so this brief shows up in your campaigns.</p>}
             <div className="form-grid">
               <div className="fld"><label htmlFor="f-brief-name-8">Your name</label><input id="f-brief-name-8" name="name" required defaultValue={v.name ?? ""} /></div>
               <div className="fld"><label htmlFor="f-brief-company-9">Brand / company</label><input id="f-brief-company-9" name="company" required defaultValue={v.company ?? ""} /></div>
-              <div className="fld"><label htmlFor="f-brief-email-10">Work email</label><input id="f-brief-email-10" name="email" type="email" required defaultValue={v.email ?? ""} /></div>
+              <div className="fld"><label htmlFor="f-brief-email-10">Work email</label><input id="f-brief-email-10" name="email" type="email" required defaultValue={v.email ?? ""} readOnly={!!account} aria-describedby={account ? "brief-acct" : undefined} />{account && <span className="hint" id="brief-acct">Logged in as {account.email}. This brief goes to <a className="link" href="/brand">your campaigns</a>. Not you? <a className="link" href="/brand/logout">Log out</a></span>}</div>
               <div className="fld"><label htmlFor="f-brief-phone-11">Phone / WhatsApp</label><input id="f-brief-phone-11" name="phone" defaultValue={v.phone ?? ""} /></div>
               <div className="fld full"><label htmlFor="f-brief-site-12">Company website <span className="opt">— helps us verify you faster</span></label><input id="f-brief-site-12" name="site" defaultValue={v.site ?? ""} placeholder="yourbrand.com" /></div>
             </div>

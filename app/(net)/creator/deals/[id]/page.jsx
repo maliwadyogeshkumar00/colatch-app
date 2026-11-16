@@ -12,6 +12,8 @@ import { DISCLOSURE_LINE } from "@/lib/net/compliance";
 import { PAY_LABEL } from "@/lib/net/campaign";
 import { scrubContacts, safeUrl } from "@/lib/net/guard";
 import { goingDirectLosses } from "@/lib/net/trust";
+import { REASONS, raiseDispute, DisputeError, openDispute, lastClosedDispute } from "@/lib/net/disputes";
+import { logError } from "@/lib/net/security";
 
 export const metadata = { title: "Deal", robots: { index: false } };
 
@@ -101,6 +103,19 @@ async function reportBypass(fd) {
   redirect(back(d.id, "good", "Thank you. The Colatch team will look into it. If it's confirmed, ₹500 is added to your earnings."));
 }
 
+async function dispute(fd) {
+  "use server";
+  const { d, me } = await ctx(fd);
+  let err = "";
+  try {
+    await raiseDispute(d.id, { kind: "creator", id: me.creator.id }, String(fd.get("reason") ?? ""), String(fd.get("detail") ?? ""));
+  } catch (e) {
+    if (e instanceof DisputeError) err = e.message;
+    else { await logError("creator/deal.dispute", e, { deal: d.id }); err = "Something went wrong, nothing was sent. Try again."; }
+  }
+  redirect(err ? back(d.id, "bad", err) : back(d.id, "good", "Dispute sent. The Colatch team will look into it and reply here and by email."));
+}
+
 export default async function Page({ params, searchParams }) {
   const me = await currentCreator();
   if (!me) redirect(`/creator/login?next=${encodeURIComponent(`/creator/deals/${params.id}`)}`);
@@ -132,6 +147,8 @@ export default async function Page({ params, searchParams }) {
   const myRating = await env.DB.prepare("SELECT stars FROM ratings WHERE deal_id=? AND by_side='creator'").bind(d.id).first();
   const origin = `https://${headers().get("host")}`;
   const hid = <input type="hidden" name="id" value={d.id} />;
+  const myDispute = await openDispute(d.id, "creator").catch(() => null);
+  const lastDispute = myDispute ? null : await lastClosedDispute(d.id, "creator").catch(() => null);
 
   return (
     <PublicShell creatorName={me.creator.name || me.creator.handle} path="/creator/applications">
@@ -238,6 +255,23 @@ export default async function Page({ params, searchParams }) {
               <button className="btn sm" style={{ marginTop: 10 }}>Send report</button>
             </form>
           </details>
+          {myDispute ? (
+            <div className="panel pad"><span className="pill mine">Dispute open</span>
+              <p className="small" style={{ margin: "10px 0 0" }}>You raised a dispute about <b>{(REASONS[myDispute.reason] || myDispute.reason).toLowerCase()}</b>. The Colatch team is looking into it and will reply here and by email.</p></div>
+          ) : (
+            <details className="panel pad">
+              <summary style={{ cursor: "pointer", fontWeight: 600, minHeight: 44, display: "flex", alignItems: "center" }}>Something wrong? Raise a dispute</summary>
+              {lastDispute && <div className="note info" style={{ marginTop: 12 }}><span className={`pill ${lastDispute.status === "resolved" ? "good" : "low"}`}>{lastDispute.status === "resolved" ? "Resolved" : "Not upheld"}</span> <span style={{ whiteSpace: "pre-line" }}>{lastDispute.resolution}</span></div>}
+              <form action={dispute} style={{ marginTop: 12 }}>
+                {hid}
+                <p className="small muted" style={{ margin: "0 0 10px" }}>For problems with the work, the timeline, payment or terms. The team reads every dispute and replies in writing. Raising one doesn't move or hold any money by itself.</p>
+                <div className="fld"><label htmlFor="f-cd-dispute-reason">What it's about</label>
+                  <select id="f-cd-dispute-reason" name="reason" required defaultValue="">{[<option key="" value="" disabled>Choose one</option>, ...Object.entries(REASONS).map(([k, l]) => <option key={k} value={k}>{l}</option>)]}</select></div>
+                <div className="fld" style={{ marginTop: 10 }}><label htmlFor="f-cd-dispute-detail">What happened</label><textarea id="f-cd-dispute-detail" name="detail" rows={3} required minLength={10} maxLength={2000} placeholder="Dates, what was agreed, and what went wrong." /></div>
+                <button className="btn" style={{ marginTop: 10, minHeight: 44 }}>Send dispute</button>
+              </form>
+            </details>
+          )}
           <p className="hint">Questions about this deal? WhatsApp the Colatch team from the number in your welcome message. Colatch never asks you to pay anything.</p>
         </div>
       </div>

@@ -8,6 +8,8 @@ const security = [
 ];
 module.exports = {
   reactStrictMode: true,
+  // Creator image uploads go through a Server Action; each file is capped at 4 MB in lib/net/blob.ts.
+  experimental: { serverActions: { bodySizeLimit: "5mb" } },
   poweredByHeader: false,
   // Network pages were ported from a typed Astro build; type checks run in the editor, not as a deploy gate.
   typescript: { ignoreBuildErrors: true },

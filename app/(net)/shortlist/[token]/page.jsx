@@ -13,7 +13,8 @@ import { scrubContacts, safeUrl } from "@/lib/net/guard";
 import { priceDeal } from "@/lib/net/pricing";
 import { transition, FlowError } from "@/lib/net/dealflow";
 import { notify } from "@/lib/net/notify";
-import { audit } from "@/lib/net/security";
+import { audit, logError } from "@/lib/net/security";
+import { REASONS, raiseDispute, DisputeError } from "@/lib/net/disputes";
 
 // Checked here as well as in the page: metadata runs before the page streams, so a bad link gets a real 404 status.
 export async function generateMetadata({ params }) {
@@ -90,6 +91,24 @@ async function rate(f) {
     ).bind(crypto.randomUUID(), dealId, "brand", stars, scrubContacts(String(f.get("note") ?? "")).text.slice(0, 300) || null).run();
   }
   redirect(back(token, "Rating saved. It helps other brands pick well."));
+}
+
+/** The brand raises a dispute on one booked deal of this campaign. Ownership is checked in raiseDispute. */
+async function dispute(f) {
+  "use server";
+  const token = String(f.get("token") ?? "");
+  const k = await campaignFor(token);
+  if (!k) notFound();
+  const dealId = String(f.get("deal") ?? "");
+  let msg = "Dispute sent. The Colatch team will look into it and reply by email.", tone = "ok";
+  try {
+    await raiseDispute(dealId, { kind: "brand", id: k.id }, String(f.get("reason") ?? ""), String(f.get("detail") ?? ""));
+  } catch (e) {
+    tone = "err";
+    if (e instanceof DisputeError) msg = e.message;
+    else { await logError("shortlist.dispute", e, { deal: dealId }); msg = "Something went wrong, nothing was sent. Try again."; }
+  }
+  redirect(back(token, msg, tone));
 }
 
 /**
@@ -198,6 +217,11 @@ export default async function Page({ params, searchParams }) {
   const myCode = brandEmail ? await ensureCode(env, "brand", brandEmail, k.client_company || k.brand).catch(() => null) : null;
   const rated = new Set(((await env.DB.prepare("SELECT deal_id FROM ratings WHERE by_side='brand' AND deal_id IN (SELECT id FROM creator_deals WHERE campaign_id=?)").bind(k.id).all()).results ?? []).map((r) => r.deal_id));
   const rush = Number(k.rush) === 1;
+  // This brand's disputes per deal: an open one replaces the form; otherwise the latest outcome is shown.
+  const disputes = {};
+  for (const x of ((await env.DB.prepare("SELECT deal_id, status, reason, resolution FROM disputes WHERE raised_by_kind='brand' AND raised_by_id=? ORDER BY created_at").bind(k.id).all().catch(() => ({ results: [] }))).results ?? [])) {
+    if (!disputes[x.deal_id] || disputes[x.deal_id].status !== "open") disputes[x.deal_id] = x;
+  }
   // #65 repeat rate + #85 loyalty ladder, per creator.
   const fees = Object.fromEntries(await Promise.all(rows.map(async (r) => [r.id, await brandFeePct(env, brandEmail, r.creator_id, k.id).catch(() => ({ pct, reason: null, spent: 0, repeat: false }))])));
   const brandFee = await brandFeePct(env, brandEmail, null, k.id).catch(() => ({ pct, reason: null, spent: 0, repeat: false }));
@@ -336,6 +360,20 @@ export default async function Page({ params, searchParams }) {
                     {post ? <a className="link" href={post} {...EXT}>View ↗</a> : d.live_at && d.post_url ? <span className="hint">{String(d.post_url).slice(0, 60)}</span> : <span className="hint">Not live yet</span>}
                     {d.live_at && !d.brand_signoff_at && <form action={signoff} style={{ marginTop: 6 }}><input type="hidden" name="token" value={token} /><input type="hidden" name="deal" value={d.id} /><label className="hint" style={{ display: "block" }}><input type="checkbox" name="public" value="1" defaultChecked /> creator may show it as proof</label><button className="btn sm plum">Sign off work</button></form>}
                     {d.brand_signoff_at && <div className="hint" style={{ color: "var(--good)" }}>Signed off ✓</div>}
+                    {d.stage !== "cancelled" && (disputes[d.id]?.status === "open"
+                      ? <div style={{ marginTop: 6 }}><span className="pill mine">Dispute open</span></div>
+                      : <details style={{ marginTop: 6 }}>
+                          <summary className="hint" style={{ cursor: "pointer", minHeight: 44, display: "flex", alignItems: "center" }}>Something wrong? Raise a dispute</summary>
+                          {disputes[d.id] && <div className="hint" style={{ margin: "4px 0", maxWidth: 280 }}><span className={`pill ${disputes[d.id].status === "resolved" ? "good" : "low"}`}>{disputes[d.id].status === "resolved" ? "Resolved" : "Not upheld"}</span> {disputes[d.id].resolution}</div>}
+                          <form action={dispute} className="stack" style={{ gap: 6, marginTop: 6, minWidth: 240 }}>
+                            <input type="hidden" name="token" value={token} /><input type="hidden" name="deal" value={d.id} />
+                            <label className="hint" htmlFor={`dr-${d.id}`}>What it's about</label>
+                            <select className="in" id={`dr-${d.id}`} name="reason" required defaultValue="">{[<option key="" value="" disabled>Choose one</option>, ...Object.entries(REASONS).map(([key, l]) => <option key={key} value={key}>{l}</option>)]}</select>
+                            <label className="hint" htmlFor={`dd-${d.id}`}>What happened</label>
+                            <textarea className="in" id={`dd-${d.id}`} name="detail" rows={3} required minLength={10} maxLength={2000} placeholder="Dates, what was agreed, and what went wrong." />
+                            <button className="btn sm" style={{ minHeight: 44 }}>Send dispute</button>
+                          </form>
+                        </details>)}
                     {d.live_at && !rated.has(d.id) && <form action={rate} className="row" style={{ gap: 4, marginTop: 6, flexWrap: "nowrap" }}><input type="hidden" name="token" value={token} /><input type="hidden" name="deal" value={d.id} /><select className="in" name="stars" style={{ width: "auto", padding: "4px 6px", fontSize: 12 }}>{[5, 4, 3, 2, 1].map((n) => <option key={n} value={n}>{"★".repeat(n)}</option>)}</select><button className="btn sm">Rate</button></form>}
                   </td>
                 </tr>

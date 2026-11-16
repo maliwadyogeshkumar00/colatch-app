@@ -8,6 +8,8 @@ import { currentCreator } from "@/lib/net/creatorAuth";
 import { profileFromForm, saveProfile, compact, str } from "@/lib/net/creators";
 import { lookupProfile, metaReady } from "@/lib/net/meta";
 import { profileGaps } from "@/lib/net/match";
+import { uploadsReady, uploadCreatorImage, deleteBlob, UPLOAD_MAX_FILES } from "@/lib/net/blob";
+import { audit, logError } from "@/lib/net/security";
 
 export const metadata = { title: "Your profile", robots: { index: false } };
 
@@ -61,6 +63,54 @@ async function saveMain(fd) {
   redirect(back("good", "Saved. Your matches have been updated."));
 }
 
+// ---- Work samples (images on the media kit). Each file is checked again in lib/net/blob.ts.
+async function uploadMedia(fd) {
+  "use server";
+  const me = await currentCreator();
+  if (!me) redirect("/creator/login?next=/creator/profile");
+  if (me.claimPending) redirect("/creator/profile");
+  const file = fd.get("file");
+  if (!file || typeof file === "string" || !file.size) redirect(back("bad", "Choose an image to upload.") + "#media");
+  const caption = String(fd.get("caption") ?? "").trim().slice(0, 140) || null;
+  const have = await env.DB.prepare("SELECT COUNT(*) AS n FROM creator_media WHERE creator_id=?").bind(me.creator.id).first();
+  if (Number(have?.n || 0) >= UPLOAD_MAX_FILES) redirect(back("bad", `You can show up to ${UPLOAD_MAX_FILES} images. Delete one to add another.`) + "#media");
+  let dest;
+  try {
+    const up = await uploadCreatorImage(me.creator.id, file);
+    if (!up.ok) dest = back("bad", up.error);
+    else {
+      // The limit is checked again in the insert itself, so two uploads at once can't pass 6.
+      const id = crypto.randomUUID();
+      const r = await env.DB.prepare(
+        "INSERT INTO creator_media (id, creator_id, url, content_type, bytes, caption) SELECT ?, ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM creator_media WHERE creator_id = ?) < ? RETURNING id"
+      ).bind(id, me.creator.id, up.url, up.contentType, up.bytes, caption, me.creator.id, UPLOAD_MAX_FILES).first();
+      if (!r) { await deleteBlob(up.url); dest = back("bad", `You can show up to ${UPLOAD_MAX_FILES} images. Delete one to add another.`); }
+      else {
+        await audit({ kind: "creator", id: me.creator.id }, "media.uploaded", "creator", me.creator.id, { media: id, bytes: up.bytes });
+        dest = back("good", "Image added to your media kit.");
+      }
+    }
+  } catch (e) {
+    await logError("creator/profile.uploadMedia", e);
+    dest = back("bad", "The upload didn't go through. Nothing was saved; try again.");
+  }
+  redirect(dest + "#media");
+}
+
+async function deleteMedia(fd) {
+  "use server";
+  const me = await currentCreator();
+  if (!me) redirect("/creator/login?next=/creator/profile");
+  if (me.claimPending) redirect("/creator/profile");
+  // Owner check is in the WHERE clause: a creator can only delete their own images.
+  const row = await env.DB.prepare("DELETE FROM creator_media WHERE id=? AND creator_id=? RETURNING id, url").bind(String(fd.get("id") ?? ""), me.creator.id).first();
+  if (!row) redirect(back("bad", "That image was already removed.") + "#media");
+  const gone = await deleteBlob(row.url);
+  if (!gone) await logError("creator/profile.deleteMedia", new Error("Blob delete failed; file left in storage"), { media: row.id });
+  await audit({ kind: "creator", id: me.creator.id }, "media.deleted", "creator", me.creator.id, { media: row.id, storage_deleted: gone });
+  redirect(back("good", "Image removed from your media kit.") + "#media");
+}
+
 export default async function Page({ searchParams }) {
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/profile");
@@ -77,6 +127,8 @@ export default async function Page({ searchParams }) {
   const flash = searchParams?.msg || "";
   const tone = searchParams?.tone === "bad" ? "bad" : "good";
   const origin = `https://${headers().get("host")}`;
+  const media = (await env.DB.prepare("SELECT id, url, caption FROM creator_media WHERE creator_id=? ORDER BY created_at").bind(c.id).all().catch(() => ({ results: [] }))).results ?? [];
+  const canUpload = uploadsReady();
   return (
     <PublicShell creatorName={c.name || c.handle} path="/creator/profile">
       <div className="wrap narrow" style={{ padding: 0 }}>
@@ -105,6 +157,27 @@ export default async function Page({ searchParams }) {
           <p className="hint" style={{ margin: "12px 0 0" }}>Without a PAN, TDS is deducted at 20% instead of 10%.</p>
           <button className="btn plum" style={{ marginTop: 14 }}>Save payout details</button>
         </form>
+
+        <section className="panel pad" id="media" aria-labelledby="media-h" style={{ marginBottom: 18 }}>
+          <h2 id="media-h">Work samples</h2>
+          <p style={{ margin: "0 0 12px", color: "var(--ink-2)" }}>Up to {UPLOAD_MAX_FILES} images on your media kit: JPEG, PNG or WebP, 4 MB each. Show finished work, not your contact details.</p>
+          {media.length > 0 && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 12, marginBottom: 14 }}>
+            {media.map((m) => (
+              <figure key={m.id} style={{ margin: 0 }}>
+                <div style={{ aspectRatio: "4 / 5", overflow: "hidden", borderRadius: 10, background: "var(--line, #eee)" }}><img src={m.url} alt={m.caption || "Work sample"} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /></div>
+                <figcaption className="small muted" style={{ margin: "6px 0" }}>{m.caption || "No caption"}</figcaption>
+                <form action={deleteMedia}><input type="hidden" name="id" value={m.id} /><button className="btn" style={{ minHeight: 44, width: "100%" }}>Delete</button></form>
+              </figure>
+            ))}
+          </div>}
+          {!canUpload ? <div className="note info">Uploads aren't switched on yet; add your best reels as links below.</div>
+            : media.length >= UPLOAD_MAX_FILES ? <p className="hint" style={{ margin: 0 }}>You're showing {UPLOAD_MAX_FILES} images, the most allowed. Delete one to add another.</p>
+            : <form action={uploadMedia} className="form-grid">
+                <div className="fld"><label htmlFor="f-media-file">Image</label><input id="f-media-file" name="file" type="file" accept="image/jpeg,image/png,image/webp" required /></div>
+                <div className="fld"><label htmlFor="f-media-caption">Caption <span className="opt">— optional</span></label><input id="f-media-caption" name="caption" maxLength={140} placeholder="e.g. Reel for a skincare launch" /></div>
+                <div><button className="btn plum" style={{ minHeight: 44 }}>Upload image</button></div>
+              </form>}
+        </section>
 
         <form className="panel pad" action={saveMain}>
           <div className="fld" style={{ marginBottom: 18 }}><label htmlFor="f-creator-profile-name-5">Name</label><input id="f-creator-profile-name-5" name="name" defaultValue={c.name ?? ""} /></div>

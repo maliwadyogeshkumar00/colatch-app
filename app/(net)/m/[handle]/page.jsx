@@ -29,6 +29,9 @@ export default async function Page({ params }) {
   const b = erBand(c.engagement_rate, c.followers);
   const links = String(c.portfolio_links || "").split(/\s+/).map(safeUrl).filter(Boolean).slice(0, 6);
   const name = c.name || c.handle;
+  // Uploaded work samples (lib/net/blob.ts). Only https URLs are rendered.
+  const media = ((await env.DB.prepare("SELECT id, url, caption FROM creator_media WHERE creator_id=? ORDER BY created_at LIMIT 6").bind(c.id).all().catch(() => ({ results: [] }))).results ?? [])
+    .map((m) => ({ ...m, url: safeUrl(m.url) })).filter((m) => m.url);
   const sc = await colatchScore(env, c.id);
   const hero = (
     <section className="hero"><div className="hero-in">
@@ -69,6 +72,15 @@ export default async function Page({ params }) {
           {links.length ? <div className="stack">{links.map((u, i) => <a key={u} className="btn" style={{ justifyContent: "space-between", width: "100%" }} href={u} target="_blank" rel="noopener noreferrer nofollow"><span>Sample {i + 1}</span><span>↗</span></a>)}</div> : <p className="hint">Samples on request.</p>}
         </div>
       </div>
+
+      {media.length > 0 && <div className="sec"><div className="h2">Work samples</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 14 }}>{media.map((m) => (
+          <figure key={m.id} className="panel" style={{ margin: 0, overflow: "hidden" }}>
+            <div style={{ aspectRatio: "4 / 5", overflow: "hidden" }}><img src={m.url} alt={m.caption || `Work sample by ${name}`} loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} /></div>
+            {m.caption && <figcaption className="small muted" style={{ padding: "10px 14px" }}>{m.caption}</figcaption>}
+          </figure>
+        ))}</div>
+      </div>}
 
       {proofs.length > 0 && <div className="sec"><div className="h2">Brand-verified work</div><div className="grid3">{proofs.map((p) => <a key={p.id} className="opp" href={`/proof/${p.id}`} style={{ padding: "16px 18px" }}><div className="br">✓ Verified</div><h3 style={{ fontSize: 16 }}>{p.brand}</h3><div className="facts"><span>{p.deliverable}</span><span><b>{compact(p.actual_views)}</b> views</span></div></a>)}</div></div>}
 
