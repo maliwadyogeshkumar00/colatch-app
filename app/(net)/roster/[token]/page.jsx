@@ -43,7 +43,7 @@ export default async function Page({ params, searchParams }) {
     `SELECT r.creator_id, r.note, r.created_at, c.name, c.handle, c.city, c.followers, c.profile_pic,
        (SELECT d.actual_views FROM creator_deals d JOIN campaigns k ON k.id=d.campaign_id WHERE d.creator_id=r.creator_id AND LOWER(k.client_email)=r.brand_email AND d.live_at IS NOT NULL ORDER BY d.live_at DESC LIMIT 1) AS last_views,
        (SELECT d.fee FROM creator_deals d JOIN campaigns k ON k.id=d.campaign_id WHERE d.creator_id=r.creator_id AND LOWER(k.client_email)=r.brand_email AND d.live_at IS NOT NULL ORDER BY d.live_at DESC LIMIT 1) AS last_fee,
-       (SELECT k.slug FROM creator_deals d JOIN campaigns k ON k.id=d.campaign_id WHERE d.creator_id=r.creator_id AND LOWER(k.client_email)=r.brand_email ORDER BY d.created_at DESC LIMIT 1) AS last_slug
+       (SELECT k.share_token FROM creator_deals d JOIN campaigns k ON k.id=d.campaign_id WHERE d.creator_id=r.creator_id AND LOWER(k.client_email)=r.brand_email ORDER BY d.created_at DESC LIMIT 1) AS last_token
      FROM brand_roster r JOIN creators c ON c.id=r.creator_id WHERE r.brand_email=? ORDER BY r.created_at DESC`
   ).bind(b.email).all()).results ?? [];
   const hero = (
@@ -66,7 +66,7 @@ export default async function Page({ params, searchParams }) {
                 <div><div className="lbl">Followers</div><b>{compact(r.followers)}</b></div>
                 <div><div className="lbl">Last result with you</div><b>{r.last_views ? `${compact(r.last_views)} views` : "Not booked yet"}</b>{r.last_views && r.last_fee ? <div className="hint">₹{(r.last_fee / r.last_views).toFixed(2)} per view · {inr(r.last_fee)}</div> : null}</div>
                 <div className="row" style={{ gap: 8 }}>
-                  <a className="btn sm plum" href={`/brief?${r.last_slug ? `again=${encodeURIComponent(r.last_slug)}&` : ""}creator=${encodeURIComponent(r.handle)}`}>Book again</a>
+                  <a className="btn sm plum" href={`/brief?${r.last_token ? `again=${encodeURIComponent(r.last_token)}&` : ""}creator=${encodeURIComponent(r.handle)}`}>Book again</a>
                   <form action={remove}><input type="hidden" name="token" value={params.token} /><input type="hidden" name="creator" value={r.creator_id} /><button className="btn sm">Remove</button></form>
                 </div>
               </div>

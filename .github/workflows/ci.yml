@@ -29,6 +29,8 @@ jobs:
       TEAM_OWNER_EMAILS: owner@colatch-test.local
       TEAM_SETUP_CODE: ci-setup-code
       SITE_URL: http://localhost:3000
+      # All e2e traffic comes from one address; the real limit is tested separately.
+      BRIEF_AI_PER_HOUR: "1000"
       NODE_ENV: test
     steps:
       - uses: actions/checkout@v4

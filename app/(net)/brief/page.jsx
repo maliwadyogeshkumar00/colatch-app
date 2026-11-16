@@ -23,7 +23,7 @@ export const metadata = {
 const DRAFT = "brief_draft";
 
 // Each brief runs an AI read of the text, which costs money. Cap it per network address.
-const AI_LIMIT = { perHour: 10 };
+const AI_LIMIT = { perHour: Math.max(1, Number(process.env.BRIEF_AI_PER_HOUR) || 10) };
 function clientIp() {
   const h = headers();
   return (h.get("x-forwarded-for") || "").split(",")[0].trim() || h.get("x-real-ip") || "unknown";
