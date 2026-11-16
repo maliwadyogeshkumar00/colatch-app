@@ -27,21 +27,23 @@ jobs:
       # A throwaway database that exists only for this run. Nothing here touches the live Neon database.
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/colatch_test
       TEAM_OWNER_EMAILS: owner@colatch-test.local
+      TEAM_SETUP_CODE: ci-setup-code
+      SITE_URL: http://localhost:3000
       NODE_ENV: test
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-      - run: npm install --no-audit --no-fund
+      - run: mkdir -p ci-logs && npm install --no-audit --no-fund 2>&1 | tee ci-logs/install.txt
       - name: Session secret for this run only
         run: echo "SESSION_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
       - name: Unit tests
-        run: npm run test:unit
+        run: npm run test:unit 2>&1 | tee ci-logs/unit.txt
       - name: Integration tests (real Postgres)
-        run: npm run test:int
+        run: npm run test:int 2>&1 | tee ci-logs/integration.txt
       - name: Production build
-        run: npm run build
+        run: npm run build 2>&1 | tee ci-logs/build.txt
         env:
           NODE_ENV: production
       - name: Install browser
@@ -51,12 +53,21 @@ jobs:
           NODE_ENV=production npx next start -p 3000 > server.log 2>&1 &
           for i in $(seq 1 60); do curl -sf http://localhost:3000/api/net/health && break; sleep 1; done
       - name: End-to-end tests
-        run: npm run test:e2e
+        run: npm run test:e2e 2>&1 | tee ci-logs/e2e.txt
         env:
           BASE_URL: http://localhost:3000
       - name: Server log
         if: always()
         run: tail -n 300 server.log || true
+      # Public summary on the run page, so results can be read without signing in to GitHub.
+      - name: Summary
+        if: always()
+        run: |
+          for f in install unit integration build e2e; do
+            [ -f ci-logs/$f.txt ] || continue
+            { echo "### $f"; echo '```'; grep -vE '^\s*$' ci-logs/$f.txt | tail -n 60 | cut -c1-300; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          done
+          if [ -f server.log ]; then { echo "### server.log"; echo '```'; tail -n 40 server.log | cut -c1-300; echo '```'; } >> "$GITHUB_STEP_SUMMARY"; fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
