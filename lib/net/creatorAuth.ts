@@ -5,10 +5,11 @@ import { can, type Perm } from './security';
 
 export const CREATOR_COOKIE = 'cr_session';
 export const TEAM_COOKIE = 'tm_session';
+export const BRAND_COOKIE = 'br_session';
 
 // Cookie subject = "<prefix>_<id>~<session_version>". The prefix keeps a team cookie from passing as a
 // creator one; the version lets us sign someone out everywhere by bumping it in the database.
-function parseSubject(raw: string | null, prefix: 'cr' | 'tm'): { id: string; v: number } | null {
+function parseSubject(raw: string | null, prefix: 'cr' | 'tm' | 'br'): { id: string; v: number } | null {
   if (!raw || !raw.startsWith(prefix + '_')) return null;
   const body = raw.slice(prefix.length + 1);
   const [id, v] = body.split('~');
@@ -68,9 +69,27 @@ export async function startTeamSession(userId: string, days = 14) {
 }
 
 /** Signs a person out on every device. */
-export async function revokeSessions(kind: 'creator' | 'team', id: string) {
-  const table = kind === 'creator' ? 'creator_accounts' : 'team_users';
+export async function revokeSessions(kind: 'creator' | 'team' | 'brand', id: string) {
+  const table = kind === 'creator' ? 'creator_accounts' : kind === 'brand' ? 'brand_accounts' : 'team_users';
   await env.DB.prepare(`UPDATE ${table} SET session_version = session_version + 1 WHERE id = ?`).bind(id).run();
 }
 
 export { hashPassword };
+
+export type BrandAccount = { id: string; email: string; name: string | null; company: string | null; verified: boolean };
+
+/** Logged-in brand account, or null (disabled accounts and old sessions are rejected). */
+export async function currentBrand(): Promise<BrandAccount | null> {
+  const sub = parseSubject(await readSession(await sessionSecret(env), cookies().get(BRAND_COOKIE)?.value), 'br');
+  if (!sub) return null;
+  const b = await env.DB.prepare('SELECT id, email, name, company, session_version, email_verified_at, disabled_at FROM brand_accounts WHERE id = ?').bind(sub.id).first<any>();
+  if (!b || b.disabled_at || Number(b.session_version || 1) !== sub.v) return null;
+  return { id: b.id, email: b.email, name: b.name, company: b.company, verified: !!b.email_verified_at };
+}
+
+/** Call only from a Server Action or Route Handler. */
+export async function startBrandSession(accountId: string, days = 30) {
+  const b = await env.DB.prepare('SELECT session_version FROM brand_accounts WHERE id = ?').bind(accountId).first<any>();
+  const token = await makeSession(await sessionSecret(env), `br_${accountId}~${Number(b?.session_version || 1)}`, days);
+  cookies().set(BRAND_COOKIE, token, { httpOnly: true, secure: true, sameSite: 'lax', path: '/', maxAge: days * 86400 });
+}

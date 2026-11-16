@@ -12,7 +12,8 @@ export type Template =
   | 'creator_welcome' | 'brief_received' | 'new_application' | 'shortlist_ready' | 'creator_shortlisted'
   | 'creator_approved' | 'creator_declined' | 'deal_created' | 'draft_submitted' | 'changes_requested'
   | 'draft_approved' | 'post_live' | 'payout_eligible' | 'payout_sent' | 'brand_payment_recorded'
-  | 'referral_earned' | 'password_reset' | 'team_invite' | 'account_alert';
+  | 'referral_earned' | 'password_reset' | 'team_invite' | 'account_alert'
+  | 'verify_email' | 'brand_welcome' | 'new_brand' | 'dispute_opened' | 'dispute_resolved';
 
 type Rendered = { subject: string; text: string };
 
@@ -43,6 +44,11 @@ export function render(t: Template, p: Record<string, any>): Rendered {
     case 'referral_earned': return { subject: `You earned ${p.amount} on Colatch`, text: `Hi ${p.name || 'there'},\n\n${p.reason}. ${p.amount} has been added to your Colatch earnings: ${u('/creator/earnings')}${sign}` };
     case 'password_reset': return { subject: 'Reset your Colatch password', text: `Use this link to set a new password. It works once and expires in 2 hours:\n\n${p.link}\n\nIf you did not ask for this, ignore this email.${sign}` };
     case 'team_invite': return { subject: 'You have been added to the Colatch team desk', text: `Hi ${p.name || 'there'},\n\n${p.by} added you to the Colatch team desk as ${p.role}. Set your password with this link (expires in 2 hours): ${p.link}${sign}` };
+    case 'verify_email': return { subject: 'Confirm your email for Colatch', text: `Confirm this is your email address by opening this link. It works once and expires in 48 hours:\n\n${p.link}\n\nIf you did not sign up for Colatch, ignore this email.${sign}` };
+    case 'brand_welcome': return { subject: 'Your Colatch brand account is ready', text: `Hi ${p.name || 'there'},\n\nYour Colatch account is set up. Post a brief, approve creators and follow every deal and payment in one place: ${u('/brand')}${sign}` };
+    case 'new_brand': return { subject: `New brand account: ${p.company || p.email}`, text: `${p.name || ''} (${p.email}) created a brand account${p.company ? ` for ${p.company}` : ''}.\n\nVerify the brand: ${u('/team/brands')}` };
+    case 'dispute_opened': return { subject: `Dispute raised: ${p.title}`, text: `${p.by} raised a dispute on "${p.title}": ${p.reason}\n\n${p.detail || ''}\n\nReview it: ${u('/team/disputes')}` };
+    case 'dispute_resolved': return { subject: `Dispute ${p.outcome}: ${p.title}`, text: `Hi ${p.name || 'there'},\n\nThe Colatch team ${p.outcome} the dispute on "${p.title}".\n\n${p.resolution || ''}${sign}` };
     case 'account_alert': return { subject: p.subject || 'Colatch account alert', text: `${p.text || ''}${sign}` };
   }
 }
@@ -107,7 +113,7 @@ export async function notify(opts: {
 export async function attempt(id: number, secret?: Record<string, any>): Promise<string> {
   const n = await env.DB.prepare('SELECT * FROM notifications WHERE id = ?').bind(id).first();
   if (!n || n.status === 'sent') return n?.status || 'missing';
-  if (!secret && (n.template === 'password_reset' || n.template === 'team_invite')) {
+  if (!secret && (n.template === 'password_reset' || n.template === 'team_invite' || n.template === 'verify_email')) {
     // The link was never stored, so it can't be re-sent. A new reset link has to be made instead.
     return n.status;
   }

@@ -66,7 +66,7 @@ async function sha256(text: string): Promise<string> {
 export const RESET_HOURS = 2;
 
 /** Creates a single-use reset token. Only its hash is stored; the raw token goes in the link once. */
-export async function createResetToken(userKind: 'creator' | 'team', userId: string, createdBy: string | null): Promise<string> {
+export async function createResetToken(userKind: 'creator' | 'team' | 'brand', userId: string, createdBy: string | null): Promise<string> {
   const raw = b64url(crypto.getRandomValues(new Uint8Array(32)));
   // A new link cancels any earlier unused one for the same person.
   await env.DB.prepare('UPDATE password_resets SET used_at = now() WHERE user_kind = ? AND user_id = ? AND used_at IS NULL').bind(userKind, userId).run();
@@ -77,14 +77,14 @@ export async function createResetToken(userKind: 'creator' | 'team', userId: str
 }
 
 /** Looks a token up without using it. Null when unknown, used or expired. */
-export async function peekResetToken(raw: string): Promise<{ user_kind: 'creator' | 'team'; user_id: string } | null> {
+export async function peekResetToken(raw: string): Promise<{ user_kind: 'creator' | 'team' | 'brand'; user_id: string } | null> {
   if (!raw || raw.length < 20) return null;
   return env.DB.prepare('SELECT user_kind, user_id FROM password_resets WHERE token_hash = ? AND used_at IS NULL AND expires_at > now()')
     .bind(await sha256(raw)).first();
 }
 
 /** Marks the token used and returns who it was for, atomically, so it can never be used twice. */
-export async function consumeResetToken(raw: string): Promise<{ user_kind: 'creator' | 'team'; user_id: string } | null> {
+export async function consumeResetToken(raw: string): Promise<{ user_kind: 'creator' | 'team' | 'brand'; user_id: string } | null> {
   if (!raw || raw.length < 20) return null;
   const r = await env.DB.prepare(
     'UPDATE password_resets SET used_at = now() WHERE token_hash = ? AND used_at IS NULL AND expires_at > now() RETURNING user_kind, user_id'
@@ -113,4 +113,42 @@ export function safeNext(next: unknown, prefix: string, fallback: string): strin
   const s = String(next || '');
   if (!s.startsWith(prefix) || s.startsWith('//') || s.includes('\\') || /[\r\n]/.test(s)) return fallback;
   return s;
+}
+
+// ------------------------------------------------------------------ email verification
+export const VERIFY_HOURS = 48;
+
+/** Creates a single-use email verification token (only its hash is stored). An earlier unused one is cancelled. */
+export async function createVerifyToken(userKind: 'creator' | 'brand', userId: string, email: string): Promise<string> {
+  const raw = b64url(crypto.getRandomValues(new Uint8Array(32)));
+  await env.DB.prepare('UPDATE email_verifications SET used_at = now() WHERE user_kind = ? AND user_id = ? AND used_at IS NULL').bind(userKind, userId).run();
+  await env.DB.prepare(
+    `INSERT INTO email_verifications (token_hash, user_kind, user_id, email, expires_at) VALUES (?, ?, ?, ?, now() + interval '${VERIFY_HOURS} hours')`
+  ).bind(await sha256(raw), userKind, userId, String(email).toLowerCase()).run();
+  return raw;
+}
+
+/** Uses a verification token once and marks the account's email verified. Returns who it was for, or null. */
+export async function consumeVerifyToken(raw: string): Promise<{ user_kind: 'creator' | 'brand'; user_id: string; email: string } | null> {
+  if (!raw || raw.length < 20) return null;
+  const r = await env.DB.prepare(
+    'UPDATE email_verifications SET used_at = now() WHERE token_hash = ? AND used_at IS NULL AND expires_at > now() RETURNING user_kind, user_id, email'
+  ).bind(await sha256(raw)).first();
+  if (!r) return null;
+  const table = r.user_kind === 'brand' ? 'brand_accounts' : 'creator_accounts';
+  // Only if the account's email is still the one the link was sent to.
+  await env.DB.prepare(`UPDATE ${table} SET email_verified_at = now() WHERE id = ? AND LOWER(email) = ? AND email_verified_at IS NULL`).bind(r.user_id, r.email).run();
+  return r;
+}
+
+// ------------------------------------------------------------------ error log
+/** Records a server error where the team can see it (Team > System health). Never throws. */
+export async function logError(source: string, err: unknown, detail?: Record<string, unknown>) {
+  const e: any = err;
+  const message = String(e?.message || e || 'Unknown error').slice(0, 500);
+  console.error(JSON.stringify({ level: 'error', source, message, digest: e?.digest ?? null, ...(detail || {}) }));
+  try {
+    await env.DB.prepare('INSERT INTO app_errors (source, message, digest, detail) VALUES (?, ?, ?, ?)')
+      .bind(source.slice(0, 120), message, e?.digest ?? null, detail ? JSON.stringify(detail) : null).run();
+  } catch { /* logging must never break the request */ }
 }
