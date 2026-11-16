@@ -12,6 +12,7 @@ import { transition, FlowError, formatPaise } from "@/lib/net/dealflow";
 import { priceDeal } from "@/lib/net/pricing";
 import { safeUrl } from "@/lib/net/guard";
 import { can } from "@/lib/net/security";
+import { colatchScore } from "@/lib/net/score";
 
 export const metadata = { title: "Deal", robots: { index: false, follow: false } };
 
@@ -101,6 +102,8 @@ export default async function Page({ params, searchParams }) {
   const progress = can(me.role, "shortlist");
   const boss = me.role === "owner" || me.role === "admin";
   const closed = isClosed(d);
+  const tier = (await colatchScore(env, d.creator_id).catch(() => null))?.tier;
+  const priority = tier === "Gold" || tier === "Icon";
   const th = d.fee ? takeHome(d.fee, fy) : null;
   const must = lines(k?.mandatories);
   const avoid = lines(k?.exclusions);
@@ -131,6 +134,7 @@ export default async function Page({ params, searchParams }) {
       </>}>
 
       {flash && <div className={`note ${tone}`} style={{ marginBottom: 16 }}>{flash}</div>}
+      {priority && !closed && d.pay_status !== "paid" && <div className="note info" style={{ marginBottom: 16 }}><b>{tier} creator: priority payout.</b> Pay this creator as soon as the post is verified.</div>}
       <DealRail d={d} side="team" />
 
       <div className="grid4 sec" style={{ marginTop: 18 }}>

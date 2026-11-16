@@ -171,3 +171,23 @@ test("migrations are recorded and re-running is a no-op", async () => {
   const v = await db.prepare("SELECT value FROM app_settings WHERE key='schema_version'").first();
   assert.ok(Number(v.value) >= 4);
 });
+
+test("callers can't inject the frozen price", async () => {
+  const x = await makeDeal();
+  await transition(x.dealId, "accept_terms", x.creator);
+  const d = await transition(x.dealId, "record_funding", finance, { amount: "100", reference: "FUND" + x.dealId.slice(-6), __pct: 0 });
+  assert.notEqual(Number(d.fee_pct), 0);
+});
+
+test("auto-approve fired twice at once approves once", async () => {
+  const x = await makeDeal();
+  await transition(x.dealId, "accept_terms", x.creator);
+  await transition(x.dealId, "record_funding", finance, { amount: "100", reference: "FUND" + x.dealId.slice(-6) });
+  await transition(x.dealId, "submit_draft", x.creator, { draft_url: "https://drive.google.com/x", approve_hours: 1 });
+  await db.prepare("UPDATE creator_deals SET auto_approve_at=? WHERE id=?").bind(new Date(Date.now() - 1000).toISOString(), x.dealId).run();
+  const sys = { kind: "system", id: "system" };
+  const r = await Promise.allSettled([transition(x.dealId, "auto_approve", sys), transition(x.dealId, "auto_approve", sys)]);
+  assert.equal(r.filter((y) => y.status === "fulfilled").length, 1);
+  const n = await db.prepare("SELECT COUNT(*) AS n FROM deal_events WHERE deal_id=? AND kind='approved'").bind(x.dealId).first();
+  assert.equal(n.n, 1);
+});

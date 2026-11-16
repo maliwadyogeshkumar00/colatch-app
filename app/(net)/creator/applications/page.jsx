@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { ClaimNote } from "@/app/(net)/join/_claim.js";
 import PublicShell from "../../_ui/PublicShell";
 import { env } from "@/lib/net/env";
 import { currentCreator } from "@/lib/net/creatorAuth";
@@ -17,6 +18,8 @@ const dealState = (d) => d.stage === "cancelled" || d.pay_status === "refunded" 
 export default async function Page() {
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/applications");
+  // A pending profile claim sees none of that creator's data, and writes nothing.
+  if (me.claimPending) return <PublicShell creatorName={me.creator.name || me.creator.handle} path="/creator/applications"><ClaimNote status="pending" /></PublicShell>;
   const c = me.creator;
   const apps = (await env.DB.prepare(`SELECT a.status, a.created_at, a.match_score, a.reject_reason, k.title, k.slug, CASE WHEN a.status = 'accepted' THEN k.brand ELSE COALESCE(k.brand_category, 'Brand hidden until selected') END AS brand, k.status AS kstatus FROM campaign_applications a JOIN campaigns k ON k.id=a.campaign_id WHERE a.creator_id=? OR a.handle=? ORDER BY a.created_at DESC`).bind(c.id, c.handle).all()).results ?? [];
   const deals = (await env.DB.prepare("SELECT d.id, CASE WHEN d.sow_accepted_at IS NOT NULL THEN d.brand ELSE 'Brand revealed after you accept' END AS brand, d.deliverable, d.fee, d.pay_status, d.draft_status, d.sow_accepted_at, d.live_at, d.post_url, d.stage FROM creator_deals d WHERE d.creator_id=? AND d.stage <> 'dropped' ORDER BY d.updated_at DESC").bind(c.id).all()).results ?? [];

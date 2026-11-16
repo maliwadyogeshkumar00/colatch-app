@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { ClaimNote } from "@/app/(net)/join/_claim.js";
 import PublicShell, { Hero } from "../../_ui/PublicShell";
 import Flash, { flashUrl } from "../../_ui/flash";
 import { env } from "@/lib/net/env";
@@ -30,6 +31,7 @@ async function createPitch(fd) {
   "use server";
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/pitch");
+  if (me.claimPending) redirect("/creator/pitch");
   const live = (await env.DB.prepare("SELECT COUNT(*) n FROM creator_pitches WHERE creator_id=? AND status='live'").bind(me.creator.id).first())?.n ?? 0;
   if (live >= MAX_LIVE_PITCHES) redirect(back("err", `You can keep ${MAX_LIVE_PITCHES} ideas live at a time. Pause one to add another.`));
   const title = String(fd.get("title") ?? "").trim().slice(0, 90);
@@ -53,6 +55,7 @@ async function togglePitch(fd) {
   "use server";
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/pitch");
+  if (me.claimPending) redirect("/creator/pitch");
   const id = String(fd.get("id") ?? "");
   const p = await env.DB.prepare("SELECT status FROM creator_pitches WHERE id=? AND creator_id=?").bind(id, me.creator.id).first();
   if (!p) redirect(back("err", "That idea was not found."));
@@ -68,6 +71,7 @@ async function removePitch(fd) {
   "use server";
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/pitch");
+  if (me.claimPending) redirect("/creator/pitch");
   // Kept as 'deleted' rather than removed, so any booking that came from it still has its source.
   await env.DB.prepare("UPDATE creator_pitches SET status='deleted' WHERE id=? AND creator_id=?").bind(String(fd.get("id") ?? ""), me.creator.id).run();
   redirect(back("ok", "Idea removed."));
@@ -76,6 +80,8 @@ async function removePitch(fd) {
 export default async function Page({ searchParams }) {
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/pitch");
+  // A pending profile claim sees none of that creator's data, and writes nothing.
+  if (me.claimPending) return <PublicShell creatorName={me.creator.name || me.creator.handle} path="/creator/pitch"><ClaimNote status="pending" /></PublicShell>;
   const c = me.creator;
   const mine = (await env.DB.prepare("SELECT * FROM creator_pitches WHERE creator_id=? AND status <> 'deleted' ORDER BY created_at DESC").bind(c.id).all()).results ?? [];
   const liveN = mine.filter((p) => p.status === "live").length;

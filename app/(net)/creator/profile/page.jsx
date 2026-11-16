@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { ClaimNote } from "@/app/(net)/join/_claim.js";
 import { headers } from "next/headers";
 import PublicShell from "../../_ui/PublicShell";
 import CreatorProfileFields from "../../_ui/CreatorProfileFields";
@@ -16,6 +17,7 @@ async function savePayout(fd) {
   "use server";
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/profile");
+  if (me.claimPending) redirect("/creator/profile");
   const upi = str(fd.get("upi_id"));
   const pan4 = String(fd.get("pan_last4") ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "").slice(-4) || null;
   const gstin = String(fd.get("gstin") ?? "").toUpperCase().replace(/\s/g, "") || null;
@@ -29,6 +31,7 @@ async function verifyBio() {
   "use server";
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/profile");
+  if (me.claimPending) redirect("/creator/profile");
   const code = me.creator.verify_code;
   let dest;
   if (!code) dest = back("bad", "Refresh the page to get your code.");
@@ -49,6 +52,7 @@ async function saveMain(fd) {
   "use server";
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/profile");
+  if (me.claimPending) redirect("/creator/profile");
   const p = profileFromForm(fd);
   if (!p.skills) redirect(back("bad", "Pick at least one thing you do."));
   await saveProfile(env, me.creator.id, p);
@@ -60,6 +64,8 @@ async function saveMain(fd) {
 export default async function Page({ searchParams }) {
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/profile");
+  // A pending profile claim sees none of that creator's data, and writes nothing.
+  if (me.claimPending) return <PublicShell creatorName={me.creator.name || me.creator.handle} path="/creator/profile"><ClaimNote status="pending" /></PublicShell>;
   if (!me.creator.verify_code) {
     const code = "CLT" + [...crypto.getRandomValues(new Uint8Array(3))].map((b) => b.toString(16).padStart(2, "0")).join("").toUpperCase();
     await env.DB.prepare("UPDATE creators SET verify_code=? WHERE id=? AND verify_code IS NULL").bind(code, me.creator.id).run();

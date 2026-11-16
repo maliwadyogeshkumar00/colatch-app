@@ -227,6 +227,8 @@ const NOTIFY_ON: Partial<Record<Step, true>> = { submit_draft: true, request_cha
  * Apply one step to a deal. Returns the updated deal. Throws FlowError with a message a person can act on.
  */
 export async function transition(dealId: string, step: Step, actor: Actor, input: Input = {}): Promise<any> {
+  // Keys starting with __ are set only here (e.g. the frozen price); callers can never supply them.
+  input = Object.fromEntries(Object.entries(input || {}).filter(([k]) => !k.startsWith('__')));
   const result = await env.DB.tx(async (t: any) => {
     const d = await t.prepare('SELECT * FROM creator_deals WHERE id = ? FOR UPDATE').bind(String(dealId || '')).first();
     if (!d) throw new FlowError('That deal does not exist.', 'not_found');

@@ -18,8 +18,10 @@ export interface ColatchScore {
 
 export const TIERS: { tier: Tier; min: number; perk: string }[] = [
   { tier: 'Rising', min: 0, perk: 'Your profile is live and matched to every brief you fit.' },
-  { tier: 'Trusted', min: 40, perk: 'You are shown first when the team builds a shortlist for a brief you fit.' },
-  { tier: 'Gold', min: 65, perk: 'Paid in 3 working days after your post goes live, whatever the brief says.' },
+  // Each perk below is applied in code: Trusted ordering in team/campaigns/[id], the Gold priority flag in
+  // team/deals/[id], Icon early access in creator/page.jsx and creator/o/[slug]. Don't add a perk without its code.
+  { tier: 'Trusted', min: 40, perk: 'You are listed first among eligible applicants when the team builds a shortlist for a brief you fit.' },
+  { tier: 'Gold', min: 65, perk: 'Your payouts are flagged as priority on the Colatch team desk.' },
   { tier: 'Icon', min: 85, perk: 'You see new briefs 24 hours before everyone else.' },
 ];
 

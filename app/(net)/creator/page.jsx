@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { ClaimNote } from "@/app/(net)/join/_claim.js";
 import PublicShell from "../_ui/PublicShell";
 import { env } from "@/lib/net/env";
 import { currentCreator } from "@/lib/net/creatorAuth";
@@ -15,6 +16,8 @@ export const metadata = { title: "Your opportunities", robots: { index: false } 
 export default async function Page({ searchParams }) {
   const me = await currentCreator();
   if (!me) redirect("/creator/login");
+  // A pending profile claim sees none of that creator's data, and writes nothing.
+  if (me.claimPending) return <PublicShell creatorName={me.creator.name || me.creator.handle} path="/creator"><ClaimNote status="pending" /></PublicShell>;
   const c = me.creator;
   const today = new Date().toISOString().slice(0, 10);
   const camps = (await env.DB.prepare("SELECT * FROM campaigns WHERE status='open' AND is_open=1 AND (deadline IS NULL OR deadline >= ?) ORDER BY created_at DESC LIMIT 300").bind(today).all()).results ?? [];

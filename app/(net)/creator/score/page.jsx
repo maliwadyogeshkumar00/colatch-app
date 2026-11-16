@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { ClaimNote } from "@/app/(net)/join/_claim.js";
 import PublicShell from "../../_ui/PublicShell";
 import { env } from "@/lib/net/env";
 import { currentCreator } from "@/lib/net/creatorAuth";
@@ -30,6 +31,8 @@ const CSS = `
 export default async function Page() {
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/score");
+  // A pending profile claim sees none of that creator's data, and writes nothing.
+  if (me.claimPending) return <PublicShell creatorName={me.creator.name || me.creator.handle} path="/creator/score"><ClaimNote status="pending" /></PublicShell>;
   const c = me.creator;
   const s = await colatchScore(env, c.id);
   const idx = TIERS.findIndex((t) => t.tier === s.tier);

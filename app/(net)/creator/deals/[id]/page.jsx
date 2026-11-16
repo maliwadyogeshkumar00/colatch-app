@@ -24,7 +24,7 @@ async function ctx(fd) {
   const id = String(fd.get("id") ?? "");
   const me = await currentCreator();
   if (!me) redirect(`/creator/login?next=${encodeURIComponent(`/creator/deals/${id}`)}`);
-  if (await claimPending(me.accountId)) redirect(`/creator/deals/${encodeURIComponent(id)}`);
+  if (me.claimPending || (await claimPending(me.accountId))) redirect(`/creator/deals/${encodeURIComponent(id)}`);
   const d = await load(id, me.creator.id);
   if (!d) redirect("/creator/applications");
   const k = d.campaign_id ? await env.DB.prepare("SELECT * FROM campaigns WHERE id=?").bind(d.campaign_id).first() : null;
@@ -104,9 +104,7 @@ async function reportBypass(fd) {
 export default async function Page({ params, searchParams }) {
   const me = await currentCreator();
   if (!me) redirect(`/creator/login?next=${encodeURIComponent(`/creator/deals/${params.id}`)}`);
-  let d = await load(params.id, me.creator.id);
-  if (!d) notFound();
-  if (await claimPending(me.accountId)) {
+  if (me.claimPending || (await claimPending(me.accountId))) {
     return (
       <PublicShell creatorName={me.creator.name || me.creator.handle} path="/creator/applications">
         <div className="panel pad"><h2>We're verifying your profile</h2>
@@ -114,6 +112,8 @@ export default async function Page({ params, searchParams }) {
       </PublicShell>
     );
   }
+  let d = await load(params.id, me.creator.id);
+  if (!d) notFound();
   const k = d.campaign_id ? await env.DB.prepare("SELECT * FROM campaigns WHERE id=?").bind(d.campaign_id).first() : null;
   const must = lines(k?.mandatories);
   const avoid = lines(k?.exclusions);

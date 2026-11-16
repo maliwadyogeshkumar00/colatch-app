@@ -1,4 +1,5 @@
 import { redirect } from "next/navigation";
+import { ClaimNote } from "@/app/(net)/join/_claim.js";
 import { headers } from "next/headers";
 import PublicShell from "../../_ui/PublicShell";
 import { env } from "@/lib/net/env";
@@ -13,6 +14,7 @@ async function setShowEarnings(fd) {
   "use server";
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/earnings");
+  if (me.claimPending) redirect("/creator/earnings");
   const on = String(fd.get("show") ?? "") === "1" ? 1 : 0;
   await env.DB.prepare("UPDATE creators SET show_earnings=?, updated_at=datetime('now') WHERE id=?").bind(on, me.creator.id).run();
   redirect("/creator/earnings#flex");
@@ -26,6 +28,8 @@ const ms = (s) => Date.parse(String(s).replace(" ", "T") + "Z");
 export default async function Page() {
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/earnings");
+  // A pending profile claim sees none of that creator's data, and writes nothing.
+  if (me.claimPending) return <PublicShell creatorName={me.creator.name || me.creator.handle} path="/creator/earnings"><ClaimNote status="pending" /></PublicShell>;
   const c = me.creator;
   const code = await ensureCode(env, "creator", c.id, c.name || c.handle);
   const deals = (await env.DB.prepare("SELECT d.*, k.payment_days FROM creator_deals d LEFT JOIN campaigns k ON k.id=d.campaign_id WHERE d.creator_id=? AND d.stage <> 'dropped' ORDER BY d.created_at").bind(c.id).all()).results ?? [];

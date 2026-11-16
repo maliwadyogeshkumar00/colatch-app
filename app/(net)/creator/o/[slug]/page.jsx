@@ -12,6 +12,7 @@ import { flashUrl } from "../../../_ui/flash";
 import { colatchScore } from "@/lib/net/score";
 import { notify, teamInbox } from "@/lib/net/notify";
 import { audit } from "@/lib/net/security";
+import { ClaimNote } from "@/app/(net)/join/_claim.js";
 
 const CSS = `
 .pg-brief .trust{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
@@ -53,6 +54,7 @@ async function apply(fd) {
   const me = await currentCreator();
   if (!k) redirect("/creator");
   if (!me) redirect(`/creator/login?next=${encodeURIComponent(path)}`);
+  if (me.claimPending) redirect(flashUrl(path, "err", "We are still verifying this profile is yours. You can apply once that's done."));
   const c = me.creator;
   if (!(await canSee(k, c))) redirect("/creator");
   const m = match(c, k);
@@ -99,6 +101,7 @@ async function withdraw(fd) {
   const path = `/creator/o/${slug}`;
   const me = await currentCreator();
   if (!me) redirect(`/creator/login?next=${encodeURIComponent(path)}`);
+  if (me.claimPending) redirect(path);
   const k = await getCampaign(slug);
   if (!k) redirect("/creator");
   // Only the creator's own application, and only before the brand has picked them.
@@ -114,7 +117,8 @@ export default async function Page({ params, searchParams }) {
   const k = await getCampaign(params.slug);
   if (!k) notFound();
   const me = await currentCreator();
-  const c = me?.creator;
+  const pendingClaim = Boolean(me?.claimPending);
+  const c = pendingClaim ? null : me?.creator;
   if (!(await canSee(k, c))) notFound();
   const m = c ? match(c, k) : null;
   const open = isOpen(k);
@@ -141,7 +145,9 @@ export default async function Page({ params, searchParams }) {
   );
 
   let side;
-  if (!c) {
+  if (pendingClaim) {
+    side = <><h2>Want this one?</h2><ClaimNote status="pending" /></>;
+  } else if (!c) {
     side = (
       <>
         <h2>Want this one?</h2>
@@ -182,7 +188,7 @@ export default async function Page({ params, searchParams }) {
   }
 
   return (
-    <PublicShell creatorName={c ? c.name || c.handle : null} path={`/creator/o/${k.slug}`} hero={hero}>
+    <PublicShell creatorName={c ? c.name || c.handle : pendingClaim ? me.creator.name || me.creator.handle : null} path={`/creator/o/${k.slug}`} hero={hero}>
       <div className="pg-brief">
         <style dangerouslySetInnerHTML={{ __html: CSS }} />
         <div className="grid2" style={{ gridTemplateColumns: "minmax(0,1.5fr) minmax(0,1fr)", alignItems: "start" }}>
