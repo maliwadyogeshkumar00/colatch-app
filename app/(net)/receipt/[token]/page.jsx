@@ -23,17 +23,17 @@ const CSS = `
 .pg-receipt .paper{position:relative;max-width:640px;margin:0 auto;background:#fffdf8;color:#1F1524;padding:44px 40px 40px;box-shadow:0 30px 60px -30px rgba(31,21,36,.35),0 2px 6px rgba(31,21,36,.06);
   -webkit-mask:radial-gradient(circle 7px at 50% 0,#0000 98%,#000) top/18px 51% repeat-x,radial-gradient(circle 7px at 50% 100%,#0000 98%,#000) bottom/18px 51% repeat-x;
   mask:radial-gradient(circle 7px at 50% 0,#0000 98%,#000) top/18px 51% repeat-x,radial-gradient(circle 7px at 50% 100%,#0000 98%,#000) bottom/18px 51% repeat-x}
-.pg-receipt .mono{font-family:ui-monospace,"SFMono-Regular","Roboto Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+.pg-receipt .mono{font-family:var(--font-sans);font-variant-numeric:tabular-nums lining-nums}
 .pg-receipt .head{text-align:center;border-bottom:1px dashed rgba(31,21,36,.3);padding-bottom:18px;margin-bottom:18px}
 .pg-receipt .head svg.em{width:34px;height:34px}
 .pg-receipt .head .ttl{margin:10px 0 2px;font-size:13px;letter-spacing:.32em;text-transform:uppercase;font-weight:700}
 .pg-receipt .head .sub{font-size:12px;color:#5A5664}
 .pg-receipt .meta{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:12.5px;margin-bottom:18px}
-.pg-receipt .meta span{color:#8A8694;text-transform:uppercase;letter-spacing:.1em;font-size:10.5px;padding-top:2px}
-.pg-receipt .sect{font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:#8A8694;font-weight:700;margin:22px 0 8px}
+.pg-receipt .meta span{color:#6E6478;text-transform:uppercase;letter-spacing:.1em;font-size:10.5px;padding-top:2px}
+.pg-receipt .sect{font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:#6E6478;font-weight:700;margin:22px 0 8px}
 .pg-receipt .ln{display:flex;justify-content:space-between;gap:14px;font-size:14px;padding:5px 0}
 .pg-receipt .ln .l{flex:1;min-width:0}
-.pg-receipt .ln .l small{display:block;color:#8A8694;font-size:11.5px}
+.pg-receipt .ln .l small{display:block;color:#6E6478;font-size:11.5px}
 .pg-receipt .ln .dots{flex:1;border-bottom:1px dotted rgba(31,21,36,.28);margin:0 6px 5px;min-width:20px;align-self:flex-end}
 .pg-receipt .rule{border-top:1px dashed rgba(31,21,36,.3);margin:12px 0}
 .pg-receipt .tot{display:flex;justify-content:space-between;font-weight:700;font-size:15px;padding:6px 0}
@@ -44,7 +44,7 @@ const CSS = `
 .pg-receipt .proofs{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:6px}
 .pg-receipt .proofs div{border:1px solid rgba(31,21,36,.12);border-radius:10px;padding:10px 12px;font-size:12.5px;color:#5A5664}
 .pg-receipt .proofs b{display:block;font-size:20px;font-weight:500;color:#1F1524}
-.pg-receipt .foot-note{font-size:11.5px;color:#8A8694;line-height:1.5;margin-top:18px}
+.pg-receipt .foot-note{font-size:11.5px;color:#6E6478;line-height:1.5;margin-top:18px}
 .pg-receipt .thanks{text-align:center;font-size:12px;letter-spacing:.2em;text-transform:uppercase;margin-top:22px;color:#5A5664}
 .pg-receipt .bar{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;max-width:640px;margin:22px auto 0}
 .pg-receipt .refer{max-width:640px;margin:16px auto 0;padding:16px 18px;border-radius:14px;background:var(--ivory-2);border:1px solid var(--line);font-size:13.5px;color:var(--ink-2)}
@@ -178,7 +178,7 @@ export default async function Page({ params }) {
             <div className="grand">
               <div className="k">Kept in your pocket</div>
               <div className="v mono">{inr(tot.saved)}</div>
-              <div className="s">{inr(received)} of value for {inr(spend)} spent{multiple != null ? ` · ${multiple.toFixed(1)}× return` : ""}</div>
+              <div className="s">{inr(received)} of value for {inr(spend)} spent{multiple != null && multiple >= 1 ? ` · ${multiple.toFixed(1)}× return` : ""}</div>
             </div>
             <p className="foot-note">How we count: market rate is each creator's own rate card, or the typical rate for their follower size. The agency baseline is a {base.agencyPct}% markup (the usual range is 15 to 30%). Paid-ads value prices your views at ₹{base.cpm} per 1,000. Sales come only from your tracked Colatch codes and links. Nothing is counted twice.</p>
           </>)}

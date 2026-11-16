@@ -44,13 +44,13 @@ export default async function Page({ searchParams }) {
   const mayRetry = can(me.role, "team");
   const when = (v) => (v ? new Date(v).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "");
   return (
-    <TeamShell active="notifications" title="Notifi<em>cations</em>" email={me.email} role={me.role}
+    <TeamShell active="notifications" title="Email <b>outbox</b>" email={me.email} role={me.role}
       actions={mayRetry && mail.ready ? <form action={retryAll}><button className="btn">Retry unsent (last 7 days)</button></form> : null}>
       <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
       {mail.ready ? (
         <div className="note good" style={{ marginBottom: 14 }}>Email is set up. Messages go out through Resend as things happen.</div>
       ) : (
-        <div className="note bad" role="alert" style={{ marginBottom: 14 }}>
+        <div className="note warn" role="status" style={{ marginBottom: 14 }}>
           <b>Email is not set up, so nothing is being emailed.</b> Missing in Vercel: {mail.missing.join(", ")}. Every message is still recorded below as "Not sent: not set up". Once the keys are added, use "Retry unsent".
         </div>
       )}

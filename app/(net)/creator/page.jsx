@@ -23,7 +23,10 @@ export default async function Page({ searchParams }) {
   const c = me.creator;
   const today = new Date().toISOString().slice(0, 10);
   const camps = (await env.DB.prepare("SELECT * FROM campaigns WHERE status='open' AND is_open=1 AND (deadline IS NULL OR deadline >= ?) ORDER BY created_at DESC LIMIT 300").bind(today).all()).results ?? [];
-  const applied = new Set(((await env.DB.prepare("SELECT campaign_id FROM campaign_applications WHERE (creator_id=? OR handle=?) AND status <> 'withdrawn'").bind(c.id, c.handle).all()).results ?? []).map((r) => r.campaign_id));
+  const appRows = (await env.DB.prepare("SELECT campaign_id, match_score FROM campaign_applications WHERE (creator_id=? OR handle=?) AND status <> 'withdrawn'").bind(c.id, c.handle).all()).results ?? [];
+  const applied = new Set(appRows.map((r) => r.campaign_id));
+  // Once applied, show the score saved with the application, the same one the brand and the team see.
+  const savedScore = new Map(appRows.filter((r) => r.match_score != null).map((r) => [r.campaign_id, Number(r.match_score)]));
   const revealed = new Set(((await env.DB.prepare("SELECT campaign_id FROM creator_deals WHERE creator_id=? AND sow_accepted_at IS NOT NULL").bind(c.id).all()).results ?? []).map((r) => r.campaign_id));
   const brandLabel = (k) => (revealed.has(k.id) ? k.brand || blindBrand(k) : blindBrand(k));
   const sc = await colatchScore(env, c.id);
@@ -49,23 +52,27 @@ export default async function Page({ searchParams }) {
   const moves = deals.map((d) => ({ d, m: nextMove(d) })).filter((x) => x.m);
   const myMoves = moves.filter((x) => isMine(x.m, "creator"));
   const waiting = moves.filter((x) => !isMine(x.m, "creator"));
+  // With no deal waiting on them, the creator's move is the best brief they haven't applied to, or a profile gap.
   const pendingApps = ((await env.DB.prepare("SELECT a.status, k.title, k.slug, k.id FROM campaign_applications a JOIN campaigns k ON k.id=a.campaign_id WHERE a.creator_id=? AND a.status IN ('new','shortlisted') ORDER BY a.created_at DESC LIMIT 5").bind(c.id).all()).results ?? []);
 
+  const nextBrief = mine.find((x) => !applied.has(x.k.id)) || null;
   const hero = (
     <section className="hero"><div className="hero-in">
       <div className="eb">{welcome ? "Welcome to Colatch" : "Your opportunities"}</div>
-      <h1>{myMoves.length ? <>{myMoves.length === 1 ? "One thing" : `${myMoves.length} things`} need <b>you, {first}.</b></> : mine.length ? <>{mine.length} {mine.length === 1 ? "brief fits" : "briefs fit"} <b>you, {first}.</b></> : <>Your matches land <b>here.</b></>}</h1>
+      <h1>{myMoves.length ? <>{myMoves.length === 1 ? "One deal needs" : `${myMoves.length} deals need`} <b>you, {first}.</b></> : mine.length ? <>{mine.length} {mine.length === 1 ? "brief fits" : "briefs fit"} <b>you, {first}.</b></> : <>Your matches land <b>here.</b></>}</h1>
       <p>{myMoves.length ? "Your move first, then what you're waiting on, then new briefs that fit you." : "Briefs where you meet what the brand asked for: talent, size, city and language. You decide what to apply for."}</p>
     </div></section>
   );
 
   return (
     <PublicShell creatorName={c.name || c.handle} path="/creator" hero={hero} moves={myMoves.length}>
-      {(myMoves.length > 0 || waiting.length > 0 || pendingApps.length > 0) && (
+      {(myMoves.length > 0 || nextBrief || gaps.length > 0 || waiting.length > 0 || pendingApps.length > 0) && (
         <section aria-labelledby="sheet-mine" style={{ marginBottom: 32 }}>
-          {myMoves.length > 0 && <div className="sheet" style={{ marginBottom: 24 }}>
-            <div className="sheet__h"><h2 id="sheet-mine">Your move</h2><span className="n">{myMoves.length}</span></div>
+          {(myMoves.length > 0 || nextBrief || gaps.length > 0) && <div className="sheet" style={{ marginBottom: 24 }}>
+            <div className="sheet__h"><h2 id="sheet-mine">Your move</h2><span className="n">{myMoves.length + (nextBrief ? 1 : 0) + (gaps.length ? 1 : 0)}</span></div>
             {myMoves.map(({ d, m }) => <MoveRow key={d.id} kind="mine" href={`/creator/deals/${d.id}`} title={m.forCreator} sub={`${d.brand || "Brand"} · ${d.deliverable || "Deal"}`} cta="Open" />)}
+            {nextBrief && <MoveRow kind="mine" href={`/creator/o/${nextBrief.k.slug}`} title={`Apply: ${nextBrief.k.title}`} sub={`${nextBrief.m.score} match · ${rewardLine(nextBrief.k)}${countdown(nextBrief.k.deadline) ? " · " + countdown(nextBrief.k.deadline) : ""}`} cta="See brief" />}
+            {gaps.length > 0 && <MoveRow kind="mine" href="/creator/profile" title="Finish your profile" sub={`Missing: ${gaps.slice(0, 3).join(", ")}${unlockable.length ? ` · unlocks ${unlockable.length} more ${unlockable.length === 1 ? "brief" : "briefs"}` : ""}`} cta="Update" />}
           </div>}
           {(waiting.length > 0 || pendingApps.length > 0) && <div className="sheet">
             <div className="sheet__h"><h2 id={myMoves.length ? undefined : "sheet-mine"}>Waiting on others</h2><span className="n">{waiting.length + pendingApps.length}</span></div>
@@ -77,17 +84,11 @@ export default async function Page({ searchParams }) {
       <ScoreStrip s={sc} />
       {early.length > 0 && (
         <div className="note info" style={{ marginBottom: 20 }}>
-          <b>{early.length} new {early.length === 1 ? "brief that fits you is" : "briefs that fit you are"} open to Icon creators right now.</b> {early.length === 1 ? "It opens" : "They open"} to you within 24 hours. Icon creators see every brief a day early. <a className="link" href="/creator/score">How to get there →</a>
+          <b>{early.length} more {early.length === 1 ? "brief is" : "briefs are"} open to Icon creators first.</b> {early.length === 1 ? "It opens" : "They open"} to you within 24 hours; the ones that fit you will appear here. Icon creators see every brief a day early. <a className="link" href="/creator/score">How to get there →</a>
         </div>
       )}
       {sc.tier === "Icon" && camps.some(isFresh) && (
         <div className="note good" style={{ marginBottom: 20 }}><b>Icon early access:</b> briefs marked “Early” below are visible only to Icon creators for their first 24 hours.</div>
-      )}
-      {gaps.length > 0 && (
-        <div className="note warn" style={{ marginBottom: 20 }}>
-          <b>Complete your profile to see more briefs.</b> Missing: {gaps.slice(0, 4).join(", ")}.
-          {unlockable.length > 0 && <> {unlockable.length} more {unlockable.length === 1 ? "brief is" : "briefs are"} waiting for this.</>} <a className="link" href="/creator/profile">Update profile →</a>
-        </div>
       )}
 
       <div className="sheet__h" style={{ marginTop: 8 }}><h2>Briefs that fit you</h2><span className="n">{mine.length}</span></div>
@@ -111,7 +112,7 @@ export default async function Page({ searchParams }) {
                   {isFeatured(k) && <span className="pill ok">Featured</span>}
                   {sc.tier === "Icon" && isFresh(k) && <span className="pill ok">Early</span>}
                   {applied.has(k.id) && <span className="pill good">Applied</span>}
-                  <div className="score sm" style={{ "--v": m.score }} title="Match score"><i>{m.score}</i></div>
+                  <div className="score sm" style={{ "--v": savedScore.get(k.id) ?? m.score }} title="Match score"><i>{savedScore.get(k.id) ?? m.score}</i></div>
                 </div>
               </div>
               {k.brief && <p>{k.brief.length > 220 ? k.brief.slice(0, 220) + "…" : k.brief}</p>}

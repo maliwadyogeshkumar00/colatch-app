@@ -1,4 +1,8 @@
+import { Ubuntu } from "next/font/google";
 import "./globals.css";
+
+// Self-hosted at build time: no request to Google from the visitor's browser, no layout shift from a late font.
+const ubuntu = Ubuntu({ weight: ["300", "400", "500", "700"], subsets: ["latin"], display: "swap", variable: "--font-ubuntu" });
 
 export const metadata = {
   title: "Colatch — Find the face your brand deserves",
@@ -14,12 +18,9 @@ export const viewport = { themeColor: "#1F1524", width: "device-width", initialS
 
 export default function RootLayout({ children }) {
   return (
-    <html lang="en">
+    <html lang="en" className={ubuntu.variable}>
       <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link rel="preconnect" href="https://colatch.com" />
-        <link href="https://fonts.googleapis.com/css2?family=Ubuntu:wght@300;400;500;700&display=swap" rel="stylesheet" />
       </head>
       <body>{children}</body>
     </html>

@@ -26,9 +26,9 @@ const CSS = `
 .pg-shortlist .dots i{width:10px;height:10px;border-radius:50%;background:var(--line-3);display:inline-block}
 .pg-shortlist .dots i.on{background:var(--p700)}
 .pg-shortlist .save{margin-top:8px;display:flex;flex-direction:column;gap:3px}
-.pg-shortlist .save span{font-size:12px;font-weight:600;color:var(--good)}
+.pg-shortlist .save span{font-size:12px;font-weight:500;color:var(--accent-ink)}
 .pg-shortlist .fit{display:inline-block;margin-top:6px;font-size:11px;font-weight:600;padding:2px 9px;border-radius:99px}
-.pg-shortlist .fit.good{background:rgba(31,122,80,.12);color:var(--good)}.pg-shortlist .fit.ok{background:rgba(200,150,46,.15);color:var(--gold-deep)}.pg-shortlist .fit.bad{background:rgba(155,59,59,.1);color:var(--crit)}
+.pg-shortlist .fit.good{background:var(--soft-bg);color:var(--soft-fg)}.pg-shortlist .fit.good::before{content:"✓ "}.pg-shortlist .fit.ok{background:transparent;box-shadow:inset 0 0 0 1px var(--line-strong);color:var(--accent-ink)}.pg-shortlist .fit.bad{background:transparent;box-shadow:inset 0 0 0 1px var(--line-3);color:var(--ink-3)}.pg-shortlist .fit.bad::before{content:"– "}
 .pg-shortlist .loss{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
 .pg-shortlist .loss div{padding:12px 14px;border-radius:12px;background:var(--paper);border:1px solid var(--line)}
 .pg-shortlist .loss b{display:block;font-size:13.5px}.pg-shortlist .loss span{font-size:12px;color:var(--ink-3)}
@@ -176,7 +176,6 @@ export default async function Page({ params, searchParams }) {
      FROM campaign_applications a LEFT JOIN creators c ON c.id=a.creator_id WHERE a.campaign_id=? AND a.status IN ('shortlisted','accepted') ORDER BY a.match_score DESC NULLS LAST`
   ).bind(k.id).all()).results ?? [];
   const approved = rows.filter((r) => r.client_decision === "approved");
-  const spend = approved.reduce((s, r) => s + (r.rate_quote || 0), 0);
   const views = approved.reduce((s, r) => s + (r.avg_views || 0), 0);
   const deals = (await env.DB.prepare("SELECT d.*, c.name, c.handle, c.profile_pic FROM creator_deals d JOIN creators c ON c.id=d.creator_id WHERE d.campaign_id=? AND d.stage <> ? ORDER BY d.updated_at DESC").bind(k.id, "dropped").all()).results ?? [];
   const live = deals.filter((d) => d.live_at);
@@ -209,6 +208,9 @@ export default async function Page({ params, searchParams }) {
   const atStake = held.reduce((a, d) => a + (d.brand_paid_paise != null ? Number(d.brand_paid_paise) / 100 : d.fee || 0), 0);
   const booked = new Set(deals.filter((d) => d.stage !== "cancelled" && d.application_id).map((d) => d.application_id));
   const bookedCreators = new Set(deals.filter((d) => d.stage !== "cancelled").map((d) => d.creator_id));
+  // Approved = the brand said yes, or the creator is already booked on this brief. Fees come from the booked deals.
+  const approvedOrBooked = rows.filter((r) => r.client_decision === "approved" || booked.has(r.id) || (r.creator_id && bookedCreators.has(r.creator_id)));
+  const spend = deals.filter((d) => d.stage !== "cancelled").reduce((a, d) => a + (d.fee || 0), 0) || approved.reduce((a, r) => a + (r.rate_quote || 0), 0);
   const priced = Object.fromEntries(await Promise.all(deals.map(async (d) => [d.id, await priceDeal(env, d, k).catch(() => null)])));
   const drafts = deals.filter((d) => d.draft_status === "submitted" && d.stage !== "cancelled");
   const waitingOnYou = rows.filter((r) => !r.client_decision && !booked.has(r.id) && !(r.creator_id && bookedCreators.has(r.creator_id)));
@@ -310,7 +312,7 @@ export default async function Page({ params, searchParams }) {
         {deals.length > 0 && <div style={{ marginBottom: 34 }}>
           <div className="spread" style={{ marginBottom: 12 }}><div className="h2" style={{ margin: 0 }}>Campaign progress</div><div className="row" style={{ gap: 8 }}><a className="btn sm" href={`/receipt/${params.token}`}>Value receipt</a><a className="btn sm" href={`/brief?again=${encodeURIComponent(token)}`}>Book again</a></div></div>
           <div className="grid3">
-            <div className="panel kpi"><div className="k">Spend</div><div className="v">{inr(tSpend)}</div><div className="s">creator fees, {deals.length} {deals.length === 1 ? "creator" : "creators"}</div></div>
+            <div className="panel kpi"><div className="k">Booked</div><div className="v">{inr(tSpend)}</div><div className="s">creator fees, {deals.length} {deals.length === 1 ? "creator" : "creators"}</div></div>
             <div className="panel kpi"><div className="k">Views</div><div className="v">{compact(tViews)}</div><div className="s">{live.length} of {deals.length} posts live</div></div>
             <div className="panel kpi"><div className="k">Cost per view</div><div className="v">{actualCpv != null ? "₹" + actualCpv.toFixed(2) : "—"}</div><div className="s">{promiseLine}</div></div>
             <div className="panel kpi"><div className="k">Engagement</div><div className="v">{compact(tEng)}</div><div className="s">{tEng && liveSpend ? "₹" + (liveSpend / tEng).toFixed(2) + " per engagement" : "likes + comments"}</div></div>
@@ -344,8 +346,8 @@ export default async function Page({ params, searchParams }) {
         </div>}
 
         <div className="grid3" style={{ marginBottom: 22 }}>
-          <div className="panel kpi"><div className="k">Approved</div><div className="v">{approved.length} / {k.creators_needed || rows.length}</div><div className="s">creators</div></div>
-          <div className="panel kpi"><div className="k">Creator fees so far</div><div className="v">{inr(spend)}</div><div className="s">before Colatch fee + GST</div></div>
+          <div className="panel kpi"><div className="k">Approved</div><div className="v">{approvedOrBooked.length} / {k.creators_needed || rows.length}</div><div className="s">creators, including booked</div></div>
+          <div className="panel kpi"><div className="k">Creator fees committed</div><div className="v">{inr(spend)}</div><div className="s">before Colatch fee + GST</div></div>
           <div className="panel kpi"><div className="k">Expected views</div><div className="v">{compact(views)}</div><div className="s">{spend && views ? `≈ ₹${(spend / views).toFixed(2)} per view` : "from avg reel views"}</div></div>
         </div>
 

@@ -188,7 +188,8 @@ export default async function Page({ params, searchParams }) {
 
           {progress && <form className="panel pad" action={act}>
             {hidden("terms")}
-            <h2>Terms</h2>{d.pay_status !== "unfunded" && <p className="hint">Locked: the brand has paid against these terms.</p>}
+            <h2>Terms</h2>{d.pay_status !== "unfunded" && <p className="hint">Locked: the brand has paid against these terms. To change them, cancel and refund, or add a note.</p>}
+            <fieldset disabled={d.pay_status !== "unfunded"} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
             <div className="form-grid">
               <div className="fld"><label htmlFor="f-team-deals-id-brand-1">Brand</label><input id="f-team-deals-id-brand-1" name="brand" defaultValue={d.brand ?? ""} /></div>
               <div className="fld"><label htmlFor="f-team-deals-id-deliverable-2">Deliverable</label><input id="f-team-deals-id-deliverable-2" name="deliverable" defaultValue={d.deliverable ?? ""} /></div>
@@ -197,6 +198,7 @@ export default async function Page({ params, searchParams }) {
               <div className="fld"><label htmlFor="f-team-deals-id-revisions-included-5">Revision rounds included</label><input id="f-team-deals-id-revisions-included-5" name="revisions_included" defaultValue={d.revisions_included} /></div>
               <div className="fld"><label htmlFor="f-team-deals-id-go-live-date-6">Go-live date</label><input id="f-team-deals-id-go-live-date-6" name="go_live_date" type="date" defaultValue={d.go_live_date ?? ""} /></div>
             </div>
+            </fieldset>
             <div className="row" style={{ marginTop: 14 }}><button className="btn plum" disabled={d.pay_status !== "unfunded"}>Save terms</button><span className="hint">Stage: {STAGE_LABEL[d.stage] || d.stage}. Changing the fee asks the creator to accept again.</span></div>
           </form>}
 

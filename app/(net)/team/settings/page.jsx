@@ -39,7 +39,7 @@ async function signOutEverywhere() {
 export default async function Page({ searchParams }) {
   const me = await requireTeam("view");
   return (
-    <TeamShell active="settings" title="My <em>settings</em>" email={me.email} role={me.role}>
+    <TeamShell active="settings" title="My <b>settings</b>" email={me.email} role={me.role}>
       <div style={{ maxWidth: 560 }}>
         <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
         <div className="panel pad" style={{ marginBottom: 18 }}>

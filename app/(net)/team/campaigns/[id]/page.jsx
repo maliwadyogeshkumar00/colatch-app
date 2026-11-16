@@ -238,7 +238,7 @@ export default async function Page({ params, searchParams }) {
                 <td className="num">{compact(a.cf ?? a.followers)}</td>
                 <td className="num">{a.engagement_rate != null ? `${a.engagement_rate}%` : "—"}</td>
                 <td className="num">{a.rate_quote ? inr(a.rate_quote) : "—"}</td>
-                <td style={{ maxWidth: 260 }}>{m.reasons.slice(0, 2).map((r) => <span key={r} className="tag">{r}</span>)}{m.blockers.map((b) => <span key={b} className="tag" style={{ background: "rgba(155,59,59,.08)", color: "#7a2c2c" }}>{b}</span>)}</td>
+                <td style={{ maxWidth: 260 }}>{m.reasons.slice(0, 2).map((r) => <span key={r} className="tag">{r}</span>)}{m.blockers.map((b) => <span key={b} className="tag" style={{ background: "transparent", boxShadow: "inset 0 0 0 1px var(--line-3)", color: "var(--ink-3)" }}>✕ {b}</span>)}</td>
                 <td>{a.client_decision && <span className={`pill ${a.client_decision === "approved" ? "good" : "low"}`} style={{ marginBottom: 6 }}>Client {a.client_decision}</span>}{a.client_note && <div className="hint" style={{ maxWidth: 200 }}>"{a.client_note}"</div>}
                   {["shortlisted", "accepted"].includes(a.status) && <form action={act} className="row" style={{ margin: "6px 0", gap: 6, flexWrap: "nowrap" }}>{hidden("note")}<input type="hidden" name="app" value={a.id} /><input className="in" name="team_note" defaultValue={a.team_note ?? ""} placeholder="Why we picked them" style={{ padding: "6px 8px", fontSize: 12.5, minWidth: 180 }} /><button className="btn sm">Save</button></form>}
                   {deals.get(a.id) ? <a className="btn sm" href={`/team/deals/${deals.get(a.id)}`} style={{ marginBottom: 6 }}>Open deal</a>

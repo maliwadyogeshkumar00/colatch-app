@@ -93,7 +93,7 @@ export default async function Page() {
       </div>
 
       <div className="sec panel pad" id="flex">
-        <div className="grid2" style={{ alignItems: "center", gridTemplateColumns: "minmax(0,1fr) 260px" }}>
+        <div className="grid2 flexcard" style={{ alignItems: "center" }}>
           <div>
             <div className="row" style={{ gap: 10 }}><h2 style={{ margin: 0 }}>Your flex card</h2><TierBadge tier={sc.tier} size="sm" /></div>
             <h3 style={{ marginTop: 14 }}>Post it on your story. Every creator who joins with it earns you ₹{REF.creatorBonus}.</h3>

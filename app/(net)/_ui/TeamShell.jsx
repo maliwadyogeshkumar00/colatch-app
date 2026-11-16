@@ -64,6 +64,12 @@ export default function TeamShell({ active, eyebrow = "Colatch Connect", title, 
           <div className="bar__right">{actions}</div>
         </div>
         {children}
+        <nav className="desk-more" aria-label="More">
+          {ADMIN_NAV.map((n) => <a key={n.key} className="link small" href={n.href}>{n.label}</a>)}
+          <a className="link small" href="/connect">Connect workspace</a>
+          <a className="link small" href="/">Celebrity match</a>
+          <a className="link small" href="/team/logout">Sign out</a>
+        </nav>
       </main>
     </div>
   );

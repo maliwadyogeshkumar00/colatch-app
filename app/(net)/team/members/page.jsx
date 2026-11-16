@@ -134,7 +134,7 @@ export default async function Page({ searchParams }) {
   const mail = emailConfig();
   const roles = can(me.role, "owner") ? ROLES : ROLES.filter((r) => r !== "owner");
   return (
-    <TeamShell active="members" title="Team <em>members</em>" email={me.email} role={me.role}>
+    <TeamShell active="members" title="Team <b>members</b>" email={me.email} role={me.role}>
       <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
       {!mail.ready && <div className="note" style={{ marginBottom: 14 }}>Email is not set up (missing {mail.missing.join(", ")}), so invite and reset links are shown here for you to send yourself.</div>}
       {shown?.link && (

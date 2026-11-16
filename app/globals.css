@@ -6,7 +6,7 @@
   --foil:linear-gradient(100deg,#c89442 0%,#f5e48d 38%,#f9f1cc 52%,#f4e07e 70%,#c89442 100%);
   --gold-flat:linear-gradient(135deg,#C8962E,#E8B84B);
   --line:rgba(216,204,221,.14);--line-2:rgba(216,204,221,.24);
-  --font:'Ubuntu',system-ui,-apple-system,'Segoe UI',sans-serif;
+  --font:var(--font-ubuntu),'Ubuntu',system-ui,-apple-system,'Segoe UI',sans-serif;
   --ease:cubic-bezier(.2,.7,.25,1);--dur:200ms;--rise:650ms;--stagger:70ms;
   --u:8px;--r-reg:4px;--r-obj:6px;--max:1280px;
 }

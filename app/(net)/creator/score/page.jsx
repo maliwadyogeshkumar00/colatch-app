@@ -16,8 +16,8 @@ const CSS = `
 .pg-score .step .min{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-4);font-weight:600;margin-top:10px}
 .pg-score .step p{margin:6px 0 0;font-size:13.5px;color:var(--ink-2);line-height:1.5}
 .pg-score .you{position:absolute;top:-10px;right:14px;background:var(--gold-foil);color:var(--purple-deep);font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;letter-spacing:.06em}
-.pg-score .bar{height:8px;border-radius:99px;background:rgba(31,21,36,.07);overflow:hidden;margin-top:8px}
-.pg-score .bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#6A4A78,#C8962E)}
+.pg-score .meterbar{height:8px;border-radius:99px;background:var(--ivory-2);overflow:hidden;margin-top:8px}
+.pg-score .meterbar i{display:block;height:100%;border-radius:99px;background:var(--p500)}
 .pg-score .part{padding:14px 0;border-bottom:1px solid var(--line-2)}
 .pg-score .part:last-child{border-bottom:0}
 .pg-score .part .h{display:flex;justify-content:space-between;gap:12px;font-size:14.5px}
@@ -79,7 +79,7 @@ export default async function Page() {
             {s.parts.map((p) => (
               <div key={p.label} className="part">
                 <div className="h"><b>{p.label}</b><span className="muted">{p.points} / {p.max}</span></div>
-                <div className="bar"><i style={{ width: `${p.max ? Math.round((p.points / p.max) * 100) : 0}%` }} /></div>
+                <div className="meterbar"><i style={{ width: `${p.max ? Math.round((p.points / p.max) * 100) : 0}%` }} /></div>
                 <div className="how">{p.how}</div>
               </div>
             ))}

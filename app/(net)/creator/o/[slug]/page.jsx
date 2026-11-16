@@ -17,7 +17,7 @@ import { ClaimNote } from "@/app/(net)/join/_claim.js";
 const CSS = `
 .pg-brief .trust{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
 .pg-brief .trust span{font-size:12.5px;padding:6px 12px;border-radius:999px;background:var(--ivory-2);color:var(--ink-2)}
-.pg-brief .trust span.ok{background:rgba(31,122,80,.1);color:#16573a;font-weight:600}
+.pg-brief .trust span.ok{background:var(--soft-bg);color:var(--soft-fg);font-weight:500}
 .pg-brief .loss{margin-top:18px;padding:16px 18px;border-radius:14px;border:1px dashed rgba(155,59,59,.35);background:rgba(155,59,59,.03)}
 .pg-brief .loss h4{margin:0 0 10px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#7a2c2c}
 .pg-brief .loss div{font-size:13.5px;color:var(--ink-2);padding:4px 0}

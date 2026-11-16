@@ -1,7 +1,7 @@
 // Colatch Score visuals: tier badge, compact strip for the feed, shared styles.
 export const TIER_STYLE = {
   Rising: { bg: "rgba(106,74,120,.12)", fg: "#472B53", ring: "#8A6E96", mark: "◆" },
-  Trusted: { bg: "rgba(31,122,80,.12)", fg: "#16573a", ring: "#1F7A50", mark: "✦" },
+  Trusted: { bg: "#EFE9F1", fg: "#472B53", ring: "#6A4A78", mark: "✦" },
   Gold: { bg: "linear-gradient(135deg,#F2D163,#C8962E)", fg: "#2E1B36", ring: "#C8962E", mark: "★" },
   Icon: { bg: "linear-gradient(135deg,#2E1B36,#1E1128)", fg: "#F2D163", ring: "#E8B84B", mark: "♛" },
 };
