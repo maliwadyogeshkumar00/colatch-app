@@ -11,7 +11,7 @@ export const metadata = { title: "Your Colatch Score", robots: { index: false } 
 const CSS = `
 .pg-score .ladder{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}
 .pg-score .step{padding:18px;border-radius:16px;border:1px solid var(--line);background:var(--paper);position:relative}
-.pg-score .step.on{box-shadow:0 0 0 2px var(--gold-2),var(--sh-2)}
+.pg-score .step.on{box-shadow:0 0 0 2px var(--p500),var(--sh-2)}
 .pg-score .step.done{opacity:.72}
 .pg-score .step .min{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-4);font-weight:600;margin-top:10px}
 .pg-score .step p{margin:6px 0 0;font-size:13.5px;color:var(--ink-2);line-height:1.5}
@@ -22,9 +22,9 @@ const CSS = `
 .pg-score .part:last-child{border-bottom:0}
 .pg-score .part .h{display:flex;justify-content:space-between;gap:12px;font-size:14.5px}
 .pg-score .part .h b{font-weight:600}
-.pg-score .part .how{font-size:12.5px;color:var(--ink-3);margin-top:6px}
+.pg-score .part .pts-how{font-size:12.5px;color:var(--ink-3);margin-top:6px}
 .pg-score .rule{display:flex;gap:14px;align-items:flex-start;padding:18px 20px;border-radius:16px;background:linear-gradient(135deg,#2E1B36,#1E1128);color:#F4EFE3}
-.pg-score .rule b{color:#F2D163}
+.pg-score .rule b{color:#fff}
 @media(max-width:820px){.pg-score .ladder{grid-template-columns:repeat(2,minmax(0,1fr))}}
 `;
 

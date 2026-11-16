@@ -138,7 +138,7 @@ export default async function Page({ params, searchParams }) {
   // Colatch Score perk: Trusted-and-above creators are listed first among eligible applicants.
   const tiers = new Map(await Promise.all([...new Set(apps.map((a) => a.creator_id).filter(Boolean))].map(async (cid) => [cid, (await colatchScore(env, cid).catch(() => null))?.tier || "Rising"])));
   const trusted = (a) => (a.creator_id && tiers.get(a.creator_id) && tiers.get(a.creator_id) !== "Rising" ? 1 : 0);
-  ranked.sort((x, y) => (y.m.eligible ? 1 : 0) - (x.m.eligible ? 1 : 0) || trusted(y.a) - trusted(x.a) || y.m.score - x.m.score);
+  ranked.sort((x, y) => (y.m.eligible ? 1 : 0) - (x.m.eligible ? 1 : 0) || trusted(y.a) - trusted(x.a) || (y.a.match_score ?? y.m.score) - (x.a.match_score ?? x.m.score));
   const deals = new Map(((await env.DB.prepare("SELECT id, application_id FROM creator_deals WHERE campaign_id=?").bind(id).all()).results ?? []).map((d) => [d.application_id, d.id]));
   const appliedHandles = new Set(apps.map((a) => a.handle));
   const pool = (await rankCreators(env, k, 40)).filter((x) => !appliedHandles.has(x.c.handle));
