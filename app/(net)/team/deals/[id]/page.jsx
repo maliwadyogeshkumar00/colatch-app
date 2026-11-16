@@ -11,7 +11,7 @@ import { takeHome, fyStart, makeTrackCode, logEvent, applyAutoApprove, countdown
 import { transition, FlowError, formatPaise } from "@/lib/net/dealflow";
 import { priceDeal } from "@/lib/net/pricing";
 import { safeUrl } from "@/lib/net/guard";
-import { can } from "@/lib/net/security";
+import { can, logError } from "@/lib/net/security";
 import { colatchScore } from "@/lib/net/score";
 
 export const metadata = { title: "Deal", robots: { index: false, follow: false } };
@@ -69,7 +69,7 @@ async function act(fd) {
     }
   } catch (e) {
     if (e instanceof FlowError) err = e.message;
-    else { console.error("[team/deal]", a, e); err = "Something went wrong, nothing was changed. Try again."; }
+    else { await logError("team/deal", e, { action: a, deal: id }); err = "Something went wrong, nothing was changed. Try again."; }
   }
   redirect(err ? flashUrl(back, "err", err) : flashUrl(back, "ok", msg));
 }

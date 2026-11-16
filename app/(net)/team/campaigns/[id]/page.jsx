@@ -15,7 +15,7 @@ import { scrubContacts } from "@/lib/net/guard";
 import { marketRate } from "@/lib/net/value";
 import { colatchScore } from "@/lib/net/score";
 import { notify } from "@/lib/net/notify";
-import { audit } from "@/lib/net/security";
+import { audit, logError } from "@/lib/net/security";
 
 export const metadata = { title: "Campaign", robots: { index: false, follow: false } };
 
@@ -110,7 +110,7 @@ async function handle(fd, forced) {
       return flashUrl(`/team/deals/${dealId}`, "ok", "Deal created. Check the fee and terms, then the creator accepts in their portal.");
     }
   } catch (e) {
-    console.error("[team/campaign]", action, e);
+    await logError("team/campaign", e, { action });
     return back(id, "err", "Something went wrong, the change may not have been saved. Reload and check.");
   }
   return msg ? back(id, "ok", msg) : `/team/campaigns/${id}`;

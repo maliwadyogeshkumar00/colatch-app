@@ -17,9 +17,13 @@ export const metadata = {
   twitter: { card: "summary", title: "Colatch Connect", description: DESC },
 };
 
+// Organization structured data, the same on every Connect page.
+const ORG_LD = JSON.stringify({ "@context": "https://schema.org", "@type": "Organization", name: "Colatch", url: "https://colatch.com", email: "marketing@colatch.com", description: DESC }).replace(/</g, "\\u003c");
+
 export default function NetLayout({ children }) {
   return (
     <div className="net">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: ORG_LD }} />
       <Brand />
       <FormGuard />
       {children}

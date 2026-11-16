@@ -11,7 +11,7 @@
 // Money is recorded, never moved: "funded" and "paid" mean a team member with the finance role
 // confirmed a real bank transfer and typed its reference. Nothing here talks to a bank.
 import { env } from './env';
-import { audit } from './security';
+import { audit, logError } from './security';
 import { notify, teamInbox } from './notify';
 import { scrubContacts } from './guard';
 import { inr } from './creators';
@@ -262,7 +262,7 @@ export async function transition(dealId: string, step: Step, actor: Actor, input
     await audit({ kind: actor.kind === 'system' ? 'system' : actor.kind, id: actor.id }, `deal.${step}`, 'deal', d.id, { before: { stage: d.stage, pay_status: d.pay_status, draft_status: d.draft_status }, set: eff.set, ledger: eff.ledger ? { kind: eff.ledger.kind, amount_paise: eff.ledger.amount_paise } : undefined }, t);
     return t.prepare('SELECT * FROM creator_deals WHERE id = ?').bind(d.id).first();
   });
-  if (NOTIFY_ON[step]) await notifyFor(step, result, input).catch((e) => console.error('[dealflow] notify', step, e?.message));
+  if (NOTIFY_ON[step]) await notifyFor(step, result, input).catch((e) => logError('dealflow/notify', e, { step, deal: result?.id }));
   return result;
 }
 

@@ -7,6 +7,7 @@
 //  - WhatsApp stays `not_configured` until an official provider and approved templates exist.
 // Failures keep the error and can be retried from the team desk (Notifications page).
 import { env } from './env';
+import { logError } from './security';
 
 export type Template =
   | 'creator_welcome' | 'brief_received' | 'new_application' | 'shortlist_ready' | 'creator_shortlisted'
@@ -104,7 +105,7 @@ export async function notify(opts: {
     if (!ins) return 'duplicate';
     return await attempt(Number(ins.id), opts.secret);
   } catch (e: any) {
-    console.error('[notify] could not queue', opts.template, e?.message);
+    await logError('notify/queue', e, { template: opts.template });
     return 'failed';
   }
 }
@@ -133,5 +134,6 @@ export async function attempt(id: number, secret?: Record<string, any>): Promise
     return 'sent';
   }
   await env.DB.prepare("UPDATE notifications SET status='failed', attempts=attempts+1, last_error=? WHERE id=?").bind((res as any).error, id).run();
+  await logError('notify/deliver', new Error((res as any).error), { id, template: n.template });
   return 'failed';
 }

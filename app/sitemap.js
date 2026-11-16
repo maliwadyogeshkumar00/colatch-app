@@ -11,6 +11,7 @@ export default async function sitemap() {
     page("/brief", 0.9),
     page("/join", 0.9),
     page("/pitches", 0.7, "daily"),
+    page("/faq", 0.6, "monthly"),
     page("/creator/login", 0.3, "monthly"),
   ];
   // Database pages are best-effort: if the database is unreachable the static pages still go out.
