@@ -272,7 +272,7 @@ export default async function Page({ params, searchParams }) {
                   <div className="who"><div className="ava" style={{ width: 56, height: 56 }}>{safeUrl(r.profile_pic) ? <img src={safeUrl(r.profile_pic)} alt="" /> : initials(r.name || r.handle)}</div>
                     <div><b style={{ fontSize: 17 }}>{r.name || r.handle}{r.verified ? " ✓" : ""}</b><span><a className="link" href={`https://instagram.com/${encodeURIComponent(String(r.handle || "").replace(/[^a-z0-9._]/gi, ""))}`} {...EXT}>@{r.handle}</a>{r.ccity || r.city ? ` · ${r.ccity || r.city}` : ""}</span></div></div>
                   <div className="row" style={{ gap: 8 }}>
-                    {r.client_decision === "approved" ? <span className="pill good">Approved</span> : r.client_decision === "declined" ? <span className="pill low">Declined</span> : <span className="pill ok">Waiting for you</span>}
+                    {booked.has(r.id) || (r.creator_id && bookedCreators.has(r.creator_id)) ? <span className="pill good">Booked</span> : r.client_decision === "approved" ? <span className="pill good">Approved</span> : r.client_decision === "declined" ? <span className="pill low">Declined</span> : <span className="pill ok">Waiting for you</span>}
                     <div className="score sm" style={{ "--v": r.match_score ?? 50 }} title="Match score"><i>{r.match_score ?? "—"}</i></div>
                   </div>
                 </div>

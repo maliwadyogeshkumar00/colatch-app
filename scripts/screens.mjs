@@ -9,7 +9,7 @@ import pg from "pg";
 
 const BASE = process.env.BASE_URL || "http://localhost:3000";
 const OUT = process.env.SCREENS_OUT || "screens-out";
-const WIDTHS = [[375, 812], [768, 1024], [1440, 900]];
+const WIDTHS = [[320, 640], [375, 812], [414, 896], [768, 1024], [1024, 768], [1440, 900], [1920, 1080]];
 const db = new pg.Client({ connectionString: process.env.DATABASE_URL });
 const q = (sql, ...v) => db.query(sql, v);
 const b64url = (b) => Buffer.from(b).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
