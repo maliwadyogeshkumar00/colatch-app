@@ -63,7 +63,7 @@ export default function PublicShell({ mode = "creator", creatorName = null, bran
         )}
         <div className="bar-in">
           <span>Colatch · Celebrity &amp; Influencer Marketing · India</span>
-          <span>marketing@colatch.com · <a className="link" href="https://colatch.com">colatch.com</a></span>
+          <span><a className="link" href="/faq">FAQ</a> · marketing@colatch.com · <a className="link" href="https://colatch.com">colatch.com</a></span>
         </div>
       </footer>
       {creatorName && !isClient && (

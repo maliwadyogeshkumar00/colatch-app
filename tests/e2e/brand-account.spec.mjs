@@ -11,11 +11,13 @@ const newCtx = (browser) => browser.newContext({ extraHTTPHeaders: { "x-forwarde
 const b64url = (b) => Buffer.from(b).toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 const hash = (pw) => { const salt = randomBytes(16); return { hash: "p600k$" + b64url(pbkdf2Sync(pw, salt, 600_000, 32, "sha256")), salt: b64url(salt) }; };
 
-async function login(page, who) {
+async function login(page, who, { expectOk = true } = {}) {
   await page.goto("/brand/login");
   await page.getByLabel("Email").fill(who.email);
   await page.getByLabel("Password").fill(who.password);
   await page.getByRole("button", { name: "Log in" }).click();
+  // Wait for the login to finish (cookie set, redirect done) before the test navigates on.
+  if (expectOk) await page.waitForURL((u) => !u.pathname.endsWith("/login"), { timeout: 15000 });
 }
 
 test("logged-out visitors are sent to the brand login", async ({ page }) => {
@@ -48,7 +50,7 @@ test("a brand joins, logs out and logs back in", async ({ browser }) => {
   await other.getByLabel(/^Password/).fill(`pw-${rand()}-${rand()}`);
   await other.getByRole("checkbox").check();
   await other.getByRole("button", { name: "Create account" }).click();
-  await expect(other.getByRole("alert")).toContainText("already has a brand account");
+  await expect(other.locator(".note.bad")).toContainText("already has a brand account");
 
   await page.goto("/brand/logout");
   await expect(page).toHaveURL(/\/brand\/login/);
@@ -132,13 +134,14 @@ test.describe("with seeded brands", () => {
     const ctx = await newCtx(browser);
     const page = await ctx.newPage();
     for (let i = 0; i < 8; i++) {
-      await login(page, { email: B.email, password: `wrong-${i}-${rand()}` });
+      await login(page, { email: B.email, password: `wrong-${i}-${rand()}` }, { expectOk: false });
       await expect(page.getByText("Wrong email or password.")).toBeVisible();
     }
-    await login(page, { email: B.email, password: `wrong-again-${rand()}` });
+    await login(page, { email: B.email, password: `wrong-again-${rand()}` }, { expectOk: false });
     await expect(page.getByText(/Too many wrong tries/)).toBeVisible();
     // Even the right password is refused while blocked from this connection.
-    await login(page, B);
+    await login(page, B, { expectOk: false });
+    await expect(page.getByText(/Too many wrong tries/)).toBeVisible();
     await expect(page).toHaveURL(/\/brand\/login/);
     await ctx.close();
   });

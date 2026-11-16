@@ -150,7 +150,7 @@ test("reset request says the same thing whether or not the email has an account"
   };
   const known = await ask(creator.email);
   const unknown = await ask(`nobody-${run}@colatch-test.local`);
-  expect(known).toContain("If that email has a Colatch creator account");
+  expect(known).toContain("If that email has a Colatch creator or brand account");
   expect(unknown).toBe(known);
 });
 
