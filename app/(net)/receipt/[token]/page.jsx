@@ -4,11 +4,13 @@ import PublicShell from "../../_ui/PublicShell";
 import PrintButton from "./PrintButton";
 import { env } from "@/lib/net/env";
 import { inr, compact } from "@/lib/net/creators";
-import { quote, feePct, brandFeePct } from "@/lib/net/deal";
+import { feePct } from "@/lib/net/deal";
+import { priceDeal } from "@/lib/net/pricing";
+import { formatPaise } from "@/lib/net/dealflow";
 import { dealValue, sumValue, baselines } from "@/lib/net/value";
 import { ensureCode } from "@/lib/net/referral";
 
-export const metadata = { title: "Value receipt · Colatch", robots: { index: false, follow: false } };
+export const metadata = { title: "Value receipt", robots: { index: false, follow: false } };
 
 const CSS = `
 .pg-receipt{padding:10px 0 40px}
@@ -57,17 +59,21 @@ export default async function Page({ params }) {
   const k = token.length >= 16 ? await env.DB.prepare("SELECT * FROM campaigns WHERE share_token=?").bind(token).first() : null;
   if (!k) notFound();
 
-  const deals = (await env.DB.prepare("SELECT d.*, c.name, c.handle FROM creator_deals d JOIN creators c ON c.id=d.creator_id WHERE d.campaign_id=? AND d.stage <> ? ORDER BY d.created_at ASC").bind(k.id, "dropped").all()).results ?? [];
+  // Only deals the brand has actually paid for count. A shortlisted or approved-but-unpaid creator isn't spend.
+  const deals = (await env.DB.prepare("SELECT d.*, c.name, c.handle FROM creator_deals d JOIN creators c ON c.id=d.creator_id WHERE d.campaign_id=? AND d.pay_status IN ('funded','released','paid') ORDER BY d.created_at ASC").bind(k.id).all()).results ?? [];
+  const payments = (await env.DB.prepare("SELECT kind, amount_paise, utr, at FROM finance_ledger WHERE campaign_id=? AND kind IN ('brand_payment_received','brand_refund_sent') ORDER BY id").bind(k.id).all()).results ?? [];
   const pct = feePct(env);
   const base = baselines(env);
-  const tot = sumValue(deals.map((d) => dealValue(env, d, pct)));
 
-  // What the brand spends: creator fees, Colatch's fee, GST on Colatch's fee.
-  // #65 / #85: each creator is priced at this brand's own rate (repeat 12%, loyalty ladder), plus rush if asked.
-  const email = String(k.client_email || "").toLowerCase();
-  const rates = await Promise.all(deals.map((d) => brandFeePct(env, email, d.creator_id, k.id).catch(() => ({ pct, reason: null }))));
-  const q = deals.reduce((a, d, i) => { const x = quote(env, d.fee || 0, false, rates[i].pct, Number(k.rush) === 1); return { colatch: a.colatch + x.colatch - x.rushFee, rush: a.rush + x.rushFee, gst: a.gst + x.gstOnColatch }; }, { colatch: 0, rush: 0, gst: 0 });
-  const reasons = [...new Set(rates.map((r) => r.reason).filter(Boolean))];
+  // What the brand spends: creator fees, Colatch's fee, GST on Colatch's fee. Each deal uses the rate frozen
+  // when its payment was recorded (priceDeal), so this receipt never changes after the fact.
+  const prices = await Promise.all(deals.map((d) => priceDeal(env, d, k).catch(() => null)));
+  // Savings vs agency use the fee this brand actually paid on each deal, not the list rate.
+  const tot = sumValue(deals.map((d, i) => dealValue(env, d, prices[i]?.pct ?? pct)));
+  const q = prices.reduce((a, x) => (x ? { colatch: a.colatch + x.colatch - x.rushFee, rush: a.rush + x.rushFee, gst: a.gst + x.gstOnColatch } : a), { colatch: 0, rush: 0, gst: 0 });
+  const reasons = [...new Set(prices.map((x) => x?.reason).filter(Boolean))];
+  const paidIn = payments.filter((x) => x.kind === "brand_payment_received").reduce((a, x) => a + Number(x.amount_paise), 0);
+  const refunded = payments.filter((x) => x.kind === "brand_refund_sent").reduce((a, x) => a + Number(x.amount_paise), 0);
   const effPct = tot.fee ? Math.round((q.colatch / tot.fee) * 1000) / 10 : pct;
   const spend = tot.fee + q.colatch + q.rush + q.gst;
   const received = tot.saved + tot.adsEquivalent + tot.sales;
@@ -98,6 +104,7 @@ export default async function Page({ params }) {
     `Colatch value receipt ${receiptNo} for "${k.title}" (${brand}).`,
     "",
     `Total spend: ${inr(spend)} (creator fees ${inr(tot.fee)}, Colatch fee ${inr(q.colatch)}${q.rush ? `, rush ${inr(q.rush)}` : ""}, GST ${inr(q.gst)})`,
+    `Payments recorded: ${formatPaise(paidIn - refunded)}`,
     `Value received: ${inr(received)}`,
     `  Saved vs creators' market rates: ${inr(tot.savedVsMarket)}`,
     `  Saved vs a ${base.agencyPct}% agency markup: ${inr(tot.savedVsAgency)}`,
@@ -125,23 +132,29 @@ export default async function Page({ params }) {
             <span>Date</span><b>{today}</b>
             <span>Brand</span><b>{brand}</b>
             <span>Campaign</span><b>{k.title}</b>
-            <span>Creators</span><b>{deals.length}</b>
+            <span>Creators</span><b>{deals.length} paid for</b>
           </div>
+          <p className="foot-note" style={{ marginTop: 0 }}>A summary of your campaign's spend and results. It is not a tax invoice; GST invoices are issued separately.</p>
 
           {deals.length === 0 ? (
-            <p className="foot-note">This receipt fills in as soon as your first creator is confirmed. Every fee, saving and view will show here line by line.</p>
+            <p className="foot-note">This receipt fills in once your first payment is recorded. Every fee, saving and view will show here line by line.</p>
           ) : (<>
             <div className="sect">What you spent</div>
             {deals.map((d) => <Line key={d.id} l={d.name || "@" + d.handle} sub={d.deliverable} v={inr(d.fee || 0)} />)}
             <Line l={`Colatch fee (${effPct}%)`} sub={reasons.length ? reasons.join(" · ") : undefined} v={inr(q.colatch)} />
             {q.rush > 0 && <Line l="Rush shortlist (5%)" v={inr(q.rush)} />}
-            <Line l="GST on Colatch fee (18%)" v={inr(q.gst)} />
+            <Line l="GST on Colatch fee (18%)" sub="At the rate currently set; your GST invoice is the final figure" v={inr(q.gst)} />
             <div className="rule" />
             <div className="tot mono"><span>Total spend</span><span>{inr(spend)}</span></div>
+            {payments.length > 0 && <>
+              <div className="sect">Recorded payments</div>
+              {payments.map((x, i) => <Line key={i} l={x.kind === "brand_refund_sent" ? "Refund to you" : "Payment received"} sub={`${String(x.at instanceof Date ? x.at.toISOString() : x.at).slice(0, 10)}${x.utr ? ` · ref …${String(x.utr).slice(-4)}` : ""}`} v={(x.kind === "brand_refund_sent" ? "− " : "") + formatPaise(Number(x.amount_paise))} />)}
+              <div className="tot mono"><span>Net received by Colatch</span><span>{formatPaise(paidIn - refunded)}</span></div>
+            </>}
 
             <div className="sect">Value received</div>
             <Line l="Saved vs creators' market rates" sub="Each creator's own rate card, or the typical rate for their size" v={inr(tot.savedVsMarket)} />
-            <Line l={`Saved vs a ${base.agencyPct}% agency markup`} sub={`Colatch charges ${pct}%`} v={inr(tot.savedVsAgency)} />
+            <Line l={`Saved vs a ${base.agencyPct}% agency markup`} sub={`Colatch charged ${effPct}% on this campaign`} v={inr(tot.savedVsAgency)} />
             <Line l={`${compact(tot.views)} views, valued as paid ads`} sub={`At ₹${base.cpm} per 1,000 views`} v={inr(tot.adsEquivalent)} />
             <Line l="Sales from creator codes and links" sub={clicks ? `${compact(clicks)} clicks${orders ? `, ${orders} orders` : ""}` : "Tracked links and discount codes"} v={inr(tot.sales)} />
             <div className="rule" />
@@ -171,7 +184,7 @@ export default async function Page({ params }) {
           <PrintButton />
           <a className="btn" href={`/shortlist/${token}`}>Back to your campaign</a>
         </div>
-        {code && <div className="refer noprint">Give another brand ₹ credit, get 10% of our fee back for 12 months: <code>{origin}/r/{code}</code></div>}
+        {code && <div className="refer noprint">Know another brand that needs creators? Share your link and earn credit off your Colatch invoices on their campaigns for 12 months: <code>{origin}/r/{code}</code></div>}
       </div>
     </PublicShell>
   );

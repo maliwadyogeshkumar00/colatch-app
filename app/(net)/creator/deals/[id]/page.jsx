@@ -5,15 +5,17 @@ import DealRail from "../../../_ui/DealRail";
 import { env } from "@/lib/net/env";
 import { currentCreator } from "@/lib/net/creatorAuth";
 import { inr, str } from "@/lib/net/creators";
-import { takeHome, fyStart, logEvent, applyAutoApprove, countdown, checklist, lines } from "@/lib/net/deal";
+import { takeHome, fyStart, logEvent, applyAutoApprove, countdown, checklist, lines, isClosed } from "@/lib/net/deal";
+import { transition, FlowError } from "@/lib/net/dealflow";
+import { audit } from "@/lib/net/security";
 import { DISCLOSURE_LINE } from "@/lib/net/compliance";
 import { PAY_LABEL } from "@/lib/net/campaign";
-import { scrubContacts } from "@/lib/net/guard";
+import { scrubContacts, safeUrl } from "@/lib/net/guard";
 import { goingDirectLosses } from "@/lib/net/trust";
 
 export const metadata = { title: "Deal · Colatch", robots: { index: false } };
 
-const kindLabel = { funded: "Brand funded the deal", sow: "You accepted the terms", draft: "You sent a draft", changes: "Brand asked for changes", approved: "Draft approved", live: "Post verified live", released: "Payment released", paid: "Paid", note: "You", results: "Results updated" };
+const kindLabel = { cancelled: "Deal cancelled", refunded: "Brand refunded", live_link: "You shared the live link", signoff: "Brand signed off", funded: "Brand funded the deal", sow: "You accepted the terms", draft: "You sent a draft", changes: "Brand asked for changes", approved: "Draft approved", live: "Post verified live", released: "Payout approved", paid: "Paid", note: "You", results: "Results updated" };
 const load = (id, creatorId) => env.DB.prepare("SELECT * FROM creator_deals WHERE id=? AND creator_id=?").bind(id, creatorId).first();
 const back = (id, tone, msg) => `/creator/deals/${id}?tone=${tone}&msg=${encodeURIComponent(msg)}`;
 
@@ -22,37 +24,49 @@ async function ctx(fd) {
   const id = String(fd.get("id") ?? "");
   const me = await currentCreator();
   if (!me) redirect(`/creator/login?next=${encodeURIComponent(`/creator/deals/${id}`)}`);
+  if (await claimPending(me.accountId)) redirect(`/creator/deals/${encodeURIComponent(id)}`);
   const d = await load(id, me.creator.id);
   if (!d) redirect("/creator/applications");
   const k = d.campaign_id ? await env.DB.prepare("SELECT * FROM campaigns WHERE id=?").bind(d.campaign_id).first() : null;
-  return { d, k };
+  return { d, k, me };
+}
+
+/** Someone who joined with the handle of a creator Colatch imported must be verified before they see that creator's deals. */
+const claimPending = async (accountId) =>
+  (await env.DB.prepare("SELECT claim_status FROM creator_accounts WHERE id=?").bind(accountId).first().catch(() => null))?.claim_status === "pending";
+
+/** Run one deal step as this creator. FlowError messages are shown to the creator; anything else is logged. */
+async function step(d, me, name, input, ok, after) {
+  try {
+    await transition(d.id, name, { kind: "creator", id: me.creator.id }, input);
+  } catch (e) {
+    if (e instanceof FlowError) redirect(back(d.id, "bad", e.message));
+    console.error("[creator/deal]", name, e);
+    redirect(back(d.id, "bad", "Something went wrong, nothing was changed. Try again."));
+  }
+  if (after) await after().catch((e) => console.error("[creator/deal] after", name, e));
+  redirect(back(d.id, "good", ok));
 }
 
 async function accept(fd) {
   "use server";
-  const { d } = await ctx(fd);
-  if (d.sow_accepted_at) redirect(`/creator/deals/${d.id}`);
+  const { d, me } = await ctx(fd);
   if (!fd.get("agree")) redirect(back(d.id, "bad", "Tick the box to accept the terms."));
-  await env.DB.prepare("UPDATE creator_deals SET sow_accepted_at=datetime('now'), updated_at=datetime('now') WHERE id=?").bind(d.id).run();
-  await logEvent(env, d.id, "creator", "sow", "Accepted the deal terms");
-  redirect(back(d.id, "good", "Terms accepted. We will tell you as soon as the brand funds the deal."));
+  await step(d, me, "accept_terms", {}, d.pay_status === "unfunded" ? "Terms accepted. You can start once the brand payment is in; it shows as a tick on the rail." : "Terms accepted. You can send your draft.");
 }
 
 async function sendDraft(fd) {
   "use server";
-  const { d, k } = await ctx(fd);
-  if (!["none", "changes"].includes(d.draft_status)) redirect(`/creator/deals/${d.id}`);
-  const url = str(fd.get("draft_url"));
-  if (!url || !/^https?:\/\//.test(url)) redirect(back(d.id, "bad", "Paste a link to your draft (Google Drive, Dropbox or WeTransfer)."));
+  const { d, k, me } = await ctx(fd);
   if (!fd.get("disclosure")) redirect(back(d.id, "bad", "Confirm the paid-partnership disclosure before submitting."));
   const must = lines(k?.mandatories);
   const ticks = {};
   must.forEach((_, i) => { ticks[String(i)] = Boolean(fd.get(`m${i}`)); });
   const hours = Number(k?.approve_hours) || 72;
-  await env.DB.prepare("UPDATE creator_deals SET draft_url=?, draft_status='submitted', draft_submitted_at=datetime('now'), auto_approve_at=?, checklist_json=?, updated_at=datetime('now') WHERE id=?")
-    .bind(url, new Date(Date.now() + hours * 36e5).toISOString(), JSON.stringify(ticks), d.id).run();
-  await logEvent(env, d.id, "creator", "draft", url + (str(fd.get("note")) ? "\n" + scrubContacts(String(fd.get("note"))).text : ""));
-  redirect(back(d.id, "good", `Draft sent. If the brand doesn't reply within ${hours} hours, it is approved automatically.`));
+  const note = str(fd.get("note"));
+  await step(d, me, "submit_draft", { draft_url: str(fd.get("draft_url")) || "", approve_hours: hours, checklist_json: JSON.stringify(ticks) },
+    `Draft sent. If the brand doesn't reply within ${hours} hours, it is approved automatically.`,
+    note ? () => logEvent(env, d.id, "creator", "note", scrubContacts(note).text.slice(0, 600)) : null);
 }
 
 async function rate(fd) {
@@ -66,13 +80,8 @@ async function rate(fd) {
 
 async function postLive(fd) {
   "use server";
-  const { d } = await ctx(fd);
-  if (d.draft_status !== "approved" || d.live_at) redirect(`/creator/deals/${d.id}`);
-  const url = str(fd.get("post_url"));
-  if (!url || !/instagram\.com|youtu/.test(url)) redirect(back(d.id, "bad", "Paste the link to your live post."));
-  await env.DB.prepare("UPDATE creator_deals SET post_url=?, updated_at=datetime('now') WHERE id=?").bind(url, d.id).run();
-  await logEvent(env, d.id, "creator", "note", `Posted: ${url}`);
-  redirect(back(d.id, "good", "Thanks! We will verify the post and start your payment clock."));
+  const { d, me } = await ctx(fd);
+  await step(d, me, "submit_live_link", { post_url: str(fd.get("post_url")) || "" }, "Thanks! The team will check the post; your payment clock starts once it's verified.");
 }
 
 async function reportBypass(fd) {
@@ -80,12 +89,16 @@ async function reportBypass(fd) {
   const { d } = await ctx(fd);
   const note = str(fd.get("note"));
   if (!note || note.length < 10) redirect(back(d.id, "bad", "Tell us in a line what happened, for example who asked and how."));
-  const dup = await env.DB.prepare("SELECT id FROM bypass_reports WHERE deal_id=? AND reporter_side='creator' AND status='open'").bind(d.id).first();
+  // One report per deal per side, ever (unique index), so the bounty can't be claimed twice.
+  const dup = await env.DB.prepare("SELECT id FROM bypass_reports WHERE deal_id=? AND reporter_side='creator'").bind(d.id).first();
   if (dup) redirect(back(d.id, "good", "We already have your report for this deal. The team is looking into it."));
-  await env.DB.prepare("INSERT INTO bypass_reports (id, deal_id, campaign_id, reporter_side, reporter_id, note) VALUES (?,?,?,?,?,?)")
-    .bind(crypto.randomUUID(), d.id, d.campaign_id, "creator", d.creator_id, note.slice(0, 1000)).run();
+  const id = crypto.randomUUID();
+  const r = await env.DB.prepare("INSERT INTO bypass_reports (id, deal_id, campaign_id, reporter_side, reporter_id, note) VALUES (?,?,?,?,?,?) ON CONFLICT DO NOTHING")
+    .bind(id, d.id, d.campaign_id, "creator", d.creator_id, note.slice(0, 1000)).run();
+  if (!r.meta?.changes) redirect(back(d.id, "good", "We already have your report for this deal. The team is looking into it."));
   await logEvent(env, d.id, "creator", "note", "Reported an off-platform contact attempt");
-  redirect(back(d.id, "good", "Thank you. The Colatch team will look into it within 72 hours. If it's confirmed, ₹500 is added to your earnings."));
+  await audit({ kind: "creator", id: d.creator_id }, "bypass.report", "deal", d.id, { report: id });
+  redirect(back(d.id, "good", "Thank you. The Colatch team will look into it. If it's confirmed, ₹500 is added to your earnings."));
 }
 
 export default async function Page({ params, searchParams }) {
@@ -93,10 +106,19 @@ export default async function Page({ params, searchParams }) {
   if (!me) redirect(`/creator/login?next=${encodeURIComponent(`/creator/deals/${params.id}`)}`);
   let d = await load(params.id, me.creator.id);
   if (!d) notFound();
+  if (await claimPending(me.accountId)) {
+    return (
+      <PublicShell creatorName={me.creator.name || me.creator.handle} path="/creator/applications">
+        <div className="panel pad"><h2>We're verifying your profile</h2>
+          <p style={{ margin: 0 }}>This creator profile was already on Colatch before you joined, so the team is checking that it's yours. Deal and payment details appear here once that's done. Usually within one working day.</p></div>
+      </PublicShell>
+    );
+  }
   const k = d.campaign_id ? await env.DB.prepare("SELECT * FROM campaigns WHERE id=?").bind(d.campaign_id).first() : null;
   const must = lines(k?.mandatories);
   const avoid = lines(k?.exclusions);
   if (await applyAutoApprove(env, d)) d = await load(params.id, me.creator.id);
+  const closed = isClosed(d);
   const flash = searchParams?.msg || "";
   const tone = searchParams?.tone === "bad" ? "bad" : "good";
   const events = (await env.DB.prepare("SELECT * FROM deal_events WHERE deal_id=? AND kind <> 'note' OR (deal_id=? AND actor='creator') ORDER BY created_at DESC LIMIT 30").bind(d.id, d.id).all()).results ?? [];
@@ -122,7 +144,8 @@ export default async function Page({ params, searchParams }) {
 
       <div className="grid2 sec" style={{ alignItems: "start", marginTop: 18 }}>
         <div className="stack">
-          {!d.sow_accepted_at && (
+          {closed && <div className="panel pad"><h2>This deal was cancelled</h2><p style={{ margin: 0 }}>Nothing more to do here. If you had already started work, message the Colatch team.</p></div>}
+          {!closed && !d.sow_accepted_at && (
             <form className="panel pad" action={accept}>
               {hid}
               <h2>Statement of work</h2>
@@ -133,20 +156,20 @@ export default async function Page({ params, searchParams }) {
                 <tr><td>Usage</td><td>{k?.usage_rights || "Organic posting only"}</td></tr>
                 <tr><td>Keep live</td><td>At least 30 days</td></tr>
                 <tr><td>Go-live</td><td>{d.go_live_date || "Agreed with the team"}</td></tr>
-                <tr><td>If the brand cancels</td><td>After you start work, you keep at least 50% of the fee</td></tr>
+                <tr><td>If the brand cancels</td><td>Talk to the Colatch team. The brand's payment stays with Colatch until it is settled.</td></tr>
               </tbody></table>
               <label className="row" style={{ marginTop: 16, gap: 10, flexWrap: "nowrap", fontSize: 13.5, alignItems: "flex-start" }}><input type="checkbox" name="agree" value="1" style={{ marginTop: 3 }} /><span>I accept these terms and will follow ASCI disclosure rules.</span></label>
               <button className="btn-foil" style={{ marginTop: 16 }}>Accept terms</button>
             </form>
           )}
 
-          {d.sow_accepted_at && ["none", "changes"].includes(d.draft_status) && (
+          {!closed && d.sow_accepted_at && d.pay_status === "unfunded" && <div className="panel pad"><h2>Waiting for the brand's payment</h2><p style={{ margin: 0 }}>Don't start yet. Once the brand's money is with Colatch, the "Brand funded" step ticks and you can send your draft.</p></div>}
+          {!closed && d.sow_accepted_at && d.pay_status !== "unfunded" && ["none", "changes"].includes(d.draft_status) && (
             <form className="panel pad" action={sendDraft}>
               {hid}
               <div className="spread"><h2 style={{ margin: 0 }}>{d.draft_status === "changes" ? "Send the revised draft" : "Send your draft"}</h2><span className={`pill ${revLeft ? "good" : "ok"}`}>{revLeft} of {d.revisions_included} revisions left</span></div>
-              {d.pay_status === "unfunded" && <div className="note warn" style={{ marginTop: 12 }}>The brand hasn't funded this deal yet. You can send a draft, but we recommend waiting for the "Brand funded" tick.</div>}
               {feedback && d.draft_status === "changes" && <div className="note info" style={{ marginTop: 12, whiteSpace: "pre-line" }}><b>Brand feedback:</b> {feedback.note}</div>}
-              <div className="fld" style={{ marginTop: 14 }}><label>Draft link</label><input name="draft_url" required placeholder="Google Drive / Dropbox / WeTransfer link" defaultValue={d.draft_url ?? ""} /></div>
+              <div className="fld" style={{ marginTop: 14 }}><label>Draft link</label><input name="draft_url" type="url" required pattern="https://.*" placeholder="https:// Google Drive / Dropbox / WeTransfer link" defaultValue={d.draft_url ?? ""} /></div>
               {must.length > 0 && <div className="fld" style={{ marginTop: 14 }}><label>Brief checklist</label>{must.map((m, i) => <label key={i} className="row" style={{ gap: 10, flexWrap: "nowrap", marginTop: 6, fontSize: 14 }}><input type="checkbox" name={`m${i}`} value="1" defaultChecked={Boolean(ticks[String(i)])} /><span>{m}</span></label>)}</div>}
               {avoid.length > 0 && <div className="note bad" style={{ marginTop: 12 }}><b>Don't:</b> {avoid.join(" · ")}</div>}
               <label className="row" style={{ marginTop: 14, gap: 10, flexWrap: "nowrap", fontSize: 13.5, alignItems: "flex-start" }}><input type="checkbox" name="disclosure" value="1" style={{ marginTop: 3 }} /><span>{DISCLOSURE_LINE}</span></label>
@@ -157,20 +180,21 @@ export default async function Page({ params, searchParams }) {
 
           {d.draft_status === "submitted" && <div className="panel pad"><h2>Draft in review</h2><p style={{ margin: 0 }}>The brand has until <b>{d.auto_approve_at ? new Date(d.auto_approve_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }) : "—"}</b> to reply ({countdown(d.auto_approve_at)} left). If they don't, your draft is approved automatically.</p></div>}
 
-          {d.draft_status === "approved" && !d.live_at && (
+          {!closed && d.draft_status === "approved" && !d.live_at && d.post_url && <div className="note info">You shared {safeUrl(d.post_url) ? <a className="link" href={safeUrl(d.post_url)} target="_blank" rel="noopener noreferrer">your live post</a> : "your live post"}. The team is checking it. You can update the link below if it changed.</div>}
+          {!closed && d.draft_status === "approved" && !d.live_at && (
             <form className="panel pad" action={postLive}>
               {hid}
               <h2>Post it and share the link</h2>
               <p className="muted" style={{ margin: "0 0 12px" }}>Your payment clock starts when we verify the live post{d.fee ? `: paid within ${payDays} days` : ""}.</p>
               {d.track_code && <div className="note info" style={{ marginBottom: 12 }}>Use code <b>{d.track_code}</b> in your caption or story, and the link <code className="k">{origin}/go/{d.track_code}</code>. That's how the brand sees the sales you drive.</div>}
-              <div className="fld"><label>Live post link</label><input name="post_url" required placeholder="https://www.instagram.com/reel/…" defaultValue={d.post_url ?? ""} /></div>
+              <div className="fld"><label>Live post link</label><input name="post_url" type="url" required pattern="https://.*" placeholder="https://www.instagram.com/reel/…" defaultValue={d.post_url ?? ""} /></div>
               <button className="btn-foil" style={{ marginTop: 14 }}>Submit live link</button>
             </form>
           )}
 
           {d.live_at && <div className="panel pad"><h2>Payment</h2>
             {d.pay_status === "paid" ? <div className="note good">Paid on {String(d.paid_at ?? "").slice(0, 10)} · bank reference (UTR) <b>{d.utr}</b>{d.tds_amount ? ` · TDS ${inr(d.tds_amount)} (shows in your Form 26AS)` : ""}</div>
-              : <p style={{ margin: 0 }}>Your post went live on {String(d.live_at).slice(0, 10)}. Payment due by <b>{payBy}</b>. {d.pay_status === "released" ? "Payment is released and on its way to your account." : ""}</p>}
+              : <p style={{ margin: 0 }}>Your post went live on {String(d.live_at).slice(0, 10)}. Payment due by <b>{payBy}</b>. {d.pay_status === "released" ? "Your payout is approved; you'll see the bank reference here once it's sent." : ""}</p>}
             {d.brand_signoff_at && <div className="note good" style={{ marginTop: 12 }}>The brand signed off your work{d.proof_public ? <>. <a className="link" href={`/proof/${d.id}`} target="_blank">Your verified proof ↗</a> is on your media kit.</> : "."}</div>}
             {!myRating ? (
               <form action={rate} className="row" style={{ marginTop: 12 }}>
@@ -190,10 +214,10 @@ export default async function Page({ params, searchParams }) {
             <h2>What you take home</h2>
             <table className="tbl"><tbody>
               <tr><td>Your fee</td><td className="num">{inr(th.fee)}</td></tr>
-              <tr><td>TDS {th.tds ? "10%" : "(not yet: under ₹50,000 this year)"}</td><td className="num">{th.tds ? `−${inr(th.tds)}` : "₹0"}</td></tr>
-              <tr><td><b>Paid to you</b></td><td className="num"><b>{inr(th.net)}</b></td></tr>
+              <tr><td>TDS (estimate)</td><td className="num">{th.tds ? `−${inr(th.tds)}` : "₹0"}</td></tr>
+              <tr><td><b>Paid to you (estimate)</b></td><td className="num"><b>{inr(th.net)}</b></td></tr>
             </tbody></table>
-            <p className="hint" style={{ margin: "10px 0 0" }}>TDS isn't lost: it's credited against your income tax, and you can claim it back in your ITR. If you're GST-registered, GST is paid on top of your fee.</p>
+            <p className="hint" style={{ margin: "10px 0 0" }}>This is an estimate. The actual TDS, if any, is shown with your payment. TDS isn't lost: it's credited against your income tax, and you can claim it back in your ITR. If you're GST-registered, GST is paid on top of your fee.</p>
           </div>}
           <div className="panel pad">
             <h2>Timeline</h2>

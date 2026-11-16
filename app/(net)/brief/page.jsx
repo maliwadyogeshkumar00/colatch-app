@@ -10,14 +10,29 @@ import { checkBrief } from "@/lib/net/compliance";
 import { scrubContacts } from "@/lib/net/guard";
 import { readRefCookie, recordReferral, ensureCode } from "@/lib/net/referral";
 import { briefScore, isFreeMail } from "@/lib/net/value";
+import { newToken } from "@/lib/net/tokens";
+import { notify, teamInbox } from "@/lib/net/notify";
 import BriefMeter from "./BriefMeter";
 
 export const metadata = {
-  title: "Post a creator brief · Colatch",
-  description: "Tell Colatch what you need. We match you with the right creators from India's celebrity and creator network.",
+  title: "Post a creator brief",
+  description: "Describe your campaign in plain words. Colatch matches you with Indian creators on talent, city, size and language, and a strategist sends you a shortlist.",
+  alternates: { canonical: "/brief" },
 };
 
 const DRAFT = "brief_draft";
+
+// Each brief runs an AI read of the text, which costs money. Cap it per network address.
+const AI_LIMIT = { perHour: 10 };
+function clientIp() {
+  const h = headers();
+  return (h.get("x-forwarded-for") || "").split(",")[0].trim() || h.get("x-real-ip") || "unknown";
+}
+async function overAiLimit(ip) {
+  const r = await env.DB.prepare("SELECT COUNT(*) AS n FROM login_attempts WHERE key=? AND at > now() - interval '1 hour'").bind(`ai:${ip}`).first();
+  return Number(r?.n || 0) >= AI_LIMIT.perHour;
+}
+const noteAiUse = (ip) => env.DB.prepare("INSERT INTO login_attempts (key, ok) VALUES (?, 0)").bind(`ai:${ip}`).run();
 
 async function submitBrief(f) {
   "use server";
@@ -39,6 +54,9 @@ async function submitBrief(f) {
       str(f.get("size")) ? `Creator size: ${f.get("size")}.` : "", str(f.get("budget")) ? `Total budget ₹${f.get("budget")}.` : "",
       str(f.get("when")) ? `Go-live: ${f.get("when")}.` : "",
     ].filter(Boolean).join(" ");
+    const ip = clientIp();
+    if (await overAiLimit(ip)) throw new Error(`You've sent ${AI_LIMIT.perHour} briefs from this connection in the last hour. Please wait a little, or email marketing@colatch.com and we'll take it from there.`);
+    await noteAiUse(ip);
     const { needs, engine } = await extractNeeds(env, `${raw}\n${extra}`);
     // What the client ticked always beats what was read from the text.
     if (picked.length) needs.talent_types = picked;
@@ -70,18 +88,24 @@ async function submitBrief(f) {
     // #49 Brief quality score from what the brand actually gave.
     const scored = briefScore({ ...needs, deliverables: needs.deliverables, deadline: str(f.get("when")), mandatories: str(f.get("mandatories")), brand_url: brandUrl || site, pay_type: payType });
     const ref = readRefCookie(str(f.get("ref")));
-    id = crypto.randomUUID();
+    const campaignId = crypto.randomUUID();
+    // The brand's private link to its shortlist exists from the start, so we can send it right away.
+    id = newToken() + newToken();
     await env.DB.prepare(
       `INSERT INTO campaigns (id, slug, title, brand, brief, raw_brief, deliverables, talent_types, niche, city, languages, gender, min_followers, max_followers,
        creators_needed, budget_total, shoot_date, status, source, client_name, client_company, client_email, client_phone, ai_notes, is_open, pay_type,
-       mandatories, exclusions, brand_url, shortlist_due, ref_code, rush, held_reason, brief_score)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending','client',?,?,?,?,?,0,?,?,?,?,?,?,?,?,?)`
-    ).bind(id, slugify(needs.title), needs.title, company, needs.creator_brief, `${raw}\n\n${extra}`.trim(), needs.deliverables,
+       mandatories, exclusions, brand_url, shortlist_due, ref_code, rush, held_reason, brief_score, share_token)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'pending','client',?,?,?,?,?,0,?,?,?,?,?,?,?,?,?,?)`
+    ).bind(campaignId, slugify(needs.title), needs.title, company, needs.creator_brief, `${raw}\n\n${extra}`.trim(), needs.deliverables,
       needs.talent_types.join(", ") || null, needs.niche.join(", ") || null, needs.city.join(", ") || null, needs.languages.join(", ") || null,
       needs.gender, needs.min_followers, needs.max_followers, needs.creators_needed, needs.budget_total, str(f.get("when")),
       name, company, email, phone, JSON.stringify({ engine, questions: needs.questions, flags: flags.map((x) => x.title), featured_request: featuredAsk, website: site }), payType,
-      str(f.get("mandatories")), str(f.get("exclusions")), brandUrl, due, ref, rush, held, scored.score).run();
+      str(f.get("mandatories")), str(f.get("exclusions")), brandUrl, due, ref, rush, held, scored.score, id).run();
     await recordReferral(env, ref, "brand", email).catch(() => false);
+    // Never blocks the brief: notify() records the outcome (sent / not_configured / failed) in the outbox.
+    await notify({ template: "brief_received", to: email, toKind: "brand", payload: { name, title: needs.title, due: formatIST(due), token: id }, dedupeKey: `brief:${campaignId}` });
+    await notify({ template: "account_alert", to: teamInbox(), toKind: "team", dedupeKey: `brief_team:${campaignId}`,
+      payload: { subject: `New brief: ${needs.title}${held ? " (held: verify brand)" : ""}${rush ? " (RUSH)" : ""}`, text: `${company} (${name}, ${email}) sent a brief.\n\n${held ? `Held: ${held}\n\n` : ""}Review: ${(process.env.SITE_URL || "https://colatch-app.vercel.app").replace(/\/$/, "")}/team/campaigns/${campaignId}` } });
   } catch (e) {
     // Keep what they typed so a mistake doesn't wipe the brief.
     cookies().set(DRAFT, JSON.stringify(v).slice(0, 3800), { httpOnly: true, secure: true, sameSite: "lax", path: "/brief", maxAge: 600 });
@@ -91,9 +115,10 @@ async function submitBrief(f) {
   redirect(`/brief?done=${id}`);
 }
 
-/** Rebuild the "here's what we understood" summary from the saved campaign. */
-async function loadDone(id) {
-  const k = await env.DB.prepare("SELECT * FROM campaigns WHERE id=? AND source='client'").bind(id).first();
+/** Rebuild the "here's what we understood" summary from the saved campaign. Looked up by its private link token only. */
+async function loadDone(token) {
+  if (token.length < 32) return null;
+  const k = await env.DB.prepare("SELECT * FROM campaigns WHERE share_token=? AND source='client'").bind(token).first();
   if (!k) return null;
   let notes = {};
   try { notes = JSON.parse(k.ai_notes || "{}"); } catch {}
@@ -112,7 +137,7 @@ async function loadDone(id) {
   const est = k.pay_type !== "cash" ? null : [lo * n, hi * n];
   const code = k.client_email ? await ensureCode(env, "brand", String(k.client_email).toLowerCase(), k.client_company).catch(() => null) : null;
   const scored = briefScore({ ...k });
-  return { needs, pool, est, due: k.shortlist_due, code, low: Boolean(est && needs.budget_total && needs.budget_total < est[0]),
+  return { token: k.share_token, needs, pool, est, due: k.shortlist_due, code, low: Boolean(est && needs.budget_total && needs.budget_total < est[0]),
     score: k.brief_score ?? scored.score, missing: scored.missing.slice(0, 3), held: k.held_reason, rush: Number(k.rush) === 1, featured: Boolean(notes.featured_request) };
 }
 
@@ -131,8 +156,11 @@ export default async function Page({ searchParams }) {
   const err = sp.err ? String(sp.err) : "";
   let v = {};
   if (err) { try { v = JSON.parse(cookies().get(DRAFT)?.value || "{}"); } catch {} }
-  if (!done && !err && sp.again) {
-    const prev = await env.DB.prepare("SELECT raw_brief, client_company, mandatories, exclusions, brand_url FROM campaigns WHERE slug=?").bind(String(sp.again)).first();
+  // "Book again" from a brand's own campaign page. Only the private link token opens the old brief;
+  // a slug is public, so it must never be enough to read someone else's brief.
+  const againToken = String(sp.again || "");
+  if (!done && !err && againToken.length >= 16) {
+    const prev = await env.DB.prepare("SELECT raw_brief, client_company, mandatories, exclusions, brand_url FROM campaigns WHERE share_token=?").bind(againToken).first();
     if (prev) v = { raw: String(prev.raw_brief || "").split("\n\n")[0], company: prev.client_company || "", mandatories: prev.mandatories || "", exclusions: prev.exclusions || "", brand_url: prev.brand_url || "" };
   }
   // From "Book again" on the roster: name the creator up front so the team rebooks them at the repeat rate.
@@ -145,7 +173,7 @@ export default async function Page({ searchParams }) {
 
   const hero = (
     <Hero eyebrow="For brands" title="Tell us who you need. <b>We'll find them.</b>">
-      <p>Describe the campaign in your own words, like "4 Bhangra dancers in Delhi for a Lohri reel". Colatch's matching engine reads it and finds creators who fit on talent, city, size and language. Our team then sends you a shortlist within 2 working days.</p>
+      <p>Describe the campaign in your own words, like "4 Bhangra dancers in Delhi for a Lohri reel". Colatch's matching engine reads it and finds creators who fit on talent, city, size and language. Our team then puts together a shortlist, usually within 2 working days.</p>
     </Hero>
   );
 
@@ -158,14 +186,15 @@ export default async function Page({ searchParams }) {
             <h2>Brief received</h2>
             <h3 style={{ fontSize: 24, fontWeight: 300 }}>Thanks. Here's what we understood.</h3>
             {done.held
-              ? <div className="note warn" style={{ marginTop: 14 }}><b>We'll quickly confirm your brand first.</b> You used a personal email and no website, so a Colatch strategist will call or WhatsApp you to verify before creators see this brief. It keeps creators safe from fake-brand scams, and verified brands get more applicants.</div>
-              : done.due && <div className="note good" style={{ marginTop: 14 }}><b>{done.rush ? "Rush shortlist: " : ""}Your shortlist will be ready by {formatIST(done.due)}.</b> We'll send it to your email and WhatsApp as a private link where you approve each creator.</div>}
+              ? <div className="note warn" style={{ marginTop: 14 }}><b>We'll quickly confirm your brand first.</b> You used a personal email and no website, so a Colatch strategist will contact you to verify before creators see this brief. It keeps creators safe from fake-brand scams, and verified brands get more applicants.</div>
+              : done.due && <div className="note good" style={{ marginTop: 14 }}><b>{done.rush ? "Rush shortlist: " : ""}We aim to have your shortlist ready by {formatIST(done.due)}.</b> It appears on your private campaign page below, where you approve each creator. We also email you the link.</div>}
+            <div className="note info" style={{ marginTop: 12 }}><b>Your private campaign page:</b> <a className="link" href={`/shortlist/${done.token}`} data-testid="shortlist-link">{origin}/shortlist/{done.token.slice(0, 8)}…</a><br /><span className="hint">Bookmark it. Anyone with this link can see and approve your shortlist, so share it only inside your team.</span></div>
             <div className="bscore" style={{ marginTop: 14 }}>
               <div className={`bscore-ring ${done.score >= 75 ? "hi" : done.score >= 50 ? "mid" : "lo"}`}><b>{done.score}</b><span>/100</span></div>
               <div><b>Brief strength</b>
                 <div className="hint">{done.score >= 85 ? "Excellent. Creators will know exactly what to make." : "Complete briefs get about twice the applicants. To raise it, add:"}</div>
                 {done.score < 85 && done.missing.length > 0 && <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>{done.missing.map((m) => <li key={m}>{m}</li>)}</ul>}
-                {done.score < 85 && <div className="hint" style={{ marginTop: 6 }}>Just reply to our WhatsApp with these and we'll add them.</div>}
+                {done.score < 85 && <div className="hint" style={{ marginTop: 6 }}>Reply to our email with these and we'll add them.</div>}
               </div>
             </div>
             {done.featured && <div className="note info" style={{ marginTop: 12 }}>You asked to feature this brief (₹1,999 for 7 days at the top of every matching creator's feed). We'll confirm it with your shortlist.</div>}
@@ -228,8 +257,8 @@ export default async function Page({ searchParams }) {
 
             <h2 style={{ marginTop: 26 }}>Speed it up <span className="opt" style={{ textTransform: "none", letterSpacing: 0 }}>— optional</span></h2>
             <div className="stack">
-              <label className="addon"><input type="checkbox" name="rush" defaultChecked={Boolean(v.rush)} /><span><b>Rush shortlist in 6 working hours</b><span className="hint">Instead of 2 working days. Adds 5% of the creator fees, shown line by line on your shortlist.</span></span></label>
-              <label className="addon"><input type="checkbox" name="featured" defaultChecked={Boolean(v.featured)} /><span><b>Feature this brief for 7 days, ₹1,999</b><span className="hint">Pinned at the top of every matching creator's feed, so the best people apply first. We confirm before charging.</span></span></label>
+              <label className="addon"><input type="checkbox" name="rush" defaultChecked={Boolean(v.rush)} /><span><b>Rush shortlist in 6 working hours</b><span className="hint">We aim for 6 working hours instead of 2 working days. Adds 5% of the creator fees, shown line by line on your shortlist.</span></span></label>
+              <label className="addon"><input type="checkbox" name="featured" defaultChecked={Boolean(v.featured)} /><span><b>Feature this brief for 7 days, ₹1,999</b><span className="hint">Pinned at the top of matching creators' feeds. Nothing is charged until we confirm it with you.</span></span></label>
             </div>
             <button className="btn-foil" style={{ marginTop: 22 }}>Find my creators →</button>
             <p className="hint" style={{ margin: "12px 0 0" }}>Your budget and contact details stay with the Colatch team. Creators only see the brief.</p>

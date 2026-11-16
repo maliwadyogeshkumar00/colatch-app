@@ -6,8 +6,8 @@ import { PITCH_SELECT } from "./_data";
 import { PITCH_FORMATS, PITCH_OCCASIONS, firstName } from "../_ui/pitch";
 
 export const metadata = {
-  title: "Creator ideas, ready to book · Colatch",
-  description: "Content ideas pitched by India's creators, with the price up front. Book one through Colatch and get a shortlist within 2 working days.",
+  title: "Creator ideas, ready to book",
+  description: "Content ideas pitched by India's creators, with the price up front. Book one through Colatch; we usually confirm within 2 working days.",
 };
 
 const CSS = `
@@ -73,7 +73,7 @@ export default async function Page({ searchParams }) {
           {cats.length > 0 && <Row label="Brand" k="cat" opts={cats} />}
         </div>
         {rows.length === 0 ? (
-          <div className="panel empty"><b>No ideas match that yet.</b>Clear a filter, or <a className="link" href="/brief">post your own brief</a> and we'll find the creator within 2 working days.</div>
+          <div className="panel empty"><b>No ideas match that yet.</b>Clear a filter, or <a className="link" href="/brief">post your own brief</a> and we usually send a shortlist within 2 working days.</div>
         ) : (
           <div className="board">{rows.map((p) => {
             const who = firstName(p.name);

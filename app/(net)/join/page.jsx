@@ -4,7 +4,10 @@ import CreatorProfileFields from "../_ui/CreatorProfileFields";
 import { flashUrl } from "../_ui/flash";
 import { packForm, unpackForm } from "../_ui/keep";
 import { env } from "@/lib/net/env";
-import { hashPassword } from "@/lib/net/auth";
+import { hashPassword, passwordProblem } from "@/lib/net/auth";
+import { audit, isEmail, loginBlocked, recordLogin } from "@/lib/net/security";
+import { notify } from "@/lib/net/notify";
+import { clientIp } from "../reset/_lib";
 import { cleanHandle, lookupProfile, metaReady } from "@/lib/net/meta";
 import { profileFromForm, saveProfile, upsertFromInstagram, str } from "@/lib/net/creators";
 import { currentCreator, startCreatorSession } from "@/lib/net/creatorAuth";
@@ -17,22 +20,29 @@ async function join(fd) {
   let dest;
   try {
     if (str(fd.get("website"))) throw new Error("Something went wrong."); // honeypot
+    const joinKey = `join|${clientIp()}`;
+    if (await loginBlocked(joinKey)) throw new Error("Too many sign-ups from this connection. Try again in 15 minutes.");
     const email = String(fd.get("email") ?? "").trim().toLowerCase();
     const password = String(fd.get("password") ?? "");
     const handle = cleanHandle(String(fd.get("handle") ?? ""));
-    const name = str(fd.get("name"));
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error("Enter a valid email.");
-    if (password.length < 8) throw new Error("Use a password of at least 8 characters.");
+    const name = str(fd.get("name"))?.slice(0, 120) ?? null;
+    if (!isEmail(email)) throw new Error("Enter a valid email.");
+    const problem = passwordProblem(password);
+    if (problem) throw new Error(problem);
     if (!/^[a-z0-9._]{1,30}$/.test(handle)) throw new Error("Enter your Instagram handle, like @yourname.");
     const p = profileFromForm(fd);
     if (!p.skills) throw new Error("Pick at least one thing you do, so we can show you the right briefs.");
     if (!fd.get("consent")) throw new Error("Please agree to be contacted about brand opportunities.");
     if (await env.DB.prepare("SELECT id FROM creator_accounts WHERE email=?").bind(email).first()) throw new Error("This email already has an account. Log in instead.");
 
-    let creator = await env.DB.prepare("SELECT id FROM creators WHERE handle=?").bind(handle).first();
-    if (creator && (await env.DB.prepare("SELECT id FROM creator_accounts WHERE creator_id=?").bind(creator.id).first()))
+    const existing = await env.DB.prepare("SELECT id, email FROM creators WHERE handle=?").bind(handle).first();
+    if (existing && (await env.DB.prepare("SELECT id FROM creator_accounts WHERE creator_id=?").bind(existing.id).first()))
       throw new Error(`@${handle} has already joined. Log in, or write to marketing@colatch.com if this is your account.`);
+    // A profile Colatch already had is only linked straight away when the email matches the one on file.
+    // Otherwise it is a claim the team verifies first (anyone can type a handle).
+    const claim = existing && String(existing.email || "").toLowerCase() !== email ? "pending" : "own";
 
+    let creator = existing ? { id: existing.id } : null;
     // Pull real numbers from Instagram when we can — self-reported numbers are only a fallback.
     let verified = false;
     if (metaReady(env)) {
@@ -43,16 +53,27 @@ async function join(fd) {
       await env.DB.prepare("INSERT INTO creators (id, handle, name, email, status, source) VALUES (?,?,?,?, 'new', 'application')").bind(id, handle, name, email).run();
       creator = { id };
     }
-    await env.DB.prepare("UPDATE creators SET name=COALESCE(name,?), email=COALESCE(email,?), verified=? WHERE id=?").bind(name, email, verified ? 1 : 0, creator.id).run();
-    await saveProfile(env, creator.id, p);
+    if (claim === "own") {
+      await env.DB.prepare("UPDATE creators SET name=COALESCE(name,?), email=COALESCE(email,?), verified=? WHERE id=?").bind(name, email, verified ? 1 : 0, creator.id).run();
+      await saveProfile(env, creator.id, p);
+    }
 
     const { hash, salt } = await hashPassword(password);
     const accountId = crypto.randomUUID();
-    await env.DB.prepare("INSERT INTO creator_accounts (id, creator_id, email, password_hash, salt) VALUES (?,?,?,?,?)").bind(accountId, creator.id, email, hash, salt).run();
-    await recordReferral(env, readRefCookie(), "creator", creator.id).catch(() => false);
+    try {
+      await env.DB.prepare("INSERT INTO creator_accounts (id, creator_id, email, password_hash, salt, claim_status) VALUES (?,?,?,?,?,?)").bind(accountId, creator.id, email, hash, salt, claim).run();
+    } catch (e) {
+      if (e?.code === "23505") throw new Error(`An account for this email or @${handle} was just created. Log in instead.`);
+      throw e;
+    }
+    await recordLogin(joinKey, false); // counts toward the per-connection sign-up limit
+    await audit({ kind: "creator", id: accountId }, claim === "own" ? "creator.join" : "creator.join_claim_pending", "creator", creator.id, { handle });
+    // Referral credit only for genuinely new creators, never for claiming a profile we already had.
+    if (claim === "own" && !existing) await recordReferral(env, readRefCookie(), "creator", creator.id).catch(() => false);
+    await notify({ template: "creator_welcome", to: email, toKind: "creator", toId: creator.id, payload: { name }, dedupeKey: `welcome:${accountId}` });
     await startCreatorSession(accountId);
     const next = String(fd.get("next") ?? "");
-    dest = next.startsWith("/creator/o/") ? next : "/creator?welcome=1";
+    dest = claim === "pending" ? "/creator/settings?claim=pending" : next.startsWith("/creator/o/") && !next.startsWith("//") ? next : "/creator?welcome=1";
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Something went wrong.";
     dest = flashUrl(`/join?v=${packForm(fd)}`, "err", msg);
@@ -88,7 +109,7 @@ export default async function Page({ searchParams }) {
             <div className="fld"><label>Your name</label><input name="name" required defaultValue={v.name ?? ""} /></div>
             <div className="fld"><label>Instagram handle</label><input name="handle" required defaultValue={v.handle ?? ""} placeholder="@yourname" /></div>
             <div className="fld"><label>Email</label><input name="email" type="email" required defaultValue={v.email ?? ""} autoComplete="email" /></div>
-            <div className="fld"><label>Password</label><input name="password" type="password" required minLength={8} autoComplete="new-password" /></div>
+            <div className="fld"><label>Password</label><input name="password" type="password" required minLength={10} autoComplete="new-password" placeholder="At least 10 characters" /></div>
           </div>
           <h2 style={{ marginTop: 28 }}>About your work</h2>
           <CreatorProfileFields v={v} />

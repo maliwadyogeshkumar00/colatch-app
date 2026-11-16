@@ -4,9 +4,21 @@ import { scrubContacts } from './guard';
 export const NICHES = ['Beauty', 'Fashion', 'Lifestyle', 'Food', 'Travel', 'Fitness', 'Health', 'Tech', 'Gaming', 'Finance', 'Education', 'Parenting', 'Comedy', 'Music', 'Dance', 'Auto', 'Sports', 'Home & Decor', 'Pets', 'Regional'];
 export const CREATOR_STATUSES = ['new', 'shortlisted', 'contacted', 'negotiating', 'onboarded', 'blacklisted'];
 export const DEAL_STAGES = ['shortlisted', 'contacted', 'negotiating', 'confirmed', 'live', 'paid', 'dropped'];
+/**
+ * Stages the team may set by hand (CRM pipeline before money moves). Confirmed, live and paid
+ * only come from the deal steps (brand payment recorded, post verified, payout recorded), and a
+ * deal with brand money on it is stopped with Cancel, not by dragging it to Dropped.
+ */
+export const MANUAL_STAGES = ['shortlisted', 'contacted', 'negotiating', 'dropped'];
+export function canSetStage(d: { stage: string; pay_status: string }, to: string): string | null {
+  if (!MANUAL_STAGES.includes(to)) return 'Confirmed, Live and Paid are set by the deal steps (payment, live check, payout), not by hand.';
+  if (d.pay_status !== 'unfunded') return 'This deal has brand money on it. Open the deal and use Cancel instead.';
+  if (!MANUAL_STAGES.includes(d.stage)) return 'This deal is past the pipeline stages.';
+  return null;
+}
 export const STAGE_LABEL: Record<string, string> = {
   shortlisted: 'Shortlisted', contacted: 'Contacted', negotiating: 'Negotiating', confirmed: 'Confirmed',
-  live: 'Live', paid: 'Paid', dropped: 'Dropped', new: 'New', onboarded: 'Onboarded', blacklisted: 'Blacklisted',
+  live: 'Live', paid: 'Paid', dropped: 'Dropped', cancelled: 'Cancelled', new: 'New', onboarded: 'Onboarded', blacklisted: 'Blacklisted',
 };
 
 export interface CreatorRow {

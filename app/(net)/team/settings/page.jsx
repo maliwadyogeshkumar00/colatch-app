@@ -1,0 +1,66 @@
+import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
+import TeamShell from "../../_ui/TeamShell";
+import Flash, { flashUrl } from "../../_ui/flash";
+import { env } from "@/lib/net/env";
+import { startTeamSession, revokeSessions, TEAM_COOKIE } from "@/lib/net/creatorAuth";
+import { audit, ROLE_LABEL } from "@/lib/net/security";
+import { requireTeam } from "../_guard";
+import { checkLogin, setPassword, TOO_MANY } from "../../reset/_lib";
+
+export const metadata = { title: "My settings · Colatch Connect", robots: { index: false, follow: false } };
+const BACK = "/team/settings";
+
+async function changePassword(fd) {
+  "use server";
+  const me = await requireTeam("view", BACK);
+  const row = await env.DB.prepare("SELECT id, password_hash, salt, disabled_at FROM team_users WHERE id=?").bind(me.id).first();
+  const res = await checkLogin("team", me.email, String(fd.get("current") ?? ""), row);
+  if (res === "blocked") redirect(flashUrl(BACK, "err", TOO_MANY));
+  if (res !== "ok") redirect(flashUrl(BACK, "err", "Your current password is not right."));
+  const pw = String(fd.get("password") ?? "");
+  if (pw !== String(fd.get("confirm") ?? "")) redirect(flashUrl(BACK, "err", "The two new passwords don't match."));
+  const err = await setPassword("team", me.id, pw);
+  if (err) redirect(flashUrl(BACK, "err", err));
+  await audit({ kind: "team", id: me.id }, "team.password_changed", "team_user", me.id);
+  await startTeamSession(me.id);
+  redirect(flashUrl(BACK, "ok", "Password changed. Other devices are signed out."));
+}
+
+async function signOutEverywhere() {
+  "use server";
+  const me = await requireTeam("view", BACK);
+  await revokeSessions("team", me.id);
+  await audit({ kind: "team", id: me.id }, "team.signed_out_everywhere", "team_user", me.id);
+  cookies().delete(TEAM_COOKIE);
+  redirect(flashUrl("/team/login", "ok", "Signed out on every device."));
+}
+
+export default async function Page({ searchParams }) {
+  const me = await requireTeam("view");
+  return (
+    <TeamShell active="settings" title="My <em>settings</em>" email={me.email} role={me.role}>
+      <div style={{ maxWidth: 560 }}>
+        <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
+        <div className="panel pad" style={{ marginBottom: 18 }}>
+          <h2>{me.name || me.email}</h2>
+          <p className="muted" style={{ margin: 0 }}>{me.email} · {ROLE_LABEL[me.role] || me.role}</p>
+        </div>
+        <form className="panel pad" action={changePassword}>
+          <h2>Change password</h2>
+          <div className="stack">
+            <div className="fld"><label>Current password</label><input name="current" type="password" required autoComplete="current-password" /></div>
+            <div className="fld"><label>New password <span className="opt">— at least 10 characters</span></label><input name="password" type="password" minLength={10} required autoComplete="new-password" /></div>
+            <div className="fld"><label>Type the new password again</label><input name="confirm" type="password" minLength={10} required autoComplete="new-password" /></div>
+          </div>
+          <button className="btn-foil" style={{ marginTop: 20 }}>Change password</button>
+        </form>
+        <form className="panel pad" action={signOutEverywhere} style={{ marginTop: 18 }}>
+          <h2>Sign out everywhere</h2>
+          <p className="muted" style={{ margin: "-4px 0 14px" }}>Signs your team login out on every device, including this one.</p>
+          <button className="btn">Sign out on all devices</button>
+        </form>
+      </div>
+    </TeamShell>
+  );
+}

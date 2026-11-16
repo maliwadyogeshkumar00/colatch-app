@@ -1,43 +1,29 @@
 import { redirect } from "next/navigation";
 import Flash, { flashUrl } from "../../_ui/flash";
 import { env } from "@/lib/net/env";
-import { hashPassword, verifyPassword } from "@/lib/net/auth";
 import { currentTeam, startTeamSession } from "@/lib/net/creatorAuth";
+import { audit, safeNext } from "@/lib/net/security";
+import { checkLogin, TOO_MANY } from "../../reset/_lib";
 
 export const metadata = { title: "Team log in · Colatch Connect", robots: { index: false, follow: false } };
 
-const teamCount = async () => (await env.DB.prepare("SELECT COUNT(*) n FROM team_users").first())?.n ?? 0;
+const teamCount = async () => Number((await env.DB.prepare("SELECT COUNT(*) n FROM team_users").first())?.n ?? 0);
 
 async function login(fd) {
   "use server";
-  const email = String(fd.get("email") ?? "").trim().toLowerCase();
-  const u = await env.DB.prepare("SELECT id, password_hash, salt FROM team_users WHERE email=?").bind(email).first();
-  if (u && (await verifyPassword(String(fd.get("password") ?? ""), u.password_hash, u.salt))) {
-    await env.DB.prepare("UPDATE team_users SET last_login_at=datetime('now') WHERE id=?").bind(u.id).run();
-    await startTeamSession(u.id);
-    redirect("/team");
+  const email = String(fd.get("email") ?? "").trim().toLowerCase().slice(0, 254);
+  const next = safeNext(fd.get("next"), "/team", "/team");
+  const u = email ? await env.DB.prepare("SELECT id, password_hash, salt, disabled_at FROM team_users WHERE email=?").bind(email).first() : null;
+  const res = await checkLogin("team", email, String(fd.get("password") ?? ""), u);
+  if (res === "blocked") redirect(flashUrl("/team/login", "err", TOO_MANY));
+  if (res !== "ok") {
+    // Same message for unknown email, wrong password and disabled member.
+    redirect(flashUrl("/team/login", "err", "Wrong email or password."));
   }
-  redirect(flashUrl("/team/login", "err", "Wrong email or password."));
-}
-
-async function setup(fd) {
-  "use server";
-  // Only allowed while there is no team login at all: the first person sets up the owner account.
-  if ((await teamCount()) > 0) redirect(flashUrl("/team/login", "err", "A team login already exists. Log in, or ask a team member to add you."));
-  const name = String(fd.get("name") ?? "").trim();
-  const email = String(fd.get("email") ?? "").trim().toLowerCase();
-  const pw = String(fd.get("password") ?? "");
-  if (!name || !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) redirect(flashUrl("/team/login", "err", "Add your name and a valid email."));
-  // The owner account can only be claimed by a Colatch address (or one listed in TEAM_OWNER_EMAILS), so a stranger
-  // who finds this page first can't take over the desk.
-  const allowed = String(process.env.TEAM_OWNER_EMAILS || "maliwadyogeshkumar00@gmail.com").toLowerCase().split(/[\s,]+/).filter(Boolean);
-  if (!email.endsWith("@colatch.com") && !allowed.includes(email)) redirect(flashUrl("/team/login", "err", "The first team login must use a @colatch.com email."));
-  if (pw.length < 10) redirect(flashUrl("/team/login", "err", "Use a password of at least 10 characters."));
-  const { hash, salt } = await hashPassword(pw);
-  const id = crypto.randomUUID();
-  await env.DB.prepare("INSERT INTO team_users (id, email, name, password_hash, salt, role) VALUES (?,?,?,?,?,'owner')").bind(id, email, name, hash, salt).run();
-  await startTeamSession(id);
-  redirect("/team?ok=" + encodeURIComponent("Team login created. Welcome to Colatch Connect."));
+  await env.DB.prepare("UPDATE team_users SET last_login_at=datetime('now') WHERE id=?").bind(u.id).run();
+  await audit({ kind: "team", id: u.id }, "team.login", "team_user", u.id);
+  await startTeamSession(u.id);
+  redirect(next);
 }
 
 export default async function Page({ searchParams }) {
@@ -53,19 +39,14 @@ export default async function Page({ searchParams }) {
       <div className="box">
         <div className="lock"><svg className="em"><use href="#emblem-foil" /></svg><svg className="wm"><use href="#wordmark" /></svg><small>Connect · Team</small></div>
         {first ? (
-          <form className="panel pad" action={setup}>
-            <h2>Set up the first Colatch team login</h2>
-            <p className="muted" style={{ margin: "-4px 0 18px" }}>No one has a team login yet. This creates the owner account. You can add the rest of the team from the overview page.</p>
-            <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
-            <div className="stack">
-              <div className="fld"><label>Your name</label><input name="name" required autoComplete="name" /></div>
-              <div className="fld"><label>Work email</label><input name="email" type="email" required autoComplete="email" /></div>
-              <div className="fld"><label>Password <span className="opt">— at least 10 characters</span></label><input name="password" type="password" minLength={10} required autoComplete="new-password" /></div>
-            </div>
-            <button className="btn-foil" style={{ marginTop: 20, width: "100%", justifyContent: "center" }}>Create team login</button>
-          </form>
+          <div className="panel pad">
+            <h2>No team login yet</h2>
+            <p className="muted">The first owner account is created once, with the setup code.</p>
+            <a className="btn-foil" href="/team/setup" style={{ marginTop: 14, width: "100%", justifyContent: "center" }}>Set up the owner login</a>
+          </div>
         ) : (
           <form className="panel pad" action={login}>
+            <input type="hidden" name="next" value={String(searchParams?.next ?? "")} />
             <h2>Team log in</h2>
             <p className="muted" style={{ margin: "-4px 0 18px" }}>Campaigns, creators, deals and payouts for Colatch Connect.</p>
             <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
@@ -74,7 +55,7 @@ export default async function Page({ searchParams }) {
               <div className="fld"><label>Password</label><input name="password" type="password" required autoComplete="current-password" /></div>
             </div>
             <button className="btn-foil" style={{ marginTop: 20, width: "100%", justifyContent: "center" }}>Log in</button>
-            <p className="hint" style={{ margin: "16px 0 0" }}>Need access? Ask a team member to add you from the Network overview.</p>
+            <p className="hint" style={{ margin: "16px 0 0" }}>Forgot your password or need access? Ask an owner or admin to send you a link from Team members.</p>
           </form>
         )}
       </div>

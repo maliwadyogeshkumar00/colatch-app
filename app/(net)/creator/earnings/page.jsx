@@ -30,10 +30,15 @@ export default async function Page() {
   const code = await ensureCode(env, "creator", c.id, c.name || c.handle);
   const deals = (await env.DB.prepare("SELECT d.*, k.payment_days FROM creator_deals d LEFT JOIN campaigns k ON k.id=d.campaign_id WHERE d.creator_id=? AND d.stage <> 'dropped' ORDER BY d.created_at").bind(c.id).all()).results ?? [];
   const paid = deals.filter((d) => d.pay_status === "paid");
-  const earned = paid.reduce((s, d) => s + (d.fee || 0) - (d.tds_amount || 0), 0);
-  const tds = paid.reduce((s, d) => s + (d.tds_amount || 0), 0);
-  const rewards = deals.filter((d) => d.live_at).reduce((s, d) => s + (d.reward_value || 0), 0);
-  const pending = deals.filter((d) => d.pay_status !== "paid" && d.fee).reduce((s, d) => s + d.fee, 0);
+  // What was actually sent, from the money ledger. Deals paid before the ledger existed fall back to fee − TDS.
+  const sent = new Map(((await env.DB.prepare("SELECT l.deal_id, l.amount_paise, l.tds_paise FROM finance_ledger l JOIN creator_deals d ON d.id=l.deal_id WHERE d.creator_id=? AND l.kind='creator_payout_sent'").bind(c.id).all()).results ?? []).map((r) => [r.deal_id, r]));
+  const earned = paid.reduce((s, d) => s + (sent.has(d.id) ? Number(sent.get(d.id).amount_paise) / 100 : (d.fee || 0) - (d.tds_amount || 0)), 0);
+  const tds = paid.reduce((s, d) => s + (sent.has(d.id) ? Number(sent.get(d.id).tds_paise || 0) / 100 : d.tds_amount || 0), 0);
+  const rewards = deals.filter((d) => d.live_at && d.stage !== "cancelled").reduce((s, d) => s + (d.reward_value || 0), 0);
+  const active = (d) => d.stage !== "cancelled" && d.pay_status !== "refunded" && d.pay_status !== "paid" && d.fee;
+  // Only money the brand has already paid to Colatch is "on the way"; agreed-but-unpaid deals are shown separately.
+  const pending = deals.filter((d) => active(d) && (d.pay_status === "funded" || d.pay_status === "released")).reduce((s, d) => s + d.fee, 0);
+  const agreed = deals.filter((d) => active(d) && d.pay_status === "unfunded" && d.sow_accepted_at).reduce((s, d) => s + d.fee, 0);
   const timed = paid.filter((d) => d.live_at && d.paid_at);
   const onTime = timed.filter((d) => (ms(d.paid_at) - ms(d.live_at)) / 864e5 <= (d.payment_days ?? 30)).length;
   const avgDays = timed.length ? timed.reduce((s, d) => s + (ms(d.paid_at) - ms(d.live_at)) / 864e5, 0) / timed.length : null;
@@ -50,7 +55,7 @@ export default async function Page() {
   const refTotal = earn.filter((e) => e.status !== "void").reduce((s, e) => s + e.amount, 0);
   const refPaid = earn.filter((e) => e.status === "paid").reduce((s, e) => s + e.amount, 0);
   const origin = `https://${headers().get("host")}`;
-  const waCreators = `https://wa.me/?text=${encodeURIComponent(`I get paid brand deals through Colatch. You only see briefs that fit you, pay is shown upfront, and they pay on time. Join free: ${origin}/r/${code}?to=join`)}`;
+  const waCreators = `https://wa.me/?text=${encodeURIComponent(`I get paid brand deals through Colatch. You only see briefs that fit you, pay is shown upfront, and every payment goes through Colatch. Join free: ${origin}/r/${code}?to=join`)}`;
   const waBrands = `https://wa.me/?text=${encodeURIComponent(`If you need creators for a campaign, Colatch shortlists the right ones in 2 working days, holds payment until the work is approved and shows real cost per view. Post a brief: ${origin}/r/${code}?to=brief`)}`;
   const nb = refs.filter((r) => r.referred_type === "brand").length;
   const nc = refs.filter((r) => r.referred_type === "creator").length;
@@ -67,7 +72,7 @@ export default async function Page() {
 
       <div className="grid4">
         <div className="panel kpi"><div className="k">Paid to you</div><div className="v">{inr(earned)}</div><div className="s">{paid.length} {paid.length === 1 ? "deal" : "deals"}{tds ? ` · ${inr(tds)} TDS you can claim back` : ""}</div></div>
-        <div className="panel kpi"><div className="k">On the way</div><div className="v">{inr(pending)}</div><div className="s">deals not yet paid</div></div>
+        <div className="panel kpi"><div className="k">On the way</div><div className="v">{inr(pending)}</div><div className="s">brand has paid Colatch; yours after the post is verified{agreed ? ` · ${inr(agreed)} more agreed, waiting for brand payment` : ""}</div></div>
         <div className="panel kpi"><div className="k">Paid on time</div><div className="v">{timed.length ? Math.round((onTime / timed.length) * 100) + "%" : "—"}</div><div className="s">{avgDays != null ? "avg " + avgDays.toFixed(1) + " days after going live" : "after your first payout"}</div></div>
         <div className="panel kpi"><div className="k">Products &amp; tickets</div><div className="v">{inr(rewards)}</div><div className="s">value received</div></div>
       </div>
@@ -115,8 +120,8 @@ export default async function Page() {
             <div className="row" style={{ gap: 6, margin: "0 0 10px" }}>
               {[...BRAND_TIERS].reverse().map((t) => <span key={t.pct} className={`pill ${brandTierFor(nb).pct === t.pct ? "good" : ""}`}>{t.label}: {t.pct}%</span>)}
             </div>
-            {brandTierFor(nb).pct < 15 && <p className="hint" style={{ margin: "0 0 8px" }}>{(nb < 5 ? 5 : 10) - nb} more {(nb < 5 ? 5 : 10) - nb === 1 ? "brand" : "brands"} and every brand you've brought pays you {nb < 5 ? 12 : 15}%.</p>}
-            <p className="muted" style={{ margin: "0 0 12px" }}>Every campaign they run pays you, paid from Colatch's own fee, never from creators. You also get first look at their briefs.</p>
+            {brandTierFor(nb).pct < 15 && <p className="hint" style={{ margin: "0 0 8px" }}>{(nb < 5 ? 5 : 10) - nb} more {(nb < 5 ? 5 : 10) - nb === 1 ? "brand" : "brands"} and new earnings from every brand you've brought are at {nb < 5 ? 12 : 15}%.</p>}
+            <p className="muted" style={{ margin: "0 0 12px" }}>You earn on each of their deals that gets paid, from Colatch's own fee, never from creators. Only brands new to Colatch count.</p>
             <a className="btn-foil" href={waBrands} target="_blank" rel="noopener">Share with a brand on WhatsApp</a>
           </div>
           <div>
@@ -129,9 +134,9 @@ export default async function Page() {
         <div className="grid3" style={{ marginTop: 18 }}>
           <div className="panel kpi" style={{ boxShadow: "none" }}><div className="k">People you brought</div><div className="v">{refs.length}</div><div className="s">{nb} {nb === 1 ? "brand" : "brands"} · {nc} {nc === 1 ? "creator" : "creators"}</div></div>
           <div className="panel kpi" style={{ boxShadow: "none" }}><div className="k">Referral earnings</div><div className="v">{inr(refTotal)}</div><div className="s">{inr(refPaid)} paid out</div></div>
-          <div className="panel kpi" style={{ boxShadow: "none" }}><div className="k">Next payout</div><div className="v">{inr(refTotal - refPaid)}</div><div className="s">paid with your next deal</div></div>
+          <div className="panel kpi" style={{ boxShadow: "none" }}><div className="k">Next payout</div><div className="v">{inr(refTotal - refPaid)}</div><div className="s">earned, not yet paid out by the team</div></div>
         </div>
-        {earn.length > 0 && <table className="tbl" style={{ marginTop: 14 }}><tbody>{earn.map((e, i) => <tr key={i}><td>{reasonLabel[e.reason] || e.reason}</td><td>{String(e.created_at).slice(0, 10)}</td><td className="num">{inr(e.amount)}</td><td><span className={`pill ${e.status === "paid" ? "good" : ""}`}>{e.status}</span></td></tr>)}</tbody></table>}
+        {earn.length > 0 && <table className="tbl" style={{ marginTop: 14 }}><tbody>{earn.map((e, i) => <tr key={i}><td>{reasonLabel[e.reason] || e.reason}</td><td>{String(e.created_at).slice(0, 10)}</td><td className="num">{inr(e.amount)}</td><td><span className={`pill ${e.status === "paid" ? "good" : e.status === "void" ? "low" : ""}`}>{({ pending: "Earned, payout pending", paid: "Paid out", void: "Cancelled" })[e.status] || e.status}</span></td></tr>)}</tbody></table>}
       </div>
     </PublicShell>
   );

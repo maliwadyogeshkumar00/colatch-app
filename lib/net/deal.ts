@@ -21,25 +21,41 @@ export interface DealRow {
   market_rate?: number | null; reward_value?: number | null; sales_value?: number | null; brand_signoff_at?: string | null; proof_public?: number | null;
 }
 
-/** How far along the rail a deal is (index of the last completed step, -1 = nothing yet). */
-export function railIndex(d: DealRow): number {
-  if (d.pay_status === 'paid') return 5;
-  if (d.pay_status === 'released') return 4;
-  if (d.live_at) return 3;
-  if (d.draft_status === 'approved') return 2;
-  if (d.pay_status === 'funded') return 1;
-  if (d.sow_accepted_at) return 0;
-  return -1;
+/** Which rail steps are really done, from the deal's own state (not from the stage label). */
+export function railDone(d: DealRow): boolean[] {
+  const ps = d.pay_status;
+  return [
+    !!d.sow_accepted_at,
+    ps === 'funded' || ps === 'released' || ps === 'paid',
+    d.draft_status === 'approved',
+    !!d.live_at,
+    ps === 'released' || ps === 'paid',
+    ps === 'paid',
+  ];
 }
 
-/** What is blocking the deal right now, in one line, and who owns the next move. */
+/**
+ * How far along the rail a deal is: index of the last step done with every step before it also done
+ * (-1 = nothing yet). A cancelled or refunded deal shows how far it got before stopping.
+ */
+export function railIndex(d: DealRow): number {
+  const done = railDone(d);
+  let i = -1;
+  while (i + 1 < done.length && done[i + 1]) i++;
+  return i;
+}
+
+export const isClosed = (d: Pick<DealRow, 'stage' | 'pay_status'>) => d.stage === 'cancelled' || d.pay_status === 'refunded';
+
 export function nextStep(d: DealRow): { who: 'creator' | 'brand' | 'team'; text: string } {
+  if (d.pay_status === 'refunded') return { who: 'team', text: 'Cancelled. The brand payment was refunded' };
+  if (d.stage === 'cancelled') return { who: 'team', text: d.pay_status === 'funded' ? 'Cancelled. Team to refund the brand payment' : 'Cancelled' };
   if (!d.sow_accepted_at) return { who: 'creator', text: 'Creator to accept the deal terms' };
   if (d.pay_status === 'unfunded') return { who: 'brand', text: 'Waiting for the brand to fund this deal' };
   if (d.draft_status === 'none') return { who: 'creator', text: 'Creator to submit the draft' };
   if (d.draft_status === 'changes') return { who: 'creator', text: 'Creator to submit the revised draft' };
   if (d.draft_status === 'submitted') return { who: 'brand', text: 'Brand to review the draft' };
-  if (!d.live_at) return { who: 'creator', text: 'Creator to post and share the live link' };
+  if (!d.live_at) return d.post_url ? { who: 'team', text: 'Team to verify the live post' } : { who: 'creator', text: 'Creator to post and share the live link' };
   if (d.pay_status === 'funded') return { who: 'team', text: 'Team to verify the post and release payment' };
   if (d.pay_status === 'released') return { who: 'team', text: 'Team to send the payout and add the UTR' };
   return { who: 'team', text: 'Done. Add final results' };
@@ -123,17 +139,21 @@ export async function logEvent(env: Env, dealId: string, actor: string, kind: st
   await env.DB.prepare('INSERT INTO deal_events (id, deal_id, actor, kind, note) VALUES (?,?,?,?,?)').bind(crypto.randomUUID(), dealId, actor, kind, note).run();
 }
 
-/** Drafts the brand hasn't reviewed in time are approved automatically. Runs whenever a deal is opened. */
-export async function applyAutoApprove(env: Env, d: DealRow): Promise<boolean> {
-  if (d.draft_status === 'submitted' && d.auto_approve_at && Date.parse(d.auto_approve_at) < Date.now()) {
-    // Only flips a draft that is still waiting, so two page loads can't both log it.
-    const r = await env.DB.prepare("UPDATE creator_deals SET draft_status='approved', updated_at=datetime('now') WHERE id=? AND draft_status='submitted'").bind(d.id).run();
-    if (!r.meta?.changes) { d.draft_status = 'approved'; return false; }
-    await logEvent(env, d.id, 'system', 'approved', 'Auto-approved: the review window passed without feedback');
-    d.draft_status = 'approved';
+/**
+ * Drafts the brand hasn't reviewed in time are approved automatically. Runs whenever a deal is opened.
+ * Goes through the deal state machine, so it is checked, logged and only ever happens once.
+ */
+export async function applyAutoApprove(_env: Env, d: DealRow): Promise<boolean> {
+  if (d.draft_status !== 'submitted' || !d.auto_approve_at || Date.parse(d.auto_approve_at) > Date.now()) return false;
+  const { transition } = await import('./dealflow');
+  try {
+    const nd = await transition(d.id, 'auto_approve', { kind: 'system', id: 'system' });
+    Object.assign(d, nd);
     return true;
+  } catch {
+    // Someone else approved or changed it first; the caller reloads the deal anyway.
+    return false;
   }
-  return false;
 }
 
 export function countdown(iso: string | null): string {

@@ -9,6 +9,9 @@ import { scrubContacts, blindBrand } from "@/lib/net/guard";
 import { brandTrust, payByLine, isFeatured, goingDirectLosses } from "@/lib/net/trust";
 import { int, str, inr } from "@/lib/net/creators";
 import { flashUrl } from "../../../_ui/flash";
+import { colatchScore } from "@/lib/net/score";
+import { notify, teamInbox } from "@/lib/net/notify";
+import { audit } from "@/lib/net/security";
 
 const CSS = `
 .pg-brief .trust{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
@@ -25,7 +28,17 @@ const CSS = `
 `;
 
 const getCampaign = (slug) => env.DB.prepare("SELECT * FROM campaigns WHERE slug=? AND status IN ('open','closed')").bind(slug).first();
-const isOpen = (k) => k.status === "open" && (!k.deadline || k.deadline >= new Date().toISOString().slice(0, 10));
+const isOpen = (k) => k.status === "open" && Number(k.is_open) === 1 && (!k.deadline || k.deadline >= new Date().toISOString().slice(0, 10));
+const myApplication = (k, c) => env.DB.prepare("SELECT * FROM campaign_applications WHERE campaign_id=? AND (creator_id=? OR handle=?) ORDER BY created_at DESC LIMIT 1").bind(k.id, c.id, c.handle).first();
+/** Private campaigns (a brand booked one creator's idea) are visible only to creators already on them. */
+async function canSee(k, c) {
+  if (Number(k.is_open) === 1) return true;
+  if (!c) return false;
+  if (await myApplication(k, c)) return true;
+  return Boolean(await env.DB.prepare("SELECT id FROM creator_deals WHERE campaign_id=? AND creator_id=?").bind(k.id, c.id).first());
+}
+const EARLY_HOURS = 24;
+const isFresh = (k) => { const t = Date.parse(String(k.created_at || "").replace(" ", "T") + "Z"); return Number.isFinite(t) && Date.now() - t < EARLY_HOURS * 36e5; };
 
 export async function generateMetadata({ params }) {
   const k = await getCampaign(params.slug).catch(() => null);
@@ -41,32 +54,74 @@ async function apply(fd) {
   if (!k) redirect("/creator");
   if (!me) redirect(`/creator/login?next=${encodeURIComponent(path)}`);
   const c = me.creator;
+  if (!(await canSee(k, c))) redirect("/creator");
   const m = match(c, k);
   let dest = path;
   try {
     if (!isOpen(k)) throw new Error("This brief is closed.");
     if (!m.eligible) throw new Error("Your profile doesn't meet this brief's requirements.");
-    if (await env.DB.prepare("SELECT id FROM campaign_applications WHERE campaign_id=? AND handle=?").bind(k.id, c.handle).first()) throw new Error("You've already applied.");
+    const prior = await myApplication(k, c);
+    if (prior && prior.status !== "withdrawn") throw new Error("You've already applied.");
+    // Icon early access is enforced here too, not only by hiding the brief in the feed.
+    if (isFresh(k) && (await colatchScore(env, c.id)).tier !== "Icon") throw new Error("This brief is in its Icon early-access window. It opens to you within 24 hours.");
     const pitch = str(scrubContacts(str(fd.get("pitch"))?.slice(0, 600)).text);
     if (!pitch || pitch.length < 20) throw new Error("Tell the brand in a sentence or two why you fit.");
-    await env.DB.prepare(
-      "INSERT INTO campaign_applications (id, campaign_id, creator_id, handle, name, email, phone, city, followers, rate_quote, pitch, match_score, match_reasons) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
-    ).bind(crypto.randomUUID(), k.id, c.id, c.handle, c.name, me.email, c.phone, c.city, c.followers, int(fd.get("rate_quote")) ?? c.rate_reel, pitch, m.score, m.reasons.join(" · ")).run();
-  } catch (e) { dest = flashUrl(path, "err", e instanceof Error ? e.message : "Something went wrong."); }
+    const quote = int(fd.get("rate_quote")) ?? c.rate_reel;
+    if (quote != null && (quote < 0 || quote > 1e8)) throw new Error("Enter your quote in rupees.");
+    const appId = crypto.randomUUID();
+    try {
+      if (prior) {
+        // Re-applying after withdrawing reuses the same row (one application per creator per brief).
+        await env.DB.prepare("UPDATE campaign_applications SET status='new', pitch=?, rate_quote=?, match_score=?, match_reasons=? WHERE id=? AND status='withdrawn'").bind(pitch, quote, m.score, m.reasons.join(" · "), prior.id).run();
+      } else {
+        await env.DB.prepare(
+          "INSERT INTO campaign_applications (id, campaign_id, creator_id, handle, name, email, phone, city, followers, rate_quote, pitch, match_score, match_reasons) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
+        ).bind(appId, k.id, c.id, c.handle, c.name, me.email, c.phone, c.city, c.followers, quote, pitch, m.score, m.reasons.join(" · ")).run();
+      }
+    } catch (e) {
+      if (e?.code === "23505") throw new Error("You've already applied.");
+      throw e;
+    }
+    const id = prior?.id || appId;
+    await audit({ kind: "creator", id: c.id }, "application.create", "application", id, { campaign: k.id });
+    await notify({ template: "new_application", to: teamInbox(), toKind: "team", payload: { creator: c.name || c.handle, title: k.title, score: m.score, campaignId: k.id }, dedupeKey: `new_application:${id}:${prior ? "again" : "first"}` });
+  } catch (e) {
+    if (!(e instanceof Error) || /^(NEXT_REDIRECT)/.test(e.message)) throw e;
+    dest = flashUrl(path, "err", e.message.length < 200 && !e.code ? e.message : "Something went wrong. Try again.");
+    if (e.code) console.error("[apply]", e);
+  }
   redirect(dest);
 }
 
-const statusLabel = { new: "Applied: the Colatch team is reviewing", shortlisted: "Shortlisted: we'll be in touch soon", accepted: "You're in! The team will WhatsApp you the next steps", rejected: "Not selected this time" };
+async function withdraw(fd) {
+  "use server";
+  const slug = String(fd.get("slug") ?? "");
+  const path = `/creator/o/${slug}`;
+  const me = await currentCreator();
+  if (!me) redirect(`/creator/login?next=${encodeURIComponent(path)}`);
+  const k = await getCampaign(slug);
+  if (!k) redirect("/creator");
+  // Only the creator's own application, and only before the brand has picked them.
+  const r = await env.DB.prepare("UPDATE campaign_applications SET status='withdrawn' WHERE campaign_id=? AND creator_id=? AND status IN ('new','shortlisted') RETURNING id").bind(k.id, me.creator.id).first();
+  if (!r) redirect(flashUrl(path, "err", "This application can't be withdrawn any more. Message the Colatch team."));
+  await audit({ kind: "creator", id: me.creator.id }, "application.withdraw", "application", r.id, { campaign: k.id });
+  redirect(flashUrl(path, "ok", "Application withdrawn."));
+}
+
+const statusLabel = { new: "Applied: the Colatch team is reviewing", shortlisted: "Shortlisted: the brand decides next", accepted: "You're in! Your deal shows up under Applications once it's ready", rejected: "Not selected this time", withdrawn: "You withdrew this application" };
 
 export default async function Page({ params, searchParams }) {
   const k = await getCampaign(params.slug);
   if (!k) notFound();
   const me = await currentCreator();
   const c = me?.creator;
+  if (!(await canSee(k, c))) notFound();
   const m = c ? match(c, k) : null;
   const open = isOpen(k);
-  const existing = c ? await env.DB.prepare("SELECT * FROM campaign_applications WHERE campaign_id=? AND handle=?").bind(k.id, c.handle).first() : null;
+  const existing0 = c ? await myApplication(k, c) : null;
+  const existing = existing0 && existing0.status !== "withdrawn" ? existing0 : null;
   const err = searchParams?.err || "";
+  const ok = searchParams?.ok || "";
   const chips = requirementChips(k);
   const accepted = c ? await env.DB.prepare("SELECT id FROM creator_deals WHERE campaign_id=? AND creator_id=? AND sow_accepted_at IS NOT NULL").bind(k.id, c.id).first() : null;
   const brandShown = accepted ? (k.brand || blindBrand(k)) : blindBrand(k);
@@ -96,7 +151,10 @@ export default async function Page({ params, searchParams }) {
       </>
     );
   } else if (existing) {
-    side = <><h2>Your application</h2><div className={`note ${existing.status === "accepted" ? "good" : existing.status === "rejected" ? "bad" : "info"}`}>{statusLabel[existing.status] || existing.status}</div></>;
+    side = <><h2>Your application</h2>
+      {err && <div className="note bad" style={{ marginBottom: 12 }}>{err}</div>}
+      <div className={`note ${existing.status === "accepted" ? "good" : existing.status === "rejected" ? "bad" : "info"}`}>{statusLabel[existing.status] || existing.status}</div>
+      {["new", "shortlisted"].includes(existing.status) && <form action={withdraw} style={{ marginTop: 12 }}><input type="hidden" name="slug" value={k.slug} /><button className="btn sm">Withdraw application</button></form>}</>;
   } else if (m && !m.eligible) {
     side = (
       <><h2>Not a fit yet</h2>
@@ -112,6 +170,8 @@ export default async function Page({ params, searchParams }) {
         <input type="hidden" name="slug" value={k.slug} />
         <div className="row" style={{ gap: 14, marginBottom: 14 }}><div className="score" style={{ "--v": m.score }}><i>{m.score}</i></div><div><div className="lbl">Your match</div><div className="small muted">{m.reasons.join(" · ")}</div></div></div>
         {err && <div className="note bad" style={{ marginBottom: 12 }}>{err}</div>}
+        {ok && <div className="note good" style={{ marginBottom: 12 }}>{ok}</div>}
+        {existing0?.status === "withdrawn" && <p className="hint">You withdrew earlier. You can apply again while the brief is open.</p>}
         <div className="stack">
           <div className="fld"><label>Why you're right for this</label><textarea name="pitch" rows={4} required minLength={20} maxLength={600} placeholder="I've done 3 festive dance reels for fashion brands; my audience is 70% Delhi-NCR women 18–30…" /></div>
           <div className="fld"><label>Your quote for this brief ₹</label><input name="rate_quote" defaultValue={c.rate_reel ?? ""} placeholder="Total for all deliverables" /><span className="hint">{c.rate_reel ? `Your usual reel rate is ${inr(c.rate_reel)}.` : ""}</span></div>

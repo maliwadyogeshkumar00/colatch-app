@@ -7,19 +7,19 @@ import { REJECT_REASONS } from "@/lib/net/campaign";
 
 export const metadata = { title: "My deals · Colatch", robots: { index: false } };
 
-const label = { new: ["Under review", ""], shortlisted: ["Shortlisted", "ok"], accepted: ["Selected", "good"], rejected: ["Not selected", "low"] };
+const label = { new: ["Under review", ""], shortlisted: ["Shortlisted", "ok"], accepted: ["Selected", "good"], rejected: ["Not selected", "low"], withdrawn: ["Withdrawn", ""] };
 const dueText = (created) => {
   const due = new Date(Date.parse(String(created).replace(" ", "T") + "Z") + 3 * 864e5);
-  return due.getTime() < Date.now() ? "Decision overdue, we are chasing the brand" : "Decision by " + due.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  return due.getTime() < Date.now() ? "Decision overdue" : "Decision by " + due.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 };
-const dealState = (d) => d.pay_status === "paid" ? ["Paid", "good"] : !d.sow_accepted_at ? ["Accept terms", "ok"] : d.draft_status === "changes" ? ["Changes asked", "ok"] : d.draft_status === "none" ? ["Send draft", "ok"] : d.draft_status === "submitted" ? ["In review", ""] : !d.live_at ? ["Post it", "ok"] : ["Payment pending", ""];
+const dealState = (d) => d.stage === "cancelled" || d.pay_status === "refunded" ? ["Cancelled", "low"] : d.pay_status === "paid" ? ["Paid", "good"] : d.pay_status === "released" ? ["Payout approved", "good"] : !d.sow_accepted_at ? ["Accept terms", "ok"] : d.pay_status === "unfunded" ? ["Waiting for brand payment", ""] : d.draft_status === "changes" ? ["Changes asked", "ok"] : d.draft_status === "none" ? ["Send draft", "ok"] : d.draft_status === "submitted" ? ["In review", ""] : !d.live_at ? (d.post_url ? ["Checking your post", ""] : ["Post it", "ok"]) : ["Payment pending", ""];
 
 export default async function Page() {
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/applications");
   const c = me.creator;
   const apps = (await env.DB.prepare(`SELECT a.status, a.created_at, a.match_score, a.reject_reason, k.title, k.slug, CASE WHEN a.status = 'accepted' THEN k.brand ELSE COALESCE(k.brand_category, 'Brand hidden until selected') END AS brand, k.status AS kstatus FROM campaign_applications a JOIN campaigns k ON k.id=a.campaign_id WHERE a.creator_id=? OR a.handle=? ORDER BY a.created_at DESC`).bind(c.id, c.handle).all()).results ?? [];
-  const deals = (await env.DB.prepare("SELECT d.id, CASE WHEN d.sow_accepted_at IS NOT NULL THEN d.brand ELSE 'Brand revealed after you accept' END AS brand, d.deliverable, d.fee, d.pay_status, d.draft_status, d.sow_accepted_at, d.live_at FROM creator_deals d WHERE d.creator_id=? AND d.stage <> 'dropped' ORDER BY d.updated_at DESC").bind(c.id).all()).results ?? [];
+  const deals = (await env.DB.prepare("SELECT d.id, CASE WHEN d.sow_accepted_at IS NOT NULL THEN d.brand ELSE 'Brand revealed after you accept' END AS brand, d.deliverable, d.fee, d.pay_status, d.draft_status, d.sow_accepted_at, d.live_at, d.post_url, d.stage FROM creator_deals d WHERE d.creator_id=? AND d.stage <> 'dropped' ORDER BY d.updated_at DESC").bind(c.id).all()).results ?? [];
   return (
     <PublicShell creatorName={c.name || c.handle} path="/creator/applications">
       <div className="panel pad" style={{ marginBottom: 26, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, flexWrap: "wrap", background: "linear-gradient(135deg,#2E1B36,#1E1128)", color: "#F4EFE3", border: 0 }}>
@@ -32,7 +32,7 @@ export default async function Page() {
           return <a key={d.id} className="opp" href={`/creator/deals/${d.id}`} style={{ padding: "16px 20px" }}><div className="top"><div><div className="br">{d.brand}</div><h3 style={{ fontSize: 16 }}>{d.deliverable || "Deal"}</h3></div><div className="row" style={{ gap: 8 }}><b>{d.fee ? inr(d.fee) : "Product"}</b><span className={`pill ${cls}`}>{st}</span></div></div></a>;
         })}</div></div>}
       <div className="lbl">My applications</div>
-      <p className="hint" style={{ margin: "0 0 10px" }}>Every application gets a decision within 3 days, with a reason if it's a no.</p>
+      <p className="hint" style={{ margin: "0 0 10px" }}>The team aims to decide within 3 days and gives a reason if it's a no. You can withdraw from the brief page until you're selected.</p>
       <h1 style={{ margin: "6px 0 20px", fontWeight: 300, fontSize: 30, color: "var(--p900)" }}>{apps.length} {apps.length === 1 ? "application" : "applications"}</h1>
       {apps.length ? (
         <div className="panel scroll-x"><table className="tbl"><thead><tr><th>Brief</th><th>Applied</th><th className="num">Match</th><th>Status</th></tr></thead><tbody>

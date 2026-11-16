@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import PublicShell from "../../_ui/PublicShell";
 import { env } from "@/lib/net/env";
 import { compact } from "@/lib/net/creators";
+import { safeUrl } from "@/lib/net/guard";
 
 // Public proof of work: only exists once the brand signed off and allowed it to be shown.
 async function load(id) {
@@ -15,8 +16,13 @@ async function load(id) {
 
 export async function generateMetadata({ params }) {
   const d = await load(params.id).catch(() => null);
-  if (!d) return { title: "Proof not found · Colatch" };
-  return { title: `Verified work · ${d.name || d.handle} × ${d.brand} · Colatch` };
+  if (!d) return { title: "Proof not found", robots: { index: false } };
+  const who = d.name || d.handle;
+  return {
+    title: `Verified work: ${who} × ${d.brand}`,
+    description: `${who} (@${d.handle}) made ${d.deliverable || "a post"} for ${d.brand}. Checked live by Colatch and signed off by the brand${d.actual_views ? `, ${compact(d.actual_views)} views` : ""}.`,
+    alternates: { canonical: `/proof/${d.id}` },
+  };
 }
 
 export default async function Page({ params }) {
@@ -28,7 +34,7 @@ export default async function Page({ params }) {
       <div className="wrap narrow" style={{ padding: 0 }}>
         <div className="panel pad" style={{ textAlign: "center", padding: "34px 26px" }}>
           <div className="lbl" style={{ color: "var(--good)" }}>✓ Verified by Colatch</div>
-          {d.profile_pic && <img src={d.profile_pic} alt="" style={{ width: 84, height: 84, borderRadius: "50%", objectFit: "cover", margin: "18px auto 0" }} />}
+          {safeUrl(d.profile_pic) && <img src={safeUrl(d.profile_pic)} alt="" style={{ width: 84, height: 84, borderRadius: "50%", objectFit: "cover", margin: "18px auto 0" }} />}
           <h1 style={{ margin: "14px 0 4px", fontWeight: 300, fontSize: 30, color: "var(--p900)" }}>{name} × <b style={{ fontWeight: 600 }}>{d.brand}</b></h1>
           <p className="muted" style={{ margin: 0 }}>@{d.handle} · {d.deliverable || "Campaign"} · live {String(d.live_at).slice(0, 10)}</p>
           <div className="grid3" style={{ marginTop: 24, textAlign: "left" }}>
@@ -43,7 +49,7 @@ export default async function Page({ params }) {
             {d.owner_verified ? <li>The creator proved they own @{d.handle}.</li> : null}
           </ul>
           <div className="row" style={{ justifyContent: "center", marginTop: 22 }}>
-            {d.post_url && <a className="btn" href={d.post_url} target="_blank" rel="noopener">See the post ↗</a>}
+            {safeUrl(d.post_url) && <a className="btn" href={safeUrl(d.post_url)} target="_blank" rel="noopener noreferrer nofollow">See the post ↗</a>}
             <a className="btn-foil" href="/brief">Work with {name.split(" ")[0]} →</a>
           </div>
         </div>

@@ -17,8 +17,8 @@ export default async function Page({ searchParams }) {
   if (!me) redirect("/creator/login");
   const c = me.creator;
   const today = new Date().toISOString().slice(0, 10);
-  const camps = (await env.DB.prepare("SELECT * FROM campaigns WHERE status='open' AND (deadline IS NULL OR deadline >= ?) ORDER BY created_at DESC LIMIT 300").bind(today).all()).results ?? [];
-  const applied = new Set(((await env.DB.prepare("SELECT campaign_id FROM campaign_applications WHERE creator_id=? OR handle=?").bind(c.id, c.handle).all()).results ?? []).map((r) => r.campaign_id));
+  const camps = (await env.DB.prepare("SELECT * FROM campaigns WHERE status='open' AND is_open=1 AND (deadline IS NULL OR deadline >= ?) ORDER BY created_at DESC LIMIT 300").bind(today).all()).results ?? [];
+  const applied = new Set(((await env.DB.prepare("SELECT campaign_id FROM campaign_applications WHERE (creator_id=? OR handle=?) AND status <> 'withdrawn'").bind(c.id, c.handle).all()).results ?? []).map((r) => r.campaign_id));
   const revealed = new Set(((await env.DB.prepare("SELECT campaign_id FROM creator_deals WHERE creator_id=? AND sow_accepted_at IS NOT NULL").bind(c.id).all()).results ?? []).map((r) => r.campaign_id));
   const brandLabel = (k) => (revealed.has(k.id) ? k.brand || blindBrand(k) : blindBrand(k));
   const sc = await colatchScore(env, c.id);
@@ -105,7 +105,7 @@ export default async function Page({ searchParams }) {
           );
         })}
         {!mine.length && (
-          <div className="panel empty"><b>No open brief fits you right now.</b>New briefs come in every week, and we'll WhatsApp you when one matches. Meanwhile, a complete profile with your best reels helps you rank higher.</div>
+          <div className="panel empty"><b>No open brief fits you right now.</b>New briefs come in every week; check back here. Meanwhile, a complete profile with your best reels helps you rank higher.</div>
         )}
       </div>
 

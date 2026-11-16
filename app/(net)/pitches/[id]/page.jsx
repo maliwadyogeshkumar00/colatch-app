@@ -9,12 +9,13 @@ import { slugify, shortlistDue, formatIST } from "@/lib/net/brief";
 import { newToken } from "@/lib/net/tokens";
 import { quote } from "@/lib/net/deal";
 import { readRefCookie, recordReferral } from "@/lib/net/referral";
+import { notify, teamInbox } from "@/lib/net/notify";
 import { livePitch } from "../_data";
 import { firstName } from "../../_ui/pitch";
 
 export async function generateMetadata({ params }) {
   const p = await livePitch(params?.id).catch(() => null);
-  return { title: p ? `${scrubContacts(p.title).text} · Colatch idea board` : "Creator idea · Colatch", robots: { index: false } };
+  return { title: p ? `${scrubContacts(p.title).text}: idea board` : "Creator idea", robots: { index: false } };
 }
 
 async function book(fd) {
@@ -35,13 +36,15 @@ async function book(fd) {
   const full = await env.DB.prepare("SELECT p.creator_id, c.handle, c.name, c.city, c.followers FROM creator_pitches p JOIN creators c ON c.id=p.creator_id WHERE p.id=?").bind(id).first();
   const campaignId = crypto.randomUUID();
   const ref = readRefCookie(String(fd.get("ref") ?? "") || null);
+  const token = newToken() + newToken();
+  const due = shortlistDue();
   const raw = `Booked from the Colatch idea board: "${p.title}" by @${full.handle} at ${inr(p.price)}.${note ? `\n\nBrand's note: ${note}` : ""}`;
   await env.DB.prepare(
     `INSERT INTO campaigns (id, slug, title, brand, brief, raw_brief, deliverables, niche, creators_needed, budget_note, budget_total, status, source,
       client_name, client_company, client_email, client_phone, is_open, pay_type, shortlist_due, ref_code, share_token, pitch_id, brand_category)
      VALUES (?,?,?,?,?,?,?,?,1,?,?,'pending','pitch',?,?,?,?,0,'cash',?,?,?,?,?)`
   ).bind(campaignId, slugify(p.title), p.title, company, p.idea, raw, p.format, p.category, `Paid · ${inr(p.price)} (creator's price)`, p.price,
-    name, company, email, phone || null, shortlistDue(), ref, newToken(), id, p.category ? `A ${p.category.toLowerCase()} brand` : null).run();
+    name, company, email, phone || null, due, ref, token, id, p.category ? `A ${p.category.toLowerCase()} brand` : null).run();
   // The creator who pitched is attached straight away; the team still reviews before the brand sees them.
   await env.DB.prepare(
     `INSERT OR IGNORE INTO campaign_applications (id, campaign_id, creator_id, handle, name, city, followers, rate_quote, pitch, match_score, match_reasons, status, team_note)
@@ -50,6 +53,9 @@ async function book(fd) {
     "Brand booked this creator's own idea", "Booked from the idea board. Confirm availability, then shortlist.").run();
   await env.DB.prepare("UPDATE creator_pitches SET requests = requests + 1 WHERE id=?").bind(id).run();
   await recordReferral(env, ref, "brand", email).catch(() => false);
+  await notify({ template: "brief_received", to: email, toKind: "brand", payload: { name, title: p.title, due: formatIST(due), token }, dedupeKey: `brief:${campaignId}` });
+  await notify({ template: "account_alert", to: teamInbox(), toKind: "team", dedupeKey: `brief_team:${campaignId}`,
+    payload: { subject: `Idea board booking: ${p.title}`, text: `${company} (${name}, ${email}) booked @${full.handle}'s idea "${p.title}" at ${inr(p.price)}.\n\nReview: ${(process.env.SITE_URL || "https://colatch-app.vercel.app").replace(/\/$/, "")}/team/campaigns/${campaignId}` } });
   redirect(`${here}?done=${encodeURIComponent(campaignId)}`);
 }
 
@@ -66,7 +72,7 @@ export default async function Page({ params, searchParams }) {
         <div className="panel pad" style={{ maxWidth: 620, margin: "20px auto 0", textAlign: "center" }}>
           <div className="lbl" style={{ color: "var(--good)" }}>Booking received</div>
           <h2 style={{ fontSize: 26, letterSpacing: "-.02em", textTransform: "none", color: "var(--p900)", margin: "10px 0 8px" }}>"{scrubContacts(done.title).text}" is yours to make happen.</h2>
-          <p className="muted" style={{ margin: "0 0 18px" }}>We'll confirm the creator's dates and send your private campaign link{done.shortlist_due ? ` by ${formatIST(done.shortlist_due)}` : " within 2 working days"}. You approve the creator, fund the deal through Colatch, and see the post, the views and the proof in one place.</p>
+          <p className="muted" style={{ margin: "0 0 18px" }}>We'll confirm the creator's dates{done.shortlist_due ? `, aiming for ${formatIST(done.shortlist_due)}` : ", usually within 2 working days"}, and email you your private campaign page. You approve the creator, fund the deal through Colatch, and see the post, the views and the proof in one place.</p>
           <div className="row" style={{ justifyContent: "center" }}><a className="btn" href="/pitches">Browse more ideas</a><a className="btn-foil" href="/brief">Post a full brief</a></div>
         </div>
       </PublicShell>

@@ -3,19 +3,21 @@ import PublicShell from "../../_ui/PublicShell";
 import { env } from "@/lib/net/env";
 import { compact, inr, erBand } from "@/lib/net/creators";
 import { list } from "@/lib/net/match";
+import { safeUrl } from "@/lib/net/guard";
 import { colatchScore } from "@/lib/net/score";
 import { TierBadge } from "../../_ui/Score";
 
 // Public media kit, auto-built from the creator's Colatch profile. Only creators with a portal login get one.
 const getCreator = (raw) => {
   const handle = decodeURIComponent(String(raw ?? "")).replace(/^@/, "").toLowerCase();
-  return env.DB.prepare(`SELECT c.* FROM creators c JOIN creator_accounts a ON a.creator_id = c.id WHERE c.handle = ? AND c.status <> 'blacklisted'`).bind(handle).first();
+  return env.DB.prepare(`SELECT c.* FROM creators c JOIN creator_accounts a ON a.creator_id = c.id WHERE c.handle = ? AND c.status <> 'blacklisted' AND COALESCE(a.claim_status, 'own') <> 'pending'`).bind(handle).first();
 };
 
 export async function generateMetadata({ params }) {
   const c = await getCreator(params.handle).catch(() => null);
   const name = c ? c.name || c.handle : "Media kit";
-  return { title: `${name} · Media kit · Colatch`, description: c?.bio_pitch || `${name} on Colatch`, robots: { index: true } };
+  if (!c) return { title: "Media kit", robots: { index: false } };
+  return { title: `${name}: media kit`, description: String(c.bio_pitch || `${name} (@${c.handle}) on Colatch: rates, audience and brand-verified work.`).slice(0, 160), alternates: { canonical: `/m/${c.handle}` }, robots: { index: true } };
 }
 
 export default async function Page({ params }) {
@@ -25,14 +27,14 @@ export default async function Page({ params }) {
   const rate = await env.DB.prepare("SELECT AVG(r.stars) a, COUNT(*) n FROM ratings r JOIN creator_deals d ON d.id=r.deal_id WHERE r.by_side='brand' AND d.creator_id=?").bind(c.id).first();
   const done = (await env.DB.prepare("SELECT COUNT(*) n FROM creator_deals WHERE creator_id=? AND stage IN ('live','paid')").bind(c.id).first())?.n ?? 0;
   const b = erBand(c.engagement_rate, c.followers);
-  const links = String(c.portfolio_links || "").split(/\s+/).filter((u) => /^https?:\/\//.test(u)).slice(0, 6);
+  const links = String(c.portfolio_links || "").split(/\s+/).map(safeUrl).filter(Boolean).slice(0, 6);
   const name = c.name || c.handle;
   const sc = await colatchScore(env, c.id);
   const hero = (
     <section className="hero"><div className="hero-in">
       <div className="eb">Colatch media kit{c.verified ? " · Instagram verified ✓" : ""}</div>
       <div className="row" style={{ gap: 20, marginTop: 16, flexWrap: "nowrap" }}>
-        {c.profile_pic && <img src={c.profile_pic} alt="" style={{ width: 88, height: 88, borderRadius: "50%", objectFit: "cover", border: "2px solid rgba(232,184,75,.6)" }} />}
+        {safeUrl(c.profile_pic) && <img src={safeUrl(c.profile_pic)} alt="" style={{ width: 88, height: 88, borderRadius: "50%", objectFit: "cover", border: "2px solid rgba(232,184,75,.6)" }} />}
         <div><h1 style={{ margin: 0 }}>{name}</h1><p style={{ margin: "8px 0 0" }}>@{c.handle}{c.city ? ` · ${c.city}` : ""}{c.language ? ` · ${c.language}` : ""}</p></div>
       </div>
       {c.bio_pitch && <p style={{ fontSize: 18, marginTop: 20 }}>{c.bio_pitch}</p>}
@@ -61,10 +63,10 @@ export default async function Page({ params }) {
             <tr><td>1 Story</td><td className="num"><b>{c.rate_story ? inr(c.rate_story) : "On request"}</b></td></tr>
             <tr><td>Product-only deals</td><td className="num">{c.open_to_barter ? "Open to it" : "Paid deals only"}</td></tr>
           </tbody></table>
-          <p className="hint" style={{ margin: "12px 0 0" }}>Creator's own rates. Bookings through Colatch include payment protection and ASCI-compliant contracts.</p>
+          <p className="hint" style={{ margin: "12px 0 0" }}>Creator's own rates. Bookings through Colatch: the creator is paid after the post is checked live, and every deal has written terms with ASCI ad-disclosure rules.</p>
         </div>
         <div className="panel pad"><h2>Best work</h2>
-          {links.length ? <div className="stack">{links.map((u, i) => <a key={u} className="btn" style={{ justifyContent: "space-between", width: "100%" }} href={u} target="_blank" rel="noopener"><span>Sample {i + 1}</span><span>↗</span></a>)}</div> : <p className="hint">Samples on request.</p>}
+          {links.length ? <div className="stack">{links.map((u, i) => <a key={u} className="btn" style={{ justifyContent: "space-between", width: "100%" }} href={u} target="_blank" rel="noopener noreferrer nofollow"><span>Sample {i + 1}</span><span>↗</span></a>)}</div> : <p className="hint">Samples on request.</p>}
         </div>
       </div>
 
