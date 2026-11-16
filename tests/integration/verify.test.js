@@ -50,3 +50,35 @@ test("expired and made-up tokens are refused", async () => {
   assert.equal(await consumeVerifyToken("not-a-real-token-but-long-enough"), null);
   assert.equal(await consumeVerifyToken(""), null);
 });
+
+// Brand account linking (app/(net)/brand/_lib.js): earlier briefs join the account only once the
+// email is confirmed, matched case-insensitively, and never taken from another account.
+import { linkCampaignsByEmail } from "@/app/(net)/brand/_lib.js";
+
+test("earlier briefs are linked only after the email is confirmed, and never stolen", async () => {
+  const b = await brand();
+  const other = await brand();
+  const mk = (id, email, acct = null) => db.prepare("INSERT INTO campaigns (id, slug, title, brand, client_email, brand_account_id) VALUES (?,?,?,?,?,?)").bind(id, id, id, "IT", email, acct).run();
+  const k1 = `it-k-${crypto.randomUUID()}`, k2 = `it-k-${crypto.randomUUID()}`;
+  await mk(k1, b.email.toUpperCase());
+  await mk(k2, b.email, other.id);
+  assert.equal(await linkCampaignsByEmail(b.id), 0, "unconfirmed email links nothing");
+  assert.ok(await consumeVerifyToken(await createVerifyToken("brand", b.id, b.email)));
+  assert.equal(await linkCampaignsByEmail(b.id), 1);
+  const owner = async (k) => (await db.prepare("SELECT brand_account_id FROM campaigns WHERE id=?").bind(k).first()).brand_account_id;
+  assert.equal(await owner(k1), b.id);
+  assert.equal(await owner(k2), other.id, "a campaign already on another account stays there");
+  assert.equal(await linkCampaignsByEmail(b.id), 0, "running again changes nothing");
+});
+
+test("brand page queries run on Postgres", async () => {
+  const b = await brand();
+  await db.prepare("UPDATE brand_accounts SET last_login_at=now(), disabled_at=NULL WHERE id=?").bind(b.id).run();
+  await db.prepare("SELECT id, title, brand, status, share_token, deadline, created_at FROM campaigns WHERE brand_account_id=? ORDER BY created_at DESC LIMIT 200").bind(b.id).all();
+  await db.prepare("SELECT at, kind, campaign_id, amount_paise, utr FROM finance_ledger WHERE campaign_id IN (?,?) AND kind IN ('brand_payment_received','brand_refund_sent') ORDER BY at DESC LIMIT 50").bind("x", "y").all();
+  const r = await db.prepare(`SELECT b.id, u.email AS verifier, (SELECT COUNT(*) FROM campaigns k WHERE k.brand_account_id=b.id) AS campaigns
+     FROM brand_accounts b LEFT JOIN team_users u ON u.id=b.verified_by WHERE b.id=?`).bind(b.id).first();
+  assert.equal(Number(r.campaigns), 0);
+  const dup = await db.prepare("INSERT INTO brand_accounts (id, email, password_hash, salt) VALUES (?,?,'x','y') ON CONFLICT (email) DO NOTHING").bind(`dup-${b.id}`, b.email).run();
+  assert.equal(Number(dup.meta?.changes || 0), 0, "second sign-up with the same email inserts nothing");
+});

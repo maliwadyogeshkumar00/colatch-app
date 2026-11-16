@@ -24,7 +24,7 @@ async function login(fd) {
   const back = `/brand/login?next=${encodeURIComponent(next)}`;
   if (res === "blocked") redirect(flashUrl(back, "err", TOO_MANY));
   if (res !== "ok") redirect(flashUrl(back, "err", "Wrong email or password."));
-  await env.DB.prepare("UPDATE brand_accounts SET last_login_at=datetime('now') WHERE id=?").bind(acc.id).run();
+  await env.DB.prepare("UPDATE brand_accounts SET last_login_at=now() WHERE id=?").bind(acc.id).run();
   await audit({ kind: "brand", id: acc.id }, "brand.login", "brand_account", acc.id);
   await startBrandSession(acc.id);
   redirect(next);
