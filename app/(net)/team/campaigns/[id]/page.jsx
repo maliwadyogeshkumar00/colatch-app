@@ -232,7 +232,7 @@ export default async function Page({ params, searchParams }) {
             <thead><tr><th>Match</th><th>Creator</th><th className="num">Followers</th><th className="num">ER</th><th className="num">Quote</th><th>Why</th><th>Status</th></tr></thead>
             <tbody>{ranked.map(({ a, m }) => (
               <tr key={a.id}>
-                <td><div className="score sm" style={{ "--v": m.score }}><i>{m.score}</i></div></td>
+                <td><div className="score sm" style={{ "--v": a.match_score ?? m.score }} title="Score saved when they applied: the one the brand sees"><i>{a.match_score ?? m.score}</i></div></td>
                 <td><a className="who" href={a.creator_id ? `/team/creators/${a.creator_id}` : `https://instagram.com/${a.handle}`}><div className="ava">{a.profile_pic ? <img src={a.profile_pic} alt="" /> : initials(a.name || a.handle)}</div><div><b>{a.name || a.handle}{a.verified ? " ✓" : ""}{a.creator_id && tiers.get(a.creator_id) && tiers.get(a.creator_id) !== "Rising" ? <span className="pill good" style={{ marginLeft: 6 }}>{tiers.get(a.creator_id)}</span> : null}</b><span>@{a.handle}{a.ccity || a.city ? ` · ${a.ccity || a.city}` : ""}</span></div></a>
                   {a.pitch && <div className="hint" style={{ maxWidth: 360, marginTop: 6 }}>"{a.pitch}"</div>}</td>
                 <td className="num">{compact(a.cf ?? a.followers)}</td>

@@ -80,7 +80,7 @@ export default async function Page() {
               <div key={p.label} className="part">
                 <div className="h"><b>{p.label}</b><span className="muted">{p.points} / {p.max}</span></div>
                 <div className="meterbar"><i style={{ width: `${p.max ? Math.round((p.points / p.max) * 100) : 0}%` }} /></div>
-                <div className="how">{p.how}</div>
+                <div className="pts-how">{p.how}</div>
               </div>
             ))}
           </div>
