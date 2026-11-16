@@ -14,7 +14,11 @@ import { transition, FlowError } from "@/lib/net/dealflow";
 import { notify } from "@/lib/net/notify";
 import { audit } from "@/lib/net/security";
 
-export const metadata = { title: "Your shortlist", robots: { index: false, follow: false } };
+// Checked here as well as in the page: metadata runs before the page streams, so a bad link gets a real 404 status.
+export async function generateMetadata({ params }) {
+  if (!(await campaignFor(params.token))) notFound();
+  return { title: "Your shortlist", robots: { index: false, follow: false } };
+}
 
 const CSS = `
 .pg-shortlist .dots{display:inline-flex;gap:4px}

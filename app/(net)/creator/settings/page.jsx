@@ -51,9 +51,9 @@ export default async function Page({ searchParams }) {
           <h2>Change password</h2>
           <p className="muted" style={{ margin: "-4px 0 18px" }}>Signed in as {me.email}.</p>
           <div className="stack">
-            <div className="fld"><label>Current password</label><input name="current" type="password" required autoComplete="current-password" /></div>
-            <div className="fld"><label>New password <span className="opt">— at least 10 characters</span></label><input name="password" type="password" minLength={10} required autoComplete="new-password" /></div>
-            <div className="fld"><label>Type the new password again</label><input name="confirm" type="password" minLength={10} required autoComplete="new-password" /></div>
+            <div className="fld"><label htmlFor="f-creator-settings-current-1">Current password</label><input id="f-creator-settings-current-1" name="current" type="password" required autoComplete="current-password" /></div>
+            <div className="fld"><label htmlFor="f-creator-settings-password-2">New password <span className="opt">— at least 10 characters</span></label><input id="f-creator-settings-password-2" name="password" type="password" minLength={10} required autoComplete="new-password" /></div>
+            <div className="fld"><label htmlFor="f-creator-settings-confirm-3">Type the new password again</label><input id="f-creator-settings-confirm-3" name="confirm" type="password" minLength={10} required autoComplete="new-password" /></div>
           </div>
           <button className="btn-foil" style={{ marginTop: 20 }}>Change password</button>
         </form>

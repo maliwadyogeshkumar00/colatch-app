@@ -49,9 +49,9 @@ export default async function Page({ searchParams }) {
         <form className="panel pad" action={changePassword}>
           <h2>Change password</h2>
           <div className="stack">
-            <div className="fld"><label>Current password</label><input name="current" type="password" required autoComplete="current-password" /></div>
-            <div className="fld"><label>New password <span className="opt">— at least 10 characters</span></label><input name="password" type="password" minLength={10} required autoComplete="new-password" /></div>
-            <div className="fld"><label>Type the new password again</label><input name="confirm" type="password" minLength={10} required autoComplete="new-password" /></div>
+            <div className="fld"><label htmlFor="f-team-settings-current-1">Current password</label><input id="f-team-settings-current-1" name="current" type="password" required autoComplete="current-password" /></div>
+            <div className="fld"><label htmlFor="f-team-settings-password-2">New password <span className="opt">— at least 10 characters</span></label><input id="f-team-settings-password-2" name="password" type="password" minLength={10} required autoComplete="new-password" /></div>
+            <div className="fld"><label htmlFor="f-team-settings-confirm-3">Type the new password again</label><input id="f-team-settings-confirm-3" name="confirm" type="password" minLength={10} required autoComplete="new-password" /></div>
           </div>
           <button className="btn-foil" style={{ marginTop: 20 }}>Change password</button>
         </form>

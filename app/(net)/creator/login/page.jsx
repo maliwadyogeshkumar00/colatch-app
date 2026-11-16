@@ -37,8 +37,8 @@ export default async function Page({ searchParams }) {
           <p className="muted" style={{ margin: "-4px 0 18px" }}>See the brand briefs that match you.</p>
           <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
           <div className="stack">
-            <div className="fld"><label>Email</label><input name="email" type="email" required autoComplete="email" /></div>
-            <div className="fld"><label>Password</label><input name="password" type="password" required autoComplete="current-password" /></div>
+            <div className="fld"><label htmlFor="f-creator-login-email-1">Email</label><input id="f-creator-login-email-1" name="email" type="email" required autoComplete="email" /></div>
+            <div className="fld"><label htmlFor="f-creator-login-password-2">Password</label><input id="f-creator-login-password-2" name="password" type="password" required autoComplete="current-password" /></div>
           </div>
           <button className="btn-foil" style={{ marginTop: 20, width: "100%", justifyContent: "center" }}>Log in</button>
           <p className="hint" style={{ margin: "16px 0 0" }}>New here? <a className="link" href={`/join${next ? `?next=${encodeURIComponent(next)}` : ""}`}>Join free</a> · <a className="link" href="/reset/request">Forgot your password?</a></p>

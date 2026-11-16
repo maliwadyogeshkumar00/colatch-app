@@ -10,7 +10,13 @@ import { formatPaise } from "@/lib/net/dealflow";
 import { dealValue, sumValue, baselines } from "@/lib/net/value";
 import { ensureCode } from "@/lib/net/referral";
 
-export const metadata = { title: "Value receipt", robots: { index: false, follow: false } };
+// Checked here as well as in the page: metadata runs before the page streams, so a bad link gets a real 404 status.
+export async function generateMetadata({ params }) {
+  const token = String(params?.token || "");
+  const k = token.length >= 16 ? await env.DB.prepare("SELECT id FROM campaigns WHERE share_token=?").bind(token).first() : null;
+  if (!k) notFound();
+  return { title: "Value receipt", robots: { index: false, follow: false } };
+}
 
 const CSS = `
 .pg-receipt{padding:10px 0 40px}

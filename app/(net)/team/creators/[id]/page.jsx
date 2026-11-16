@@ -124,25 +124,25 @@ export default async function Page({ params, searchParams }) {
           {hidden("save")}
           <h2>Profile</h2>
           <div className="form-grid">
-            <div className="fld"><label>Name</label><input name="name" defaultValue={c.name ?? ""} /></div>
-            <div className="fld"><label>Status</label><select name="status" defaultValue={c.status}>{CREATOR_STATUSES.map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}</select></div>
+            <div className="fld"><label htmlFor="f-team-creators-id-name-1">Name</label><input id="f-team-creators-id-name-1" name="name" defaultValue={c.name ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-team-creators-id-status-2">Status</label><select id="f-team-creators-id-status-2" name="status" defaultValue={c.status}>{CREATOR_STATUSES.map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}</select></div>
             <div className="fld full"><label>Talent</label><div className="chips">{SKILLS.map((s) => <label key={s} className="chip"><input type="checkbox" name="skills" value={s} defaultChecked={skills.includes(s)} /><span>{s}</span></label>)}</div></div>
             <div className="fld full"><label>Niche</label><div className="chips">{NICHES.map((s) => <label key={s} className="chip"><input type="checkbox" name="niche" value={s} defaultChecked={niches.includes(s)} /><span>{s}</span></label>)}</div></div>
-            <div className="fld"><label>City</label><input name="city" defaultValue={c.city ?? ""} /></div>
-            <div className="fld"><label>State</label><input name="state" defaultValue={c.state ?? ""} /></div>
-            <div className="fld"><label>Languages</label><input name="language" defaultValue={c.language ?? ""} placeholder="Hindi, English" /></div>
-            <div className="fld"><label>Gender</label><select name="gender" defaultValue={c.gender ?? ""}>{["", "Female", "Male", "Other"].map((g) => <option key={g} value={g}>{g || "—"}</option>)}</select></div>
-            <div className="fld"><label>Followers</label><input name="followers" defaultValue={c.followers ?? ""} /></div>
-            <div className="fld"><label>Avg reel views</label><input name="avg_views" defaultValue={c.avg_views ?? ""} /></div>
-            <div className="fld"><label>Engagement %</label><input name="engagement_rate" defaultValue={c.engagement_rate ?? ""} /></div>
-            <div className="fld"><label>Reel rate ₹</label><input name="rate_reel" defaultValue={c.rate_reel ?? ""} /></div>
-            <div className="fld"><label>Story rate ₹</label><input name="rate_story" defaultValue={c.rate_story ?? ""} /></div>
-            <div className="fld"><label>Post rate ₹</label><input name="rate_post" defaultValue={c.rate_post ?? ""} /></div>
-            <div className="fld"><label>Phone / WhatsApp</label><input name="phone" defaultValue={c.phone ?? ""} /></div>
-            <div className="fld"><label>Email</label><input name="email" defaultValue={c.email ?? ""} /></div>
-            <div className="fld full"><label>Best work links <span className="opt">— one per line</span></label><textarea name="portfolio_links" rows={3} defaultValue={c.portfolio_links ?? ""} /></div>
-            <div className="fld full"><label>Tags</label><input name="tags" defaultValue={c.tags ?? ""} placeholder="festive, premium, punjabi wedding…" /></div>
-            <div className="fld full"><label>Team notes</label><textarea name="notes" rows={3} defaultValue={c.notes ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-team-creators-id-city-3">City</label><input id="f-team-creators-id-city-3" name="city" defaultValue={c.city ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-team-creators-id-state-4">State</label><input id="f-team-creators-id-state-4" name="state" defaultValue={c.state ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-team-creators-id-language-5">Languages</label><input id="f-team-creators-id-language-5" name="language" defaultValue={c.language ?? ""} placeholder="Hindi, English" /></div>
+            <div className="fld"><label htmlFor="f-team-creators-id-gender-6">Gender</label><select id="f-team-creators-id-gender-6" name="gender" defaultValue={c.gender ?? ""}>{["", "Female", "Male", "Other"].map((g) => <option key={g} value={g}>{g || "—"}</option>)}</select></div>
+            <div className="fld"><label htmlFor="f-team-creators-id-followers-7">Followers</label><input id="f-team-creators-id-followers-7" name="followers" defaultValue={c.followers ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-team-creators-id-avg-views-8">Avg reel views</label><input id="f-team-creators-id-avg-views-8" name="avg_views" defaultValue={c.avg_views ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-team-creators-id-engagement-rate-9">Engagement %</label><input id="f-team-creators-id-engagement-rate-9" name="engagement_rate" defaultValue={c.engagement_rate ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-team-creators-id-rate-reel-10">Reel rate ₹</label><input id="f-team-creators-id-rate-reel-10" name="rate_reel" defaultValue={c.rate_reel ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-team-creators-id-rate-story-11">Story rate ₹</label><input id="f-team-creators-id-rate-story-11" name="rate_story" defaultValue={c.rate_story ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-team-creators-id-rate-post-12">Post rate ₹</label><input id="f-team-creators-id-rate-post-12" name="rate_post" defaultValue={c.rate_post ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-team-creators-id-phone-13">Phone / WhatsApp</label><input id="f-team-creators-id-phone-13" name="phone" defaultValue={c.phone ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-team-creators-id-email-14">Email</label><input id="f-team-creators-id-email-14" name="email" defaultValue={c.email ?? ""} /></div>
+            <div className="fld full"><label htmlFor="f-team-creators-id-portfolio-links-15">Best work links <span className="opt">— one per line</span></label><textarea id="f-team-creators-id-portfolio-links-15" name="portfolio_links" rows={3} defaultValue={c.portfolio_links ?? ""} /></div>
+            <div className="fld full"><label htmlFor="f-team-creators-id-tags-16">Tags</label><input id="f-team-creators-id-tags-16" name="tags" defaultValue={c.tags ?? ""} placeholder="festive, premium, punjabi wedding…" /></div>
+            <div className="fld full"><label htmlFor="f-team-creators-id-notes-17">Team notes</label><textarea id="f-team-creators-id-notes-17" name="notes" rows={3} defaultValue={c.notes ?? ""} /></div>
           </div>
           <button className="btn plum" style={{ marginTop: 16 }}>Save profile</button>
         </form>
@@ -152,13 +152,13 @@ export default async function Page({ params, searchParams }) {
             {hidden("deal")}
             <h2>Add to CRM</h2>
             <div className="form-grid">
-              <div className="fld"><label>Brand</label><input name="brand" required /></div>
-              <div className="fld"><label>Deliverable</label><input name="deliverable" placeholder="1 Reel + 2 Stories" /></div>
-              <div className="fld"><label>Stage</label><select name="stage">{["shortlisted", "contacted", "negotiating"].map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}</select></div>
-              <div className="fld"><label>Fee ₹</label><input name="fee" defaultValue={c.rate_reel ?? ""} /></div>
-              <div className="fld"><label>Expected views</label><input name="expected_views" defaultValue={c.avg_views ?? ""} /></div>
-              <div className="fld"><label>Go-live date</label><input name="go_live_date" type="date" /></div>
-              <div className="fld full"><label>Notes</label><input name="notes" /></div>
+              <div className="fld"><label htmlFor="f-team-creators-id-brand-18">Brand</label><input id="f-team-creators-id-brand-18" name="brand" required /></div>
+              <div className="fld"><label htmlFor="f-team-creators-id-deliverable-19">Deliverable</label><input id="f-team-creators-id-deliverable-19" name="deliverable" placeholder="1 Reel + 2 Stories" /></div>
+              <div className="fld"><label htmlFor="f-team-creators-id-stage-20">Stage</label><select id="f-team-creators-id-stage-20" name="stage">{["shortlisted", "contacted", "negotiating"].map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}</select></div>
+              <div className="fld"><label htmlFor="f-team-creators-id-fee-21">Fee ₹</label><input id="f-team-creators-id-fee-21" name="fee" defaultValue={c.rate_reel ?? ""} /></div>
+              <div className="fld"><label htmlFor="f-team-creators-id-expected-views-22">Expected views</label><input id="f-team-creators-id-expected-views-22" name="expected_views" defaultValue={c.avg_views ?? ""} /></div>
+              <div className="fld"><label htmlFor="f-team-creators-id-go-live-date-23">Go-live date</label><input id="f-team-creators-id-go-live-date-23" name="go_live_date" type="date" /></div>
+              <div className="fld full"><label htmlFor="f-team-creators-id-notes-24">Notes</label><input id="f-team-creators-id-notes-24" name="notes" /></div>
             </div>
             <button className="btn plum" style={{ marginTop: 14 }}>Add deal</button>
           </form>

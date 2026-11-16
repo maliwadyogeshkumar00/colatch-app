@@ -68,10 +68,10 @@ export default async function Page({ searchParams }) {
             <>
               <p className="muted" style={{ margin: "-4px 0 18px" }}>This creates the owner account. It works once, with the setup code, for an email on the owner list.</p>
               <div className="stack">
-                <div className="fld"><label>Setup code</label><input name="code" type="password" required autoComplete="off" /></div>
-                <div className="fld"><label>Your name</label><input name="name" required autoComplete="name" /></div>
-                <div className="fld"><label>Work email</label><input name="email" type="email" required autoComplete="email" /></div>
-                <div className="fld"><label>Password <span className="opt">— at least 10 characters</span></label><input name="password" type="password" minLength={10} required autoComplete="new-password" /></div>
+                <div className="fld"><label htmlFor="f-team-setup-code-1">Setup code</label><input id="f-team-setup-code-1" name="code" type="password" required autoComplete="off" /></div>
+                <div className="fld"><label htmlFor="f-team-setup-name-2">Your name</label><input id="f-team-setup-name-2" name="name" required autoComplete="name" /></div>
+                <div className="fld"><label htmlFor="f-team-setup-email-3">Work email</label><input id="f-team-setup-email-3" name="email" type="email" required autoComplete="email" /></div>
+                <div className="fld"><label htmlFor="f-team-setup-password-4">Password <span className="opt">— at least 10 characters</span></label><input id="f-team-setup-password-4" name="password" type="password" minLength={10} required autoComplete="new-password" /></div>
               </div>
               <button className="btn-foil" style={{ marginTop: 20, width: "100%", justifyContent: "center" }}>Create owner login</button>
             </>

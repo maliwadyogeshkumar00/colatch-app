@@ -44,8 +44,8 @@ export default async function Page({ params, searchParams }) {
             <p className="muted" style={{ margin: "-4px 0 18px" }}>{who.user_kind === "team" ? "For your Colatch team login." : "For your Colatch creator account."} You'll be signed out on other devices.</p>
             <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
             <div className="stack">
-              <div className="fld"><label>New password <span className="opt">— at least 10 characters</span></label><input name="password" type="password" minLength={10} required autoComplete="new-password" /></div>
-              <div className="fld"><label>Type it again</label><input name="confirm" type="password" minLength={10} required autoComplete="new-password" /></div>
+              <div className="fld"><label htmlFor="f-reset-token-password-1">New password <span className="opt">— at least 10 characters</span></label><input id="f-reset-token-password-1" name="password" type="password" minLength={10} required autoComplete="new-password" /></div>
+              <div className="fld"><label htmlFor="f-reset-token-confirm-2">Type it again</label><input id="f-reset-token-confirm-2" name="confirm" type="password" minLength={10} required autoComplete="new-password" /></div>
             </div>
             <button className="btn-foil" style={{ marginTop: 20, width: "100%", justifyContent: "center" }}>Save password</button>
           </form>

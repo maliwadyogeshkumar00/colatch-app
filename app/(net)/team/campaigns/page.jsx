@@ -95,8 +95,8 @@ export default async function Page({ searchParams }) {
         <h2>New opportunity from a brief</h2>
         <p className="hint" style={{ marginTop: -6 }}>Paste the client's WhatsApp message, email or deck notes as it is. AI picks out the talent, cities, follower range, languages, deliverables and budget, and lists questions to clarify. You check it before anything goes live.</p>
         <div className="form-grid">
-          <div className="fld full"><label>Brief</label><textarea name="raw" rows={6} placeholder="Need 4 female Bhangra dancers in Delhi/Chandigarh, 50K+ followers, Punjabi, 1 reel + 2 stories each for our Lohri launch. Shoot 8 Jan. Budget ₹3L." /></div>
-          <div className="fld"><label>Brand <span className="opt">— optional</span></label><input name="brand" /></div>
+          <div className="fld full"><label htmlFor="f-team-campaigns-raw-1">Brief</label><textarea id="f-team-campaigns-raw-1" name="raw" rows={6} placeholder="Need 4 female Bhangra dancers in Delhi/Chandigarh, 50K+ followers, Punjabi, 1 reel + 2 stories each for our Lohri launch. Shoot 8 Jan. Budget ₹3L." /></div>
+          <div className="fld"><label htmlFor="f-team-campaigns-brand-2">Brand <span className="opt">— optional</span></label><input id="f-team-campaigns-brand-2" name="brand" /></div>
         </div>
         <button className="btn plum" style={{ marginTop: 14 }}>Read brief →</button>
         {!env.ANTHROPIC_API_KEY && <p className="hint" style={{ margin: "10px 0 0" }}>No AI key is set, so keyword rules read the brief. Add <code className="k">ANTHROPIC_API_KEY</code> in Vercel for full AI reading.</p>}

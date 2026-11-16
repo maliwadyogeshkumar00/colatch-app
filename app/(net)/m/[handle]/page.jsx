@@ -16,7 +16,7 @@ const getCreator = (raw) => {
 export async function generateMetadata({ params }) {
   const c = await getCreator(params.handle).catch(() => null);
   const name = c ? c.name || c.handle : "Media kit";
-  if (!c) return { title: "Media kit", robots: { index: false } };
+  if (!c) notFound();
   return { title: `${name}: media kit`, description: String(c.bio_pitch || `${name} (@${c.handle}) on Colatch: rates, audience and brand-verified work.`).slice(0, 160), alternates: { canonical: `/m/${c.handle}` }, robots: { index: true } };
 }
 

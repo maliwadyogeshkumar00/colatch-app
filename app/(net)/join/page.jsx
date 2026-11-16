@@ -106,10 +106,10 @@ export default async function Page({ searchParams }) {
           <div style={{ position: "absolute", left: -9999 }} aria-hidden="true"><input name="website" tabIndex={-1} autoComplete="off" /></div>
           <h2>Your account</h2>
           <div className="form-grid">
-            <div className="fld"><label>Your name</label><input name="name" required defaultValue={v.name ?? ""} /></div>
-            <div className="fld"><label>Instagram handle</label><input name="handle" required defaultValue={v.handle ?? ""} placeholder="@yourname" /></div>
-            <div className="fld"><label>Email</label><input name="email" type="email" required defaultValue={v.email ?? ""} autoComplete="email" /></div>
-            <div className="fld"><label>Password</label><input name="password" type="password" required minLength={10} autoComplete="new-password" placeholder="At least 10 characters" /></div>
+            <div className="fld"><label htmlFor="f-join-name-1">Your name</label><input id="f-join-name-1" name="name" required defaultValue={v.name ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-join-handle-2">Instagram handle</label><input id="f-join-handle-2" name="handle" required defaultValue={v.handle ?? ""} placeholder="@yourname" /></div>
+            <div className="fld"><label htmlFor="f-join-email-3">Email</label><input id="f-join-email-3" name="email" type="email" required defaultValue={v.email ?? ""} autoComplete="email" /></div>
+            <div className="fld"><label htmlFor="f-join-password-4">Password</label><input id="f-join-password-4" name="password" type="password" required minLength={10} autoComplete="new-password" placeholder="At least 10 characters" /></div>
           </div>
           <h2 style={{ marginTop: 28 }}>About your work</h2>
           <CreatorProfileFields v={v} />

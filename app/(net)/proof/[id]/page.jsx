@@ -16,7 +16,7 @@ async function load(id) {
 
 export async function generateMetadata({ params }) {
   const d = await load(params.id).catch(() => null);
-  if (!d) return { title: "Proof not found", robots: { index: false } };
+  if (!d) notFound();
   const who = d.name || d.handle;
   return {
     title: `Verified work: ${who} × ${d.brand}`,

@@ -51,8 +51,8 @@ export default async function Page({ searchParams }) {
             <p className="muted" style={{ margin: "-4px 0 18px" }}>Campaigns, creators, deals and payouts for Colatch Connect.</p>
             <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
             <div className="stack">
-              <div className="fld"><label>Email</label><input name="email" type="email" required autoComplete="email" /></div>
-              <div className="fld"><label>Password</label><input name="password" type="password" required autoComplete="current-password" /></div>
+              <div className="fld"><label htmlFor="f-team-login-email-1">Email</label><input id="f-team-login-email-1" name="email" type="email" required autoComplete="email" /></div>
+              <div className="fld"><label htmlFor="f-team-login-password-2">Password</label><input id="f-team-login-password-2" name="password" type="password" required autoComplete="current-password" /></div>
             </div>
             <button className="btn-foil" style={{ marginTop: 20, width: "100%", justifyContent: "center" }}>Log in</button>
             <p className="hint" style={{ margin: "16px 0 0" }}>Forgot your password or need access? Ask an owner or admin to send you a link from Team members.</p>

@@ -179,8 +179,8 @@ export default async function Page({ params, searchParams }) {
         {ok && <div className="note good" style={{ marginBottom: 12 }}>{ok}</div>}
         {existing0?.status === "withdrawn" && <p className="hint">You withdrew earlier. You can apply again while the brief is open.</p>}
         <div className="stack">
-          <div className="fld"><label>Why you're right for this</label><textarea name="pitch" rows={4} required minLength={20} maxLength={600} placeholder="I've done 3 festive dance reels for fashion brands; my audience is 70% Delhi-NCR women 18–30…" /></div>
-          <div className="fld"><label>Your quote for this brief ₹</label><input name="rate_quote" defaultValue={c.rate_reel ?? ""} placeholder="Total for all deliverables" /><span className="hint">{c.rate_reel ? `Your usual reel rate is ${inr(c.rate_reel)}.` : ""}</span></div>
+          <div className="fld"><label htmlFor="f-creator-o-slug-pitch-1">Why you're right for this</label><textarea id="f-creator-o-slug-pitch-1" name="pitch" rows={4} required minLength={20} maxLength={600} placeholder="I've done 3 festive dance reels for fashion brands; my audience is 70% Delhi-NCR women 18–30…" /></div>
+          <div className="fld"><label htmlFor="f-creator-o-slug-rate-quote-2">Your quote for this brief ₹</label><input id="f-creator-o-slug-rate-quote-2" name="rate_quote" defaultValue={c.rate_reel ?? ""} placeholder="Total for all deliverables" /><span className="hint">{c.rate_reel ? `Your usual reel rate is ${inr(c.rate_reel)}.` : ""}</span></div>
         </div>
         <button className="btn-foil" style={{ marginTop: 18, width: "100%", justifyContent: "center" }}>Apply</button>
       </form>

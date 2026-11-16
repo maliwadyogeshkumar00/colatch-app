@@ -97,17 +97,17 @@ export default async function Page({ searchParams }) {
         <form className="panel pad" action={savePayout} id="payout" style={{ marginBottom: 18 }}>
           <h2>Payout details</h2>
           <div className="form-grid">
-            <div className="fld"><label>UPI ID</label><input name="upi_id" defaultValue={c.upi_id ?? ""} placeholder="yourname@okhdfcbank" /></div>
-            <div className="fld"><label>Name as on PAN</label><input name="pan_name" defaultValue={c.pan_name ?? ""} /></div>
-            <div className="fld"><label>Last 4 characters of PAN</label><input name="pan_last4" defaultValue={c.pan_last4 ?? ""} maxLength={4} placeholder="1234" /><span className="hint">We never store your full PAN here. The team collects it securely before your first payout.</span></div>
-            <div className="fld"><label>GSTIN <span className="opt">— only if registered</span></label><input name="gstin" defaultValue={c.gstin ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-creator-profile-upi-id-1">UPI ID</label><input id="f-creator-profile-upi-id-1" name="upi_id" defaultValue={c.upi_id ?? ""} placeholder="yourname@okhdfcbank" /></div>
+            <div className="fld"><label htmlFor="f-creator-profile-pan-name-2">Name as on PAN</label><input id="f-creator-profile-pan-name-2" name="pan_name" defaultValue={c.pan_name ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-creator-profile-pan-last4-3">Last 4 characters of PAN</label><input id="f-creator-profile-pan-last4-3" name="pan_last4" defaultValue={c.pan_last4 ?? ""} maxLength={4} placeholder="1234" /><span className="hint">We never store your full PAN here. The team collects it securely before your first payout.</span></div>
+            <div className="fld"><label htmlFor="f-creator-profile-gstin-4">GSTIN <span className="opt">— only if registered</span></label><input id="f-creator-profile-gstin-4" name="gstin" defaultValue={c.gstin ?? ""} /></div>
           </div>
           <p className="hint" style={{ margin: "12px 0 0" }}>Without a PAN, TDS is deducted at 20% instead of 10%.</p>
           <button className="btn plum" style={{ marginTop: 14 }}>Save payout details</button>
         </form>
 
         <form className="panel pad" action={saveMain}>
-          <div className="fld" style={{ marginBottom: 18 }}><label>Name</label><input name="name" defaultValue={c.name ?? ""} /></div>
+          <div className="fld" style={{ marginBottom: 18 }}><label htmlFor="f-creator-profile-name-5">Name</label><input id="f-creator-profile-name-5" name="name" defaultValue={c.name ?? ""} /></div>
           <CreatorProfileFields v={c} />
           <button className="btn-foil" style={{ marginTop: 22 }}>Save profile</button>
         </form>

@@ -236,23 +236,23 @@ export default async function Page({ searchParams }) {
                 <div className="fld full"><label>Talent needed</label><div className="chips">{SKILLS.map((s) => <label key={s} className="chip"><input type="checkbox" name="talent" value={s} defaultChecked={has("talent", s)} /><span>{s}</span></label>)}</div></div>
                 <div className="fld full"><label>Cities</label><div className="chips">{CITIES.map((s) => <label key={s} className="chip"><input type="checkbox" name="cities" value={s} defaultChecked={has("cities", s)} /><span>{s}</span></label>)}</div></div>
                 <div className="fld full"><label>Languages</label><div className="chips">{LANGUAGES.map((s) => <label key={s} className="chip"><input type="checkbox" name="languages" value={s} defaultChecked={has("languages", s)} /><span>{s}</span></label>)}</div></div>
-                <div className="fld"><label>Creator size</label><select name="size" defaultValue={v.size ?? ""}>{[["", "Not sure, suggest"], ["nano", "Nano (1K–10K)"], ["micro", "Micro (10K–1L)"], ["mid", "Mid (1L–5L)"], ["macro", "Macro (5L+)"]].map(([a, b]) => <option key={a} value={a}>{b}</option>)}</select></div>
-                <div className="fld"><label>How many creators</label><input name="count" defaultValue={v.count ?? ""} placeholder="e.g. 5" /></div>
-                <div className="fld"><label>Total budget ₹</label><input name="budget" defaultValue={v.budget ?? ""} placeholder="e.g. 300000" /></div>
-                <div className="fld"><label>Go-live date</label><input name="when" type="date" defaultValue={v.when ?? ""} /></div>
-                <div className="fld full"><label>Must include <span className="opt">— one per line</span></label><textarea name="mandatories" rows={3} placeholder={'Say "festive collection" in the first 5 seconds\nShow the product front-on'} defaultValue={v.mandatories ?? ""} /></div>
-                <div className="fld full"><label>Must not <span className="opt">— competitors, words, claims</span></label><textarea name="exclusions" rows={2} defaultValue={v.exclusions ?? ""} /></div>
-                <div className="fld full"><label>Where should viewers go? <span className="opt">— we create a tracked link per creator</span></label><input name="brand_url" defaultValue={v.brand_url ?? ""} placeholder="https://yourbrand.com/collection" /></div>
+                <div className="fld"><label htmlFor="f-brief-size-1">Creator size</label><select id="f-brief-size-1" name="size" defaultValue={v.size ?? ""}>{[["", "Not sure, suggest"], ["nano", "Nano (1K–10K)"], ["micro", "Micro (10K–1L)"], ["mid", "Mid (1L–5L)"], ["macro", "Macro (5L+)"]].map(([a, b]) => <option key={a} value={a}>{b}</option>)}</select></div>
+                <div className="fld"><label htmlFor="f-brief-count-2">How many creators</label><input id="f-brief-count-2" name="count" defaultValue={v.count ?? ""} placeholder="e.g. 5" /></div>
+                <div className="fld"><label htmlFor="f-brief-budget-3">Total budget ₹</label><input id="f-brief-budget-3" name="budget" defaultValue={v.budget ?? ""} placeholder="e.g. 300000" /></div>
+                <div className="fld"><label htmlFor="f-brief-when-4">Go-live date</label><input id="f-brief-when-4" name="when" type="date" defaultValue={v.when ?? ""} /></div>
+                <div className="fld full"><label htmlFor="f-brief-mandatories-5">Must include <span className="opt">— one per line</span></label><textarea id="f-brief-mandatories-5" name="mandatories" rows={3} placeholder={'Say "festive collection" in the first 5 seconds\nShow the product front-on'} defaultValue={v.mandatories ?? ""} /></div>
+                <div className="fld full"><label htmlFor="f-brief-exclusions-6">Must not <span className="opt">— competitors, words, claims</span></label><textarea id="f-brief-exclusions-6" name="exclusions" rows={2} defaultValue={v.exclusions ?? ""} /></div>
+                <div className="fld full"><label htmlFor="f-brief-brand-url-7">Where should viewers go? <span className="opt">— we create a tracked link per creator</span></label><input id="f-brief-brand-url-7" name="brand_url" defaultValue={v.brand_url ?? ""} placeholder="https://yourbrand.com/collection" /></div>
               </div>
             </details>
 
             <h2 style={{ marginTop: 26 }}>About you</h2>
             <div className="form-grid">
-              <div className="fld"><label>Your name</label><input name="name" required defaultValue={v.name ?? ""} /></div>
-              <div className="fld"><label>Brand / company</label><input name="company" required defaultValue={v.company ?? ""} /></div>
-              <div className="fld"><label>Work email</label><input name="email" type="email" required defaultValue={v.email ?? ""} /></div>
-              <div className="fld"><label>Phone / WhatsApp</label><input name="phone" defaultValue={v.phone ?? ""} /></div>
-              <div className="fld full"><label>Company website <span className="opt">— helps us verify you faster</span></label><input name="site" defaultValue={v.site ?? ""} placeholder="yourbrand.com" /></div>
+              <div className="fld"><label htmlFor="f-brief-name-8">Your name</label><input id="f-brief-name-8" name="name" required defaultValue={v.name ?? ""} /></div>
+              <div className="fld"><label htmlFor="f-brief-company-9">Brand / company</label><input id="f-brief-company-9" name="company" required defaultValue={v.company ?? ""} /></div>
+              <div className="fld"><label htmlFor="f-brief-email-10">Work email</label><input id="f-brief-email-10" name="email" type="email" required defaultValue={v.email ?? ""} /></div>
+              <div className="fld"><label htmlFor="f-brief-phone-11">Phone / WhatsApp</label><input id="f-brief-phone-11" name="phone" defaultValue={v.phone ?? ""} /></div>
+              <div className="fld full"><label htmlFor="f-brief-site-12">Company website <span className="opt">— helps us verify you faster</span></label><input id="f-brief-site-12" name="site" defaultValue={v.site ?? ""} placeholder="yourbrand.com" /></div>
             </div>
 
             <h2 style={{ marginTop: 26 }}>Speed it up <span className="opt" style={{ textTransform: "none", letterSpacing: 0 }}>— optional</span></h2>

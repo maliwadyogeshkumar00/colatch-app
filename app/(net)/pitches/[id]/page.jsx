@@ -15,6 +15,7 @@ import { firstName } from "../../_ui/pitch";
 
 export async function generateMetadata({ params }) {
   const p = await livePitch(params?.id).catch(() => null);
+  if (!p) notFound();
   return { title: p ? `${scrubContacts(p.title).text}: idea board` : "Creator idea", robots: { index: false } };
 }
 
@@ -111,12 +112,12 @@ export default async function Page({ params, searchParams }) {
           <p className="muted small" style={{ margin: "-4px 0 16px" }}>The creator's handle and contact stay private until the booking is confirmed. Everything runs through Colatch, so the work and the payment are both protected.</p>
           <div className="stack">
             <div className="form-grid">
-              <div className="fld"><label>Your name</label><input name="name" required autoComplete="name" /></div>
-              <div className="fld"><label>Brand / company</label><input name="company" required autoComplete="organization" /></div>
-              <div className="fld"><label>Work email</label><input name="email" type="email" required autoComplete="email" /></div>
-              <div className="fld"><label>Phone / WhatsApp <span className="opt">optional</span></label><input name="phone" autoComplete="tel" /></div>
+              <div className="fld"><label htmlFor="f-pitches-id-name-1">Your name</label><input id="f-pitches-id-name-1" name="name" required autoComplete="name" /></div>
+              <div className="fld"><label htmlFor="f-pitches-id-company-2">Brand / company</label><input id="f-pitches-id-company-2" name="company" required autoComplete="organization" /></div>
+              <div className="fld"><label htmlFor="f-pitches-id-email-3">Work email</label><input id="f-pitches-id-email-3" name="email" type="email" required autoComplete="email" /></div>
+              <div className="fld"><label htmlFor="f-pitches-id-phone-4">Phone / WhatsApp <span className="opt">optional</span></label><input id="f-pitches-id-phone-4" name="phone" autoComplete="tel" /></div>
             </div>
-            <div className="fld"><label>Anything to add <span className="opt">product, dates, must-haves</span></label><textarea name="note" rows={4} /></div>
+            <div className="fld"><label htmlFor="f-pitches-id-note-5">Anything to add <span className="opt">product, dates, must-haves</span></label><textarea id="f-pitches-id-note-5" name="note" rows={4} /></div>
           </div>
           <button className="btn-foil" style={{ marginTop: 18, width: "100%", justifyContent: "center" }}>Book for {inr(allIn.total)} all in</button>
           <p className="hint" style={{ margin: "12px 0 0" }}>No payment now. We confirm the creator's dates within 2 working days.</p>

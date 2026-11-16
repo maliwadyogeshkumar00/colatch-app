@@ -177,9 +177,9 @@ export default async function Page({ searchParams }) {
         <h2>Add a team member</h2>
         <p className="muted" style={{ margin: "-4px 0 14px" }}>They get a one-time link to set their own password. Nobody else ever knows it.</p>
         <div className="form-grid">
-          <div className="fld"><label>Name</label><input name="name" /></div>
-          <div className="fld"><label>Email</label><input name="email" type="email" required /></div>
-          <div className="fld"><label>Role</label><select name="role" defaultValue="viewer">{roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></div>
+          <div className="fld"><label htmlFor="f-team-members-name-1">Name</label><input id="f-team-members-name-1" name="name" /></div>
+          <div className="fld"><label htmlFor="f-team-members-email-2">Email</label><input id="f-team-members-email-2" name="email" type="email" required /></div>
+          <div className="fld"><label htmlFor="f-team-members-role-3">Role</label><select id="f-team-members-role-3" name="role" defaultValue="viewer">{roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></div>
         </div>
         <button className="btn-foil" style={{ marginTop: 16 }}>Add member</button>
       </form>

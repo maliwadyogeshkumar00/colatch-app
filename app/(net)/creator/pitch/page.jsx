@@ -102,13 +102,13 @@ export default async function Page({ searchParams }) {
           <form className="panel pad" action={createPitch}>
             <h2>New idea</h2>
             <div className="stack">
-              <div className="fld"><label>Title</label><input name="title" required maxLength={90} placeholder="Diwali GRWM in Hinglish, with your festive skincare" /></div>
-              <div className="fld"><label>The idea <span className="opt">what you'd shoot, the hook, why your audience will love it</span></label><textarea name="idea" required rows={6} maxLength={700} placeholder={"Open on the diya, mirror shot, 3 steps of my festive routine with your product as the glow step. Ends on the family photo. My audience is 70% women 18–30 in Delhi NCR."} /></div>
+              <div className="fld"><label htmlFor="f-creator-pitch-title-1">Title</label><input id="f-creator-pitch-title-1" name="title" required maxLength={90} placeholder="Diwali GRWM in Hinglish, with your festive skincare" /></div>
+              <div className="fld"><label htmlFor="f-creator-pitch-idea-2">The idea <span className="opt">what you'd shoot, the hook, why your audience will love it</span></label><textarea id="f-creator-pitch-idea-2" name="idea" required rows={6} maxLength={700} placeholder={"Open on the diya, mirror shot, 3 steps of my festive routine with your product as the glow step. Ends on the family photo. My audience is 70% women 18–30 in Delhi NCR."} /></div>
               <div className="form-grid">
-                <div className="fld"><label>Suits which kind of brand</label><input name="category" list="pitch-cats" maxLength={40} placeholder="Skincare" /><datalist id="pitch-cats">{PITCH_CATEGORIES.map((x) => <option key={x} value={x} />)}</datalist></div>
-                <div className="fld"><label>Format</label><select name="format" defaultValue="Reel">{PITCH_FORMATS.map((x) => <option key={x}>{x}</option>)}</select></div>
-                <div className="fld"><label>Best for</label><select name="occasion" defaultValue="Any time">{PITCH_OCCASIONS.map((x) => <option key={x}>{x}</option>)}</select></div>
-                <div className="fld"><label>Your price (₹)</label><input name="price" inputMode="numeric" required placeholder="25000" /></div>
+                <div className="fld"><label htmlFor="f-creator-pitch-category-3">Suits which kind of brand</label><input id="f-creator-pitch-category-3" name="category" list="pitch-cats" maxLength={40} placeholder="Skincare" /><datalist id="pitch-cats">{PITCH_CATEGORIES.map((x) => <option key={x} value={x} />)}</datalist></div>
+                <div className="fld"><label htmlFor="f-creator-pitch-format-4">Format</label><select id="f-creator-pitch-format-4" name="format" defaultValue="Reel">{PITCH_FORMATS.map((x) => <option key={x}>{x}</option>)}</select></div>
+                <div className="fld"><label htmlFor="f-creator-pitch-occasion-5">Best for</label><select id="f-creator-pitch-occasion-5" name="occasion" defaultValue="Any time">{PITCH_OCCASIONS.map((x) => <option key={x}>{x}</option>)}</select></div>
+                <div className="fld"><label htmlFor="f-creator-pitch-price-6">Your price (₹)</label><input id="f-creator-pitch-price-6" name="price" inputMode="numeric" required placeholder="25000" /></div>
               </div>
             </div>
             <button className="btn-foil" style={{ marginTop: 18 }}>Put it on the idea board</button>

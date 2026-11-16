@@ -169,11 +169,11 @@ export default async function Page({ params, searchParams }) {
               {hid}
               <div className="spread"><h2 style={{ margin: 0 }}>{d.draft_status === "changes" ? "Send the revised draft" : "Send your draft"}</h2><span className={`pill ${revLeft ? "good" : "ok"}`}>{revLeft} of {d.revisions_included} revisions left</span></div>
               {feedback && d.draft_status === "changes" && <div className="note info" style={{ marginTop: 12, whiteSpace: "pre-line" }}><b>Brand feedback:</b> {feedback.note}</div>}
-              <div className="fld" style={{ marginTop: 14 }}><label>Draft link</label><input name="draft_url" type="url" required pattern="https://.*" placeholder="https:// Google Drive / Dropbox / WeTransfer link" defaultValue={d.draft_url ?? ""} /></div>
+              <div className="fld" style={{ marginTop: 14 }}><label htmlFor="f-creator-deals-id-draft-url-1">Draft link</label><input id="f-creator-deals-id-draft-url-1" name="draft_url" type="url" required pattern="https://.*" placeholder="https:// Google Drive / Dropbox / WeTransfer link" defaultValue={d.draft_url ?? ""} /></div>
               {must.length > 0 && <div className="fld" style={{ marginTop: 14 }}><label>Brief checklist</label>{must.map((m, i) => <label key={i} className="row" style={{ gap: 10, flexWrap: "nowrap", marginTop: 6, fontSize: 14 }}><input type="checkbox" name={`m${i}`} value="1" defaultChecked={Boolean(ticks[String(i)])} /><span>{m}</span></label>)}</div>}
               {avoid.length > 0 && <div className="note bad" style={{ marginTop: 12 }}><b>Don't:</b> {avoid.join(" · ")}</div>}
               <label className="row" style={{ marginTop: 14, gap: 10, flexWrap: "nowrap", fontSize: 13.5, alignItems: "flex-start" }}><input type="checkbox" name="disclosure" value="1" style={{ marginTop: 3 }} /><span>{DISCLOSURE_LINE}</span></label>
-              <div className="fld" style={{ marginTop: 14 }}><label>Note to the brand <span className="opt">— optional</span></label><input name="note" /></div>
+              <div className="fld" style={{ marginTop: 14 }}><label htmlFor="f-creator-deals-id-note-2">Note to the brand <span className="opt">— optional</span></label><input id="f-creator-deals-id-note-2" name="note" /></div>
               <button className="btn-foil" style={{ marginTop: 16 }}>Send draft</button>
             </form>
           )}
@@ -187,7 +187,7 @@ export default async function Page({ params, searchParams }) {
               <h2>Post it and share the link</h2>
               <p className="muted" style={{ margin: "0 0 12px" }}>Your payment clock starts when we verify the live post{d.fee ? `: paid within ${payDays} days` : ""}.</p>
               {d.track_code && <div className="note info" style={{ marginBottom: 12 }}>Use code <b>{d.track_code}</b> in your caption or story, and the link <code className="k">{origin}/go/{d.track_code}</code>. That's how the brand sees the sales you drive.</div>}
-              <div className="fld"><label>Live post link</label><input name="post_url" type="url" required pattern="https://.*" placeholder="https://www.instagram.com/reel/…" defaultValue={d.post_url ?? ""} /></div>
+              <div className="fld"><label htmlFor="f-creator-deals-id-post-url-3">Live post link</label><input id="f-creator-deals-id-post-url-3" name="post_url" type="url" required pattern="https://.*" placeholder="https://www.instagram.com/reel/…" defaultValue={d.post_url ?? ""} /></div>
               <button className="btn-foil" style={{ marginTop: 14 }}>Submit live link</button>
             </form>
           )}
@@ -232,7 +232,7 @@ export default async function Page({ params, searchParams }) {
             <form action={reportBypass} style={{ marginTop: 12 }}>
               {hid}
               <p className="small muted" style={{ margin: "0 0 10px" }}>Asked for your number, to move to DMs, or to be paid directly? Tell us. It stays private, and a confirmed report adds ₹500 to your earnings.</p>
-              <div className="fld"><label>What happened</label><textarea name="note" rows={3} required minLength={10} maxLength={1000} placeholder="The brand's manager asked for my WhatsApp to send the product directly…" /></div>
+              <div className="fld"><label htmlFor="f-creator-deals-id-note-4">What happened</label><textarea id="f-creator-deals-id-note-4" name="note" rows={3} required minLength={10} maxLength={1000} placeholder="The brand's manager asked for my WhatsApp to send the product directly…" /></div>
               <button className="btn sm" style={{ marginTop: 10 }}>Send report</button>
             </form>
           </details>

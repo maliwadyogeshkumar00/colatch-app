@@ -190,12 +190,12 @@ export default async function Page({ params, searchParams }) {
             {hidden("terms")}
             <h2>Terms</h2>{d.pay_status !== "unfunded" && <p className="hint">Locked: the brand has paid against these terms.</p>}
             <div className="form-grid">
-              <div className="fld"><label>Brand</label><input name="brand" defaultValue={d.brand ?? ""} /></div>
-              <div className="fld"><label>Deliverable</label><input name="deliverable" defaultValue={d.deliverable ?? ""} /></div>
-              <div className="fld"><label>Creator fee ₹</label><input name="fee" defaultValue={d.fee ?? ""} /></div>
-              <div className="fld"><label>Expected views</label><input name="expected_views" defaultValue={d.expected_views ?? ""} /></div>
-              <div className="fld"><label>Revision rounds included</label><input name="revisions_included" defaultValue={d.revisions_included} /></div>
-              <div className="fld"><label>Go-live date</label><input name="go_live_date" type="date" defaultValue={d.go_live_date ?? ""} /></div>
+              <div className="fld"><label htmlFor="f-team-deals-id-brand-1">Brand</label><input id="f-team-deals-id-brand-1" name="brand" defaultValue={d.brand ?? ""} /></div>
+              <div className="fld"><label htmlFor="f-team-deals-id-deliverable-2">Deliverable</label><input id="f-team-deals-id-deliverable-2" name="deliverable" defaultValue={d.deliverable ?? ""} /></div>
+              <div className="fld"><label htmlFor="f-team-deals-id-fee-3">Creator fee ₹</label><input id="f-team-deals-id-fee-3" name="fee" defaultValue={d.fee ?? ""} /></div>
+              <div className="fld"><label htmlFor="f-team-deals-id-expected-views-4">Expected views</label><input id="f-team-deals-id-expected-views-4" name="expected_views" defaultValue={d.expected_views ?? ""} /></div>
+              <div className="fld"><label htmlFor="f-team-deals-id-revisions-included-5">Revision rounds included</label><input id="f-team-deals-id-revisions-included-5" name="revisions_included" defaultValue={d.revisions_included} /></div>
+              <div className="fld"><label htmlFor="f-team-deals-id-go-live-date-6">Go-live date</label><input id="f-team-deals-id-go-live-date-6" name="go_live_date" type="date" defaultValue={d.go_live_date ?? ""} /></div>
             </div>
             <div className="row" style={{ marginTop: 14 }}><button className="btn plum" disabled={d.pay_status !== "unfunded"}>Save terms</button><span className="hint">Stage: {STAGE_LABEL[d.stage] || d.stage}. Changing the fee asks the creator to accept again.</span></div>
           </form>}
@@ -204,13 +204,13 @@ export default async function Page({ params, searchParams }) {
             {hidden("results")}
             <h2>Results</h2>
             <div className="form-grid">
-              <div className="fld"><label>Views</label><input name="actual_views" defaultValue={d.actual_views ?? ""} /></div>
-              <div className="fld"><label>Likes</label><input name="likes" defaultValue={d.likes ?? ""} /></div>
-              <div className="fld"><label>Comments</label><input name="comments" defaultValue={d.comments ?? ""} /></div>
-              <div className="fld"><label>Orders</label><input name="orders" defaultValue={d.orders ?? ""} /></div>
-              <div className="fld"><label>Sales value ₹ <span className="opt">— from the code/link</span></label><input name="sales_value" defaultValue={d.sales_value ?? ""} /></div>
-              <div className="fld"><label>Product / ticket value ₹</label><input name="reward_value" defaultValue={d.reward_value ?? ""} /></div>
-              <div className="fld full"><label>Market rate ₹ <span className="opt">— what this work usually costs; drives the brand's savings figure</span></label><input name="market_rate" defaultValue={d.market_rate ?? ""} /></div>
+              <div className="fld"><label htmlFor="f-team-deals-id-actual-views-7">Views</label><input id="f-team-deals-id-actual-views-7" name="actual_views" defaultValue={d.actual_views ?? ""} /></div>
+              <div className="fld"><label htmlFor="f-team-deals-id-likes-8">Likes</label><input id="f-team-deals-id-likes-8" name="likes" defaultValue={d.likes ?? ""} /></div>
+              <div className="fld"><label htmlFor="f-team-deals-id-comments-9">Comments</label><input id="f-team-deals-id-comments-9" name="comments" defaultValue={d.comments ?? ""} /></div>
+              <div className="fld"><label htmlFor="f-team-deals-id-orders-10">Orders</label><input id="f-team-deals-id-orders-10" name="orders" defaultValue={d.orders ?? ""} /></div>
+              <div className="fld"><label htmlFor="f-team-deals-id-sales-value-11">Sales value ₹ <span className="opt">— from the code/link</span></label><input id="f-team-deals-id-sales-value-11" name="sales_value" defaultValue={d.sales_value ?? ""} /></div>
+              <div className="fld"><label htmlFor="f-team-deals-id-reward-value-12">Product / ticket value ₹</label><input id="f-team-deals-id-reward-value-12" name="reward_value" defaultValue={d.reward_value ?? ""} /></div>
+              <div className="fld full"><label htmlFor="f-team-deals-id-market-rate-13">Market rate ₹ <span className="opt">— what this work usually costs; drives the brand's savings figure</span></label><input id="f-team-deals-id-market-rate-13" name="market_rate" defaultValue={d.market_rate ?? ""} /></div>
             </div>
             <button className="btn plum" style={{ marginTop: 14 }}>Save results</button>
           </form>}

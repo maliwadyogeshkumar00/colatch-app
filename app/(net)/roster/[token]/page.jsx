@@ -5,7 +5,11 @@ import { env } from "@/lib/net/env";
 import { compact, inr } from "@/lib/net/creators";
 
 // #81 A brand's private roster of favourite creators. Any of the brand's shortlist links opens it.
-export const metadata = { title: "My creator roster · Colatch", robots: { index: false } };
+// Checked here as well as in the page: metadata runs before the page streams, so a bad link gets a real 404 status.
+export async function generateMetadata({ params }) {
+  if (!(await brandFor(params.token))) notFound();
+  return { title: "My creator roster", robots: { index: false } };
+}
 
 async function brandFor(token) {
   const t = String(token || "");

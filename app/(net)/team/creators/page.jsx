@@ -164,17 +164,17 @@ export default async function Page({ searchParams }) {
       </div>
 
       <form className="panel filters sec" method="get">
-        <div className="fld"><label>Search</label><input name="q" defaultValue={q} placeholder="Name, handle, bio, tag…" /></div>
-        <div className="fld"><label>Talent</label><select name="skill" defaultValue={fSkill}><option value="">Any</option>{SKILLS.map((s) => <option key={s}>{s}</option>)}</select></div>
-        <div className="fld"><label>Niche</label><select name="niche" defaultValue={fNiche}><option value="">Any</option>{NICHES.map((s) => <option key={s}>{s}</option>)}</select></div>
-        <div className="fld"><label>City</label><input name="city" list="cities" defaultValue={fCity} placeholder="Any" /></div>
-        <div className="fld"><label>Language</label><select name="lang" defaultValue={fLang}><option value="">Any</option>{LANGUAGES.map((s) => <option key={s}>{s}</option>)}</select></div>
+        <div className="fld"><label htmlFor="f-team-creators-q-1">Search</label><input id="f-team-creators-q-1" name="q" defaultValue={q} placeholder="Name, handle, bio, tag…" /></div>
+        <div className="fld"><label htmlFor="f-team-creators-skill-2">Talent</label><select id="f-team-creators-skill-2" name="skill" defaultValue={fSkill}><option value="">Any</option>{SKILLS.map((s) => <option key={s}>{s}</option>)}</select></div>
+        <div className="fld"><label htmlFor="f-team-creators-niche-3">Niche</label><select id="f-team-creators-niche-3" name="niche" defaultValue={fNiche}><option value="">Any</option>{NICHES.map((s) => <option key={s}>{s}</option>)}</select></div>
+        <div className="fld"><label htmlFor="f-team-creators-city-4">City</label><input id="f-team-creators-city-4" name="city" list="cities" defaultValue={fCity} placeholder="Any" /></div>
+        <div className="fld"><label htmlFor="f-team-creators-lang-5">Language</label><select id="f-team-creators-lang-5" name="lang" defaultValue={fLang}><option value="">Any</option>{LANGUAGES.map((s) => <option key={s}>{s}</option>)}</select></div>
         <div className="fld"><label>Followers</label><div className="row" style={{ gap: 6, flexWrap: "nowrap" }}><input name="fmin" defaultValue={u.fmin ?? ""} placeholder="Min" /><input name="fmax" defaultValue={u.fmax ?? ""} placeholder="Max" /></div></div>
         <button className="btn plum" type="submit">Search</button>
-        <div className="fld"><label>Gender</label><select name="gender" defaultValue={fGender}><option value="">Any</option>{["Female", "Male", "Other"].map((s) => <option key={s}>{s}</option>)}</select></div>
-        <div className="fld"><label>Min engagement %</label><input name="er" defaultValue={u.er ?? ""} placeholder="e.g. 2" /></div>
-        <div className="fld"><label>Status</label><select name="status" defaultValue={fStatus}><option value="">Any</option>{CREATOR_STATUSES.map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}</select></div>
-        <div className="fld"><label>Sort</label><select name="sort" defaultValue={sort}>{[["followers", "Biggest first"], ["er", "Best engagement"], ["quality", "Best quality score"], ["new", "Newest"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+        <div className="fld"><label htmlFor="f-team-creators-gender-6">Gender</label><select id="f-team-creators-gender-6" name="gender" defaultValue={fGender}><option value="">Any</option>{["Female", "Male", "Other"].map((s) => <option key={s}>{s}</option>)}</select></div>
+        <div className="fld"><label htmlFor="f-team-creators-er-7">Min engagement %</label><input id="f-team-creators-er-7" name="er" defaultValue={u.er ?? ""} placeholder="e.g. 2" /></div>
+        <div className="fld"><label htmlFor="f-team-creators-status-8">Status</label><select id="f-team-creators-status-8" name="status" defaultValue={fStatus}><option value="">Any</option>{CREATOR_STATUSES.map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}</select></div>
+        <div className="fld"><label htmlFor="f-team-creators-sort-9">Sort</label><select id="f-team-creators-sort-9" name="sort" defaultValue={sort}>{[["followers", "Biggest first"], ["er", "Best engagement"], ["quality", "Best quality score"], ["new", "Newest"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
         {filtered && <a className="btn ghost" href="/team/creators">Clear</a>}
       </form>
       <datalist id="cities">{CITIES.map((c) => <option key={c} value={c} />)}</datalist>
@@ -205,26 +205,26 @@ export default async function Page({ searchParams }) {
         <form className="panel pad" action={addCreator}>
           <h2>Add a creator</h2>
           <div className="form-grid">
-            <div className="fld"><label>Instagram handle</label><input name="handle" required placeholder="@handle" /></div>
-            <div className="fld"><label>Name</label><input name="name" /></div>
+            <div className="fld"><label htmlFor="f-team-creators-handle-10">Instagram handle</label><input id="f-team-creators-handle-10" name="handle" required placeholder="@handle" /></div>
+            <div className="fld"><label htmlFor="f-team-creators-name-11">Name</label><input id="f-team-creators-name-11" name="name" /></div>
             <div className="fld full"><label>Talent</label><div className="chips">{SKILLS.slice(0, 16).map((s) => <label key={s} className="chip"><input type="checkbox" name="skills" value={s} /><span>{s}</span></label>)}</div></div>
-            <div className="fld"><label>Niche</label><select name="niche"><option value="">—</option>{NICHES.map((n) => <option key={n}>{n}</option>)}</select></div>
-            <div className="fld"><label>City</label><input name="city" list="cities" /></div>
-            <div className="fld"><label>Languages</label><input name="language" placeholder="Hindi, English" /></div>
-            <div className="fld"><label>Gender</label><select name="gender"><option value="">—</option><option>Female</option><option>Male</option><option>Other</option></select></div>
-            <div className="fld"><label>Followers</label><input name="followers" placeholder="e.g. 85K or 1.2L" /></div>
-            <div className="fld"><label>Reel rate (₹)</label><input name="rate_reel" placeholder="e.g. 25000" /></div>
-            <div className="fld"><label>Phone / WhatsApp</label><input name="phone" /></div>
-            <div className="fld"><label>Email</label><input name="email" type="email" /></div>
-            <div className="fld full"><label>Notes</label><input name="notes" /></div>
+            <div className="fld"><label htmlFor="f-team-creators-niche-12">Niche</label><select id="f-team-creators-niche-12" name="niche"><option value="">—</option>{NICHES.map((n) => <option key={n}>{n}</option>)}</select></div>
+            <div className="fld"><label htmlFor="f-team-creators-city-13">City</label><input id="f-team-creators-city-13" name="city" list="cities" /></div>
+            <div className="fld"><label htmlFor="f-team-creators-language-14">Languages</label><input id="f-team-creators-language-14" name="language" placeholder="Hindi, English" /></div>
+            <div className="fld"><label htmlFor="f-team-creators-gender-15">Gender</label><select id="f-team-creators-gender-15" name="gender"><option value="">—</option><option>Female</option><option>Male</option><option>Other</option></select></div>
+            <div className="fld"><label htmlFor="f-team-creators-followers-16">Followers</label><input id="f-team-creators-followers-16" name="followers" placeholder="e.g. 85K or 1.2L" /></div>
+            <div className="fld"><label htmlFor="f-team-creators-rate-reel-17">Reel rate (₹)</label><input id="f-team-creators-rate-reel-17" name="rate_reel" placeholder="e.g. 25000" /></div>
+            <div className="fld"><label htmlFor="f-team-creators-phone-18">Phone / WhatsApp</label><input id="f-team-creators-phone-18" name="phone" /></div>
+            <div className="fld"><label htmlFor="f-team-creators-email-19">Email</label><input id="f-team-creators-email-19" name="email" type="email" /></div>
+            <div className="fld full"><label htmlFor="f-team-creators-notes-20">Notes</label><input id="f-team-creators-notes-20" name="notes" /></div>
           </div>
           <button className="btn plum" style={{ marginTop: 16 }}>Add creator</button>
         </form>
         <form className="panel pad" action={importSheet}>
           <h2>Import a sheet</h2>
           <p className="hint" style={{ marginTop: -6 }}>Paste from Excel or Google Sheets, or upload a CSV. The first row must be headers. We read: <b>handle</b> (or username / instagram link), name, niche, city, state, language, gender, followers, avg views, engagement rate, email, phone, reel rate, story rate, post rate, tags, notes. Existing handles are updated, never duplicated.</p>
-          <div className="fld"><label>Upload CSV <span className="opt">— optional</span></label><input type="file" name="file" accept=".csv,.tsv,.txt" /></div>
-          <div className="fld" style={{ marginTop: 12 }}><label>Or paste rows</label><textarea name="csv" rows={9} placeholder={"handle\tname\tniche\tcity\tfollowers\treel rate\n@priya.dances\tPriya\tDance\tDelhi\t82K\t25000"} /></div>
+          <div className="fld"><label htmlFor="f-team-creators-file-21">Upload CSV <span className="opt">— optional</span></label><input id="f-team-creators-file-21" type="file" name="file" accept=".csv,.tsv,.txt" /></div>
+          <div className="fld" style={{ marginTop: 12 }}><label htmlFor="f-team-creators-csv-22">Or paste rows</label><textarea id="f-team-creators-csv-22" name="csv" rows={9} placeholder={"handle\tname\tniche\tcity\tfollowers\treel rate\n@priya.dances\tPriya\tDance\tDelhi\t82K\t25000"} /></div>
           <button className="btn plum" style={{ marginTop: 16 }}>Import</button>
         </form>
       </div>
