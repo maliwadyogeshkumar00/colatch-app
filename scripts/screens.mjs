@@ -19,6 +19,7 @@ const pw = () => "pw-" + randomBytes(9).toString("hex");
 const TOKEN = "sampletoken" + randomBytes(12).toString("hex");
 const owner = { email: "owner-screens@colatch.sample.test", password: pw() };
 const creator = { email: "aarav@creator.sample.test", password: pw() };
+const brandUser = { email: "brand@bloom.sample.test", password: pw() };
 
 async function seed() {
   await db.connect();
@@ -36,12 +37,17 @@ async function seed() {
              VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,'Creator, Actor','Short, warm Reels that feel like a friend recommending something.','active') ON CONFLICT (id) DO NOTHING`, id, handle, name, niche, city, lang, f, er, v, rate, ver);
   }
   await q("INSERT INTO creator_accounts (id, creator_id, email, password_hash, salt) VALUES ('acc-scr-aarav','scr-aarav',$1,$2,$3) ON CONFLICT (email) DO NOTHING", creator.email, h2.hash, h2.salt);
+  const h3 = hash(brandUser.password);
+  // Brand account (table exists from schema v5); its campaigns are linked below once the campaigns exist.
+  await q("INSERT INTO brand_accounts (id, email, password_hash, salt, name, company, email_verified_at) VALUES ('ba-scr-bloom',$1,$2,$3,'Neha (sample)','Bloom Skincare (sample)', now()) ON CONFLICT (email) DO NOTHING", brandUser.email, h3.hash, h3.salt).catch(() => null);
   await q(`INSERT INTO campaigns (id, slug, title, brand, brief, deliverables, niche, city, languages, creators_needed, budget_total, deadline, status, client_name, client_company, client_email, share_token, is_open)
            VALUES ('scr-k1','bloom-winter','Bloom Skincare winter launch','Bloom Skincare (sample)','A winter routine Reel for dry skin, filmed at home, honest and unpolished.','1 Reel, 45-60s','beauty','Mumbai','Hindi, English',3,150000,'2026-12-12','open','Neha (sample)','Bloom Skincare (sample)','brand@bloom.sample.test',$1,1)
            ON CONFLICT (id) DO NOTHING`, TOKEN);
   await q(`INSERT INTO campaigns (id, slug, title, brand, brief, deliverables, niche, city, languages, creators_needed, budget_total, deadline, status, client_email, share_token, is_open)
            VALUES ('scr-k2','chai-festive','Chai Point festive Reels','Chai Point (sample)','Festive gifting Reels around a chai moment with family.','2 Reels','food','Delhi','Hindi',5,250000,'2026-12-20','open','brand@chai.sample.test',$1,1)
            ON CONFLICT (id) DO NOTHING`, TOKEN + "b");
+  await q("UPDATE campaigns SET brand_account_id='ba-scr-bloom' WHERE id='scr-k1'").catch(() => null);
+  await q("INSERT INTO disputes (id, deal_id, raised_by_kind, raised_by_id, reason, detail) VALUES ('scr-dis-1','scr-d1','brand','scr-k1','late','Draft came two days after the agreed date.') ON CONFLICT DO NOTHING").catch(() => null);
   const apps = [["scr-a1", "scr-k1", "scr-aarav", "accepted", 88], ["scr-a2", "scr-k1", "scr-ishita", "shortlisted", 81], ["scr-a3", "scr-k1", "scr-kabir", "new", 64], ["scr-a4", "scr-k2", "scr-aarav", "new", 77], ["scr-a5", "scr-k1", "scr-meera", "shortlisted", 72]];
   for (const [id, k, c, st, sc] of apps) {
     const r = (await q("SELECT handle, name, followers, rate_reel FROM creators WHERE id=$1", c)).rows[0];
@@ -57,12 +63,15 @@ async function seed() {
 }
 
 const PUBLIC = [["join", "/join"], ["brief", "/brief"], ["creator-login", "/creator/login"], ["team-login", "/team/login"], ["pitches", "/pitches"],
-  ["media-kit", "/m/aarav_mehta"], ["shortlist", `/shortlist/${TOKEN}`], ["receipt", `/receipt/${TOKEN}`], ["reset", "/reset/request"], ["not-found", "/shortlist/nope-not-a-token-000000"]];
+  ["media-kit", "/m/aarav_mehta"], ["shortlist", `/shortlist/${TOKEN}`], ["receipt", `/receipt/${TOKEN}`], ["reset", "/reset/request"], ["not-found", "/shortlist/nope-not-a-token-000000"],
+  ["brand-join", "/brand/join"], ["brand-login", "/brand/login"], ["faq", "/faq"]];
+const BRAND = [["brand-home", "/brand"], ["brand-settings", "/brand/settings"], ["brand-shortlist-signed-in", `/shortlist/${TOKEN}`]];
 const CREATOR = [["creator-home", "/creator"], ["creator-applications", "/creator/applications"], ["creator-deal", "/creator/deals/scr-d1"], ["creator-earnings", "/creator/earnings"],
   ["creator-profile", "/creator/profile"], ["creator-score", "/creator/score"], ["creator-pitch", "/creator/pitch"], ["creator-settings", "/creator/settings"]];
 const TEAM = [["team-home", "/team"], ["team-campaigns", "/team/campaigns"], ["team-campaign", "/team/campaigns/scr-k1"], ["team-creators", "/team/creators"], ["team-creator", "/team/creators/scr-aarav"],
   ["team-crm", "/team/crm"], ["team-deal", "/team/deals/scr-d1"], ["team-insights", "/team/insights"], ["team-reports", "/team/reports"], ["team-referrals", "/team/referrals"],
-  ["team-members", "/team/members"], ["team-notifications", "/team/notifications"], ["team-cpv", "/team/cpv"], ["team-settings", "/team/settings"]];
+  ["team-members", "/team/members"], ["team-notifications", "/team/notifications"], ["team-cpv", "/team/cpv"], ["team-settings", "/team/settings"],
+  ["team-brands", "/team/brands"], ["team-disputes", "/team/disputes"], ["team-finance", "/team/finance"], ["team-audit", "/team/audit"], ["team-system", "/team/system"]];
 
 let ip = 10;
 async function shoot(browser, list, login) {
@@ -98,6 +107,7 @@ const browser = await chromium.launch();
 await shoot(browser, PUBLIC);
 await shoot(browser, CREATOR, { kind: "creator", who: creator });
 await shoot(browser, TEAM, { kind: "team", who: owner });
+await shoot(browser, BRAND, { kind: "brand", who: brandUser }).catch((e) => report.push({ name: "brand-login", error: String(e.message || e).slice(0, 200) }));
 await browser.close();
 await db.end();
 writeFileSync(`${OUT}/report.json`, JSON.stringify(report, null, 1));

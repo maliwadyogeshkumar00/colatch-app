@@ -13,7 +13,7 @@ export function clientIp() {
   return (h.get("x-forwarded-for") || "").split(",")[0].trim() || h.get("x-real-ip") || "unknown";
 }
 
-const TABLE = { team: "team_users", creator: "creator_accounts" };
+const TABLE = { team: "team_users", creator: "creator_accounts", brand: "brand_accounts" };
 
 let dummy = null;
 async function dummyHash() {

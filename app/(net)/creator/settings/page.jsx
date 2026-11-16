@@ -4,8 +4,9 @@ import PublicShell from "../../_ui/PublicShell";
 import Flash, { flashUrl } from "../../_ui/flash";
 import { env } from "@/lib/net/env";
 import { currentCreator, startCreatorSession, revokeSessions, CREATOR_COOKIE } from "@/lib/net/creatorAuth";
-import { audit } from "@/lib/net/security";
-import { checkLogin, setPassword, TOO_MANY } from "../../reset/_lib";
+import { audit, createVerifyToken } from "@/lib/net/security";
+import { checkLogin, setPassword, overLimit, mailBase, clientIp, TOO_MANY } from "../../reset/_lib";
+import { notify } from "@/lib/net/notify";
 import { claimStatus, ClaimNote } from "../../join/_claim";
 
 export const metadata = { title: "Account settings", robots: { index: false } };
@@ -38,15 +39,35 @@ async function signOutEverywhere() {
   redirect(flashUrl("/creator/login", "ok", "Signed out on every device."));
 }
 
+async function resendVerify() {
+  "use server";
+  const me = await currentCreator();
+  if (!me) redirect("/creator/login?next=/creator/settings");
+  const row = await env.DB.prepare("SELECT email, email_verified_at FROM creator_accounts WHERE id=?").bind(me.accountId).first();
+  if (!row) redirect("/creator/login");
+  if (row.email_verified_at) redirect(flashUrl(BACK, "ok", "Your email is already confirmed."));
+  if ((await overLimit(`verify|${me.accountId}`)) || (await overLimit(`verify|${clientIp()}`))) redirect(flashUrl(BACK, "err", TOO_MANY));
+  const vt = await createVerifyToken("creator", me.accountId, row.email);
+  const status = await notify({ template: "verify_email", to: row.email, toKind: "creator", toId: me.creator?.id, payload: {}, dedupeKey: `verify:${me.accountId}:${Date.now()}`, secret: { link: `${mailBase()}/verify/${vt}` } });
+  await audit({ kind: "creator", id: me.accountId }, "creator.verify_requested", "creator_account", me.accountId, { email_status: status });
+  redirect(flashUrl(BACK, status === "sent" ? "ok" : "err", status === "sent" ? `We sent a confirmation link to ${row.email}.` : "Email isn't set up on Colatch yet, so the link could not be sent. The Colatch team can confirm your email for you."));
+}
+
 export default async function Page({ searchParams }) {
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/settings");
   const status = await claimStatus(me.accountId);
+  const verified = !!(await env.DB.prepare("SELECT email_verified_at FROM creator_accounts WHERE id=?").bind(me.accountId).first())?.email_verified_at;
   return (
     <PublicShell path="/creator/settings" creatorName={status === "own" ? me.creator?.name : null}>
       <div className="wrap narrow" style={{ maxWidth: 520, padding: "20px 0 0" }}>
         <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
         {status !== "own" && <div style={{ marginBottom: 18 }}><ClaimNote status={status} /></div>}
+        <form className="panel pad" action={resendVerify} style={{ marginBottom: 18 }}>
+          <div className="spread"><h2 style={{ margin: 0 }}>Email</h2>{verified ? <span className="pill good">Confirmed</span> : <span className="pill ok">Not confirmed</span>}</div>
+          <p className="muted" style={{ margin: "10px 0 0" }}>{me.email}</p>
+          {!verified && <><p className="hint" style={{ margin: "8px 0 14px" }}>Confirm your email so brands and the Colatch team can reach you about deals and payments.</p><button className="btn">Send confirmation link</button></>}
+        </form>
         <form className="panel pad" action={changePassword}>
           <h2>Change password</h2>
           <p className="muted" style={{ margin: "-4px 0 18px" }}>Signed in as {me.email}.</p>

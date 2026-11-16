@@ -5,9 +5,9 @@ import { flashUrl } from "../_ui/flash";
 import { packForm, unpackForm } from "../_ui/keep";
 import { env } from "@/lib/net/env";
 import { hashPassword, passwordProblem } from "@/lib/net/auth";
-import { audit, isEmail, loginBlocked, recordLogin } from "@/lib/net/security";
+import { audit, isEmail, loginBlocked, recordLogin, createVerifyToken } from "@/lib/net/security";
 import { notify } from "@/lib/net/notify";
-import { clientIp } from "../reset/_lib";
+import { clientIp, mailBase } from "../reset/_lib";
 import { cleanHandle, lookupProfile, metaReady } from "@/lib/net/meta";
 import { profileFromForm, saveProfile, upsertFromInstagram, str } from "@/lib/net/creators";
 import { currentCreator, startCreatorSession } from "@/lib/net/creatorAuth";
@@ -71,6 +71,11 @@ async function join(fd) {
     // Referral credit only for genuinely new creators, never for claiming a profile we already had.
     if (claim === "own" && !existing) await recordReferral(env, readRefCookie(), "creator", creator.id).catch(() => false);
     await notify({ template: "creator_welcome", to: email, toKind: "creator", toId: creator.id, payload: { name }, dedupeKey: `welcome:${accountId}` });
+    // Email verification: the link is sent once and never stored (only its hash is).
+    try {
+      const vt = await createVerifyToken("creator", accountId, email);
+      await notify({ template: "verify_email", to: email, toKind: "creator", toId: creator.id, payload: {}, dedupeKey: `verify:${accountId}:1`, secret: { link: `${mailBase()}/verify/${vt}` } });
+    } catch (e) { console.error("[join] verify email", e?.message); }
     await startCreatorSession(accountId);
     const next = String(fd.get("next") ?? "");
     dest = claim === "pending" ? "/creator/settings?claim=pending" : next.startsWith("/creator/o/") && !next.startsWith("//") ? next : "/creator?welcome=1";
