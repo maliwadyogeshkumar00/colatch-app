@@ -18,6 +18,8 @@ defaults:
 jobs:
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     timeout-minutes: 30
     services:
       postgres:
@@ -63,6 +65,22 @@ jobs:
         run: npm run test:e2e 2>&1 | tee ci-logs/e2e.txt
         env:
           BASE_URL: http://localhost:3000
+      # Design review: every screen at 375 / 768 / 1440 with sample data, pushed to the ci-screens branch.
+      - name: Screens
+        if: always()
+        continue-on-error: true
+        run: node scripts/screens.mjs 2>&1 | tee ci-logs/screens.txt
+        env:
+          BASE_URL: http://localhost:3000
+      - name: Publish screens
+        if: always() && github.event_name == 'push'
+        continue-on-error: true
+        run: |
+          [ -d screens-out ] || exit 0
+          cd screens-out && echo "${GITHUB_SHA}" > SHA
+          git init -q -b main && git config user.name "ci" && git config user.email "ci@users.noreply.github.com"
+          git add -A && git commit -qm "screens ${GITHUB_SHA::7}"
+          git push -q -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" HEAD:refs/heads/ci-screens
       - name: Server log
         if: always()
         run: tail -n 300 server.log || true
@@ -76,7 +94,7 @@ jobs:
             { echo "### $f"; echo '```'; grep -vE '^\s*$' ci-logs/$f.txt | tail -n 60 | cut -c1-300; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
           done
           # Annotations are public on the run page; one per step with its last lines.
-          for f in unit integration build e2e; do
+          for f in unit integration build e2e screens; do
             [ -f ci-logs/$f.txt ] || continue
             body=$(grep -E 'pass |fail |passed|failed|skipped|flaky|Error|✘|✖|error|did not run' ci-logs/$f.txt | tail -n 40 | cut -c1-200 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}' || true)
             echo "::notice title=$f results::$body"
