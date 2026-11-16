@@ -20,13 +20,15 @@ export async function brandTrust(env: Env, k: { id: string; client_email?: strin
     `SELECT AVG(r.stars) a, COUNT(*) n FROM ratings r JOIN creator_deals d ON d.id = r.deal_id JOIN campaigns k ON k.id = d.campaign_id
      WHERE r.by_side = 'creator' AND ${where}`
   ).bind(arg).first<{ a: number | null; n: number }>().catch(() => null);
+  // "Funded" only when a brand payment for this campaign is in the money ledger, never from a checkbox.
+  const funded = Boolean(await env.DB.prepare("SELECT 1 AS ok FROM finance_ledger WHERE campaign_id = ? AND kind = 'brand_payment_received' LIMIT 1").bind(k.id).first().catch(() => null));
   return {
     campaigns: row?.campaigns ?? 1, paidDeals: row?.paid ?? 0,
     avgPayDays: row?.days != null ? Math.round(row.days * 10) / 10 : null,
-    rating: r?.a != null ? Math.round(r.a * 10) / 10 : null, ratings: r?.n ?? 0, funded: Boolean(k.funded),
+    rating: r?.a != null ? Math.round(r.a * 10) / 10 : null, ratings: r?.n ?? 0, funded,
     onTimePct: row?.timed ? Math.round((100 * (row.ontime ?? 0)) / row.timed) : null,
     // Verified = checked by the team, or money already in plus a company (non-webmail) email.
-    verified: Boolean(k.brand_verified) || (Boolean(k.funded) && !!key && !FREE_MAIL.test(key)),
+    verified: Boolean(k.brand_verified) || (funded && !!key && !FREE_MAIL.test(key)),
   };
 }
 
@@ -58,10 +60,9 @@ export function isFeatured(k: { featured_until?: string | null }): boolean {
 export function goingDirectLosses(o: { funded?: boolean; fee?: number | null; payDays?: number | null }): { title: string; line: string }[] {
   const money = o.fee ? `₹${Math.round(o.fee).toLocaleString('en-IN')}` : 'Your fee';
   return [
-    { title: 'Guaranteed payment', line: o.funded ? `${money} is already sitting with Colatch. Direct, you wait on the brand.` : `${money} is collected from the brand before you start. Direct, nobody does that for you.` },
+    { title: 'Money in before you start', line: o.funded ? `The brand has already paid Colatch for this campaign. Direct, you wait on the brand.` : `${money} is collected from the brand before you start work. Direct, nobody does that for you.` },
     { title: 'Colatch Score points', line: 'Up to +5 for going live, +4 for a sign-off and up to +20 from brand stars. Off-platform work earns zero.' },
     { title: 'Public proof', line: 'A brand-verified proof page and a line on your media kit that wins the next deal.' },
-    { title: 'Dispute desk', line: 'If anything goes wrong, Colatch decides within 72 hours. Direct, it is your word against theirs.' },
-    { title: 'Repeat-brand alerts', line: 'When this brand books again, creators who delivered for them hear first.' },
+    { title: 'A record of the deal', line: 'Terms, drafts, feedback and payments are all logged on Colatch. Direct, it is your word against theirs.' },
   ];
 }

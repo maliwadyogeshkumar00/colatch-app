@@ -4,7 +4,7 @@ import { env } from "@/lib/net/env";
 import { inr } from "@/lib/net/creators";
 import { list } from "@/lib/net/match";
 
-export const metadata = { title: "Marketplace health · Colatch Connect", robots: { index: false, follow: false } };
+export const metadata = { title: "Marketplace health", robots: { index: false, follow: false } };
 
 export default async function Page() {
   const me = await requireTeam();

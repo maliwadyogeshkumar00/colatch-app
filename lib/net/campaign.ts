@@ -41,6 +41,7 @@ export function campaignFieldsFromForm(f: FormData) {
     brand_category: str(f.get('brand_category')),
     reward_value: int(f.get('reward_value')),
     commission_pct: (() => { const n = parseFloat(String(f.get('commission_pct') ?? '')); return isFinite(n) && n > 0 && n < 100 ? n : null; })(),
+    // Kept for the column, but "funded" is shown only from the money ledger (lib/net/trust.ts).
     funded: f.get('funded') ? 1 : 0,
     revisions: int(f.get('revisions')) ?? 2,
     usage_rights: str(f.get('usage_rights')),

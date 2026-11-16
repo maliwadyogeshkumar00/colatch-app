@@ -11,7 +11,7 @@ import { audit } from "@/lib/net/security";
 // Allowed status moves. "paid" is final and only reached through the Record payout form (with a UTR).
 const MOVES = { pending: ["approved", "void"], approved: ["pending", "void"], void: ["pending"], paid: [] };
 
-export const metadata = { title: "Affiliate program · Colatch Connect", robots: { index: false, follow: false } };
+export const metadata = { title: "Affiliate program", robots: { index: false, follow: false } };
 
 async function setStatus(fd) {
   "use server";

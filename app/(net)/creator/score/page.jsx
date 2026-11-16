@@ -5,7 +5,7 @@ import { currentCreator } from "@/lib/net/creatorAuth";
 import { colatchScore, TIERS, SCORE_RULE } from "@/lib/net/score";
 import { ScoreRing, TierBadge, TIER_STYLE } from "../../_ui/Score";
 
-export const metadata = { title: "Your Colatch Score · Colatch", robots: { index: false } };
+export const metadata = { title: "Your Colatch Score", robots: { index: false } };
 
 const CSS = `
 .pg-score .ladder{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}

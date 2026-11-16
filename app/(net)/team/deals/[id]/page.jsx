@@ -13,7 +13,7 @@ import { priceDeal } from "@/lib/net/pricing";
 import { safeUrl } from "@/lib/net/guard";
 import { can } from "@/lib/net/security";
 
-export const metadata = { title: "Deal · Colatch Connect", robots: { index: false, follow: false } };
+export const metadata = { title: "Deal", robots: { index: false, follow: false } };
 
 const load = (id) => env.DB.prepare("SELECT * FROM creator_deals WHERE id=?").bind(id).first();
 

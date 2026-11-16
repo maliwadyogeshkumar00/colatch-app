@@ -4,7 +4,7 @@ import { requireTeam } from "../_guard";
 import { env } from "@/lib/net/env";
 import { RATE_GUIDE, inr } from "@/lib/net/creators";
 
-export const metadata = { title: "CPV calculator · Colatch Connect", robots: { index: false, follow: false } };
+export const metadata = { title: "CPV calculator", robots: { index: false, follow: false } };
 
 export default async function Page() {
   const me = await requireTeam();

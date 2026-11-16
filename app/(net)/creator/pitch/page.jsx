@@ -8,7 +8,7 @@ import { scrubContacts } from "@/lib/net/guard";
 import { checkBrief } from "@/lib/net/compliance";
 import { PITCH_CATEGORIES, PITCH_FORMATS, PITCH_OCCASIONS, MAX_LIVE_PITCHES } from "../../_ui/pitch";
 
-export const metadata = { title: "Pitch an idea · Colatch", robots: { index: false } };
+export const metadata = { title: "Pitch an idea", robots: { index: false } };
 
 const CSS = `
 .pg-pitch .mine{display:grid;gap:14px}

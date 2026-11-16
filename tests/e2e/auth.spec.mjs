@@ -38,7 +38,7 @@ test("first owner needs the setup code, and setup only works once", async ({ bro
     await page.getByRole("button", { name: "Create owner login" }).click();
   };
   await fill("wrong-code");
-  await expect(page.getByRole("alert")).toContainText("setup code is not right");
+  await expect(page.locator(".note.bad")).toContainText("setup code is not right");
 
   await fill(SETUP_CODE);
   await expect(page).toHaveURL(/\/team(\?|$)/);
@@ -86,7 +86,7 @@ test("a viewer added by the owner can't open Team members", async ({ browser }) 
   await expect(viewer).toHaveURL(/\/team(\?|$)/);
   await viewer.goto("/team/members");
   await expect(viewer).toHaveURL(/\/team\?err=/);
-  await expect(viewer.getByRole("alert")).toContainText("can't do that");
+  await expect(viewer.locator(".note.bad")).toContainText("can't do that");
 
   // Disabling signs the viewer out at once.
   await owner.goto("/team/members");
@@ -104,7 +104,7 @@ test("a creator can join, log out and log back in", async ({ browser }) => {
   await page.locator('input[name="handle"]').fill(`@${creator.handle}`);
   await page.locator('input[name="email"]').fill(creator.email);
   await page.locator('input[name="password"]').fill(creator.password);
-  await page.locator('input[name="skills"]').first().check();
+  await page.locator('input[name="skills"]').first().check({ force: true }); // visually hidden inside a chip
   await page.locator('input[name="city"]').fill("Delhi");
   await page.locator('input[name="phone"]').fill("9800000000");
   await page.locator('input[name="consent"]').check();
@@ -130,14 +130,14 @@ test("logins lock after 8 wrong passwords, even with the right one", async ({ br
     await page.getByLabel("Email").fill(creator.email);
     await page.getByLabel("Password").fill(pw);
     await page.getByRole("button", { name: "Log in" }).click();
-    await expect(page.getByRole("alert")).toBeVisible();
+    await expect(page.locator(".note.bad")).toBeVisible();
   };
   for (let i = 0; i < 8; i++) {
     await attempt(`wrong-${i}-${rand()}`);
-    await expect(page.getByRole("alert")).toContainText("Wrong email or password");
+    await expect(page.locator(".note.bad")).toContainText("Wrong email or password");
   }
   await attempt(creator.password);
-  await expect(page.getByRole("alert")).toContainText("Too many wrong tries");
+  await expect(page.locator(".note.bad")).toContainText("Too many wrong tries");
 });
 
 test("reset request says the same thing whether or not the email has an account", async ({ browser }) => {
@@ -146,7 +146,7 @@ test("reset request says the same thing whether or not the email has an account"
     await page.goto("/reset/request");
     await page.getByLabel("Email").fill(email);
     await page.getByRole("button", { name: "Send reset link" }).click();
-    return (await page.getByRole("status").innerText()).trim();
+    return (await page.locator(".note.good").innerText()).trim();
   };
   const known = await ask(creator.email);
   const unknown = await ask(`nobody-${run}@colatch-test.local`);

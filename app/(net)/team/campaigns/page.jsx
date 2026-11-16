@@ -9,11 +9,11 @@ import { needsToFields, requirementChips, CAMPAIGN_STATUS_LABEL } from "@/lib/ne
 import { inr } from "@/lib/net/creators";
 import { scrubContacts } from "@/lib/net/guard";
 
-export const metadata = { title: "Open campaigns · Colatch Connect", robots: { index: false, follow: false } };
+export const metadata = { title: "Open campaigns", robots: { index: false, follow: false } };
 
 async function readBrief(fd) {
   "use server";
-  await requireTeam();
+  await requireTeam("shortlist");
   const text = String(fd.get("raw") ?? "").trim();
   if (text.length < 15) redirect(flashUrl("/team/campaigns#new", "err", "Paste a few lines of the brief first."));
   let id;

@@ -5,7 +5,7 @@ import { currentCreator } from "@/lib/net/creatorAuth";
 import { inr } from "@/lib/net/creators";
 import { REJECT_REASONS } from "@/lib/net/campaign";
 
-export const metadata = { title: "My deals · Colatch", robots: { index: false } };
+export const metadata = { title: "My deals", robots: { index: false } };
 
 const label = { new: ["Under review", ""], shortlisted: ["Shortlisted", "ok"], accepted: ["Selected", "good"], rejected: ["Not selected", "low"], withdrawn: ["Withdrawn", ""] };
 const dueText = (created) => {

@@ -2,18 +2,19 @@ import { redirect } from "next/navigation";
 import TeamShell from "../../../_ui/TeamShell";
 import { flashUrl } from "../../../_ui/flash";
 import { requireTeam } from "../../_guard";
+import { audit } from "@/lib/net/security";
 import { env } from "@/lib/net/env";
 import { lookupProfile, metaReady } from "@/lib/net/meta";
 import { upsertFromInstagram, aiReview, compact, inr, erBand, tierFor, int, str, NICHES, CREATOR_STATUSES, DEAL_STAGES, STAGE_LABEL } from "@/lib/net/creators";
 import { SKILLS, list } from "@/lib/net/match";
 
-export const metadata = { title: "Creator · Colatch Connect", robots: { index: false, follow: false } };
+export const metadata = { title: "Creator", robots: { index: false, follow: false } };
 
 async function act(fd) {
   "use server";
-  await requireTeam();
   const id = String(fd.get("id") ?? "");
   const action = String(fd.get("action") ?? "");
+  const me = await requireTeam("shortlist", `/team/creators/${encodeURIComponent(id)}`);
   let msg = "", bad = false;
   try {
     if (action === "save") {
@@ -44,14 +45,28 @@ async function act(fd) {
       }
     } else if (action === "owner") {
       await env.DB.prepare("UPDATE creators SET owner_verified=1 WHERE id=?").bind(id).run();
-      msg = "Ownership marked verified.";
+      // Verifying ownership also clears a pending claim, so the account can see this creator's deals and payouts.
+      const cl = await env.DB.prepare("UPDATE creator_accounts SET claim_status='own', claim_verified_by=? WHERE creator_id=? AND claim_status='pending'").bind(me.email, id).run();
+      await audit({ kind: "team", id: me.email }, "creator.owner_verified", "creator", id, { claims_cleared: cl.meta?.changes || 0 });
+      msg = cl.meta?.changes ? "Ownership verified. The creator's account can now see their deals." : "Ownership marked verified.";
     } else if (action === "deal") {
+      // A hand-made CRM deal starts in a pipeline stage; confirmed/live/paid only come from the deal steps.
+      const stage = String(fd.get("stage") || "shortlisted");
+      if (!["shortlisted", "contacted", "negotiating"].includes(stage)) throw new Error("New deals start as shortlisted, contacted or negotiating.");
+      const fee = int(fd.get("fee"));
+      if (fee != null && (fee < 0 || fee > 1e8)) throw new Error("Enter the fee in rupees.");
+      const dealId = crypto.randomUUID();
       await env.DB.prepare("INSERT INTO creator_deals (id, creator_id, brand, deliverable, stage, fee, expected_views, go_live_date, notes) VALUES (?,?,?,?,?,?,?,?,?)")
-        .bind(crypto.randomUUID(), id, str(fd.get("brand")), str(fd.get("deliverable")), String(fd.get("stage") || "shortlisted"), int(fd.get("fee")),
+        .bind(dealId, id, str(fd.get("brand")), str(fd.get("deliverable")), stage, fee,
           int(fd.get("expected_views")), str(fd.get("go_live_date")), str(fd.get("notes"))).run();
+      await audit({ kind: "team", id: me.email }, "deal.create", "deal", dealId, { creator: id, manual: true });
       msg = "Added to the CRM.";
     }
-  } catch (e) { msg = e instanceof Error ? e.message : "Something went wrong."; bad = true; }
+  } catch (e) {
+    bad = true;
+    if (e?.code) { console.error("[team/creator]", action, e); msg = "Something went wrong, nothing was saved."; }
+    else msg = e instanceof Error ? e.message : "Something went wrong.";
+  }
   redirect(msg ? flashUrl(`/team/creators/${id}`, bad ? "err" : "ok", msg) : `/team/creators/${id}`);
 }
 
@@ -69,6 +84,7 @@ export default async function Page({ params, searchParams }) {
   const hasAccount = await env.DB.prepare("SELECT email FROM creator_accounts WHERE creator_id=?").bind(id).first();
   const b = erBand(c.engagement_rate, c.followers);
   const ownerOk = Boolean(c.owner_verified);
+  const claims = (await env.DB.prepare("SELECT email, created_at FROM creator_accounts WHERE creator_id=? AND claim_status='pending'").bind(c.id).all().catch(() => ({ results: [] }))).results ?? [];
   const vcode = c.verify_code;
   const skills = list(c.skills);
   const niches = list(c.niche);
@@ -95,6 +111,7 @@ export default async function Page({ params, searchParams }) {
       </div>
 
       <div className="note info" style={{ marginTop: 16 }}>
+        {claims.length > 0 && <div className="note warn" style={{ marginBottom: 10 }}><b>Pending claim:</b> {claims.map((x) => x.email).join(", ")} joined with this handle. Check it's really them (bio code, DM from the account) before verifying: until then they can't see deals or payouts. <form action={act} style={{ display: "inline" }}>{hidden("owner")}<button className="btn sm">Verify claim</button></form></div>}
         {ownerOk ? <b style={{ color: "var(--good)" }}>Owner verified ✓ · </b> : vcode ? <span>Bio code <code className="k">{vcode}</code> <form action={act} style={{ display: "inline" }}>{hidden("owner")}<button className="btn sm">Mark verified</button></form> · </span> : null}
         Source: <b>{c.source}</b>{c.last_synced_at ? ` · Instagram numbers from ${String(c.last_synced_at).slice(0, 10)}` : ""} · {hasAccount ? `Creator has a portal login (${hasAccount.email})` : "No portal login yet"}
         {ig && <form action={act} style={{ display: "inline", marginLeft: 10 }}>{hidden("refresh")}<button className="btn sm">Refresh from Instagram</button></form>}
@@ -137,7 +154,7 @@ export default async function Page({ params, searchParams }) {
             <div className="form-grid">
               <div className="fld"><label>Brand</label><input name="brand" required /></div>
               <div className="fld"><label>Deliverable</label><input name="deliverable" placeholder="1 Reel + 2 Stories" /></div>
-              <div className="fld"><label>Stage</label><select name="stage">{DEAL_STAGES.map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}</select></div>
+              <div className="fld"><label>Stage</label><select name="stage">{["shortlisted", "contacted", "negotiating"].map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}</select></div>
               <div className="fld"><label>Fee ₹</label><input name="fee" defaultValue={c.rate_reel ?? ""} /></div>
               <div className="fld"><label>Expected views</label><input name="expected_views" defaultValue={c.avg_views ?? ""} /></div>
               <div className="fld"><label>Go-live date</label><input name="go_live_date" type="date" /></div>

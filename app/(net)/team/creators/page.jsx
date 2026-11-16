@@ -7,11 +7,11 @@ import { lookupProfile, metaReady, cleanHandle } from "@/lib/net/meta";
 import { upsertFromInstagram, compact, erBand, tierFor, int, str, parseCsv, mapCsvRows, NICHES, CREATOR_STATUSES, STAGE_LABEL } from "@/lib/net/creators";
 import { SKILLS, LANGUAGES, CITIES } from "@/lib/net/match";
 
-export const metadata = { title: "Influencer finder · Colatch Connect", robots: { index: false, follow: false } };
+export const metadata = { title: "Influencer finder", robots: { index: false, follow: false } };
 
 async function saveLookup(fd) {
   "use server";
-  await requireTeam();
+  await requireTeam("shortlist");
   const handle = String(fd.get("handle") ?? "");
   let id;
   try {
@@ -26,7 +26,7 @@ async function saveLookup(fd) {
 
 async function addCreator(fd) {
   "use server";
-  await requireTeam();
+  await requireTeam("shortlist");
   const handle = cleanHandle(String(fd.get("handle") ?? ""));
   if (!handle) redirect(flashUrl("/team/creators#add", "err", "Add an Instagram handle."));
   const exists = await env.DB.prepare("SELECT id FROM creators WHERE handle = ?").bind(handle).first();
@@ -44,7 +44,7 @@ async function addCreator(fd) {
 
 async function importSheet(fd) {
   "use server";
-  await requireTeam();
+  await requireTeam("shortlist");
   let msg = "", bad = false;
   try {
     let text = String(fd.get("csv") ?? "");

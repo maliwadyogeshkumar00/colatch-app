@@ -10,7 +10,7 @@ import { colatchScore } from "@/lib/net/score";
 import { ScoreStrip } from "../_ui/Score";
 import { brandTrust, payByLine, isFeatured } from "@/lib/net/trust";
 
-export const metadata = { title: "Your opportunities · Colatch", robots: { index: false } };
+export const metadata = { title: "Your opportunities", robots: { index: false } };
 
 export default async function Page({ searchParams }) {
   const me = await currentCreator();
@@ -80,7 +80,7 @@ export default async function Page({ searchParams }) {
           return (
             <a key={k.id} className="opp" href={`/creator/o/${k.slug}`}>
               <div className="top">
-                <div style={{ minWidth: 0 }}><div className="br">{brandLabel(k)}{k.funded ? " · Budget funded ✓" : ""}</div><h3>{k.title}</h3></div>
+                <div style={{ minWidth: 0 }}><div className="br">{brandLabel(k)}{trustById.get(k.id)?.funded ? " · Brand has paid ✓" : ""}</div><h3>{k.title}</h3></div>
                 <div className="row" style={{ gap: 10, flex: "none" }}>
                   {isFeatured(k) && <span className="pill ok">Featured</span>}
                   {sc.tier === "Icon" && isFresh(k) && <span className="pill ok">Early</span>}

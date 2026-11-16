@@ -42,7 +42,7 @@ const isFresh = (k) => { const t = Date.parse(String(k.created_at || "").replace
 
 export async function generateMetadata({ params }) {
   const k = await getCampaign(params.slug).catch(() => null);
-  return { title: `${k?.title ?? "Brief"} · Colatch`, description: (k?.brief || "").slice(0, 150), robots: { index: false } };
+  return { title: `${k?.title ?? "Brief"}`, description: (k?.brief || "").slice(0, 150), robots: { index: false } };
 }
 
 async function apply(fd) {
@@ -188,7 +188,7 @@ export default async function Page({ params, searchParams }) {
         <div className="grid2" style={{ gridTemplateColumns: "minmax(0,1.5fr) minmax(0,1fr)", alignItems: "start" }}>
           <div className="panel pad">
             <div className="trust">
-              <span className={trust.funded ? "ok" : ""}>{trust.funded ? "✓ Budget funded with Colatch" : "Funding confirmed before you start"}</span>
+              <span className={trust.funded ? "ok" : ""}>{trust.funded ? "✓ Brand has paid Colatch" : "Brand pays Colatch before you start"}</span>
               {trust.verified && <span className="ok">✓ Verified brand</span>}
               {isFeatured(k) && <span>Featured brief</span>}
               {!NON_CASH.includes(k.pay_type || "cash") && <span className="ok">{payByLine(k)}</span>}
@@ -218,7 +218,7 @@ export default async function Page({ params, searchParams }) {
             </div>
             <div className="loss">
               <h4>What you'd lose going direct</h4>
-              {goingDirectLosses({ funded: Boolean(k.funded), fee: existing?.rate_quote ?? c?.rate_reel ?? null, payDays: k.payment_days }).map((x) => <div key={x.title}><b>{x.title}.</b> {x.line}</div>)}
+              {goingDirectLosses({ funded: trust.funded, fee: existing?.rate_quote ?? c?.rate_reel ?? null, payDays: k.payment_days }).map((x) => <div key={x.title}><b>{x.title}.</b> {x.line}</div>)}
             </div>
             <p className="hint" style={{ margin: "14px 0 0" }}>Colatch never charges creators to apply or join. We only contact you from @colatch on Instagram, a @colatch.com email or the WhatsApp number in your portal.</p>
           </div>

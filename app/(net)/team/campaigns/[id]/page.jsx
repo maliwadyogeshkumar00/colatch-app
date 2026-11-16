@@ -17,7 +17,7 @@ import { colatchScore } from "@/lib/net/score";
 import { notify } from "@/lib/net/notify";
 import { audit } from "@/lib/net/security";
 
-export const metadata = { title: "Campaign · Colatch Connect", robots: { index: false, follow: false } };
+export const metadata = { title: "Campaign", robots: { index: false, follow: false } };
 
 const back = (id, key, msg) => flashUrl(`/team/campaigns/${id}`, key, msg);
 

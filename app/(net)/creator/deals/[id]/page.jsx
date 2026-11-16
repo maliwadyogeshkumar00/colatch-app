@@ -13,7 +13,7 @@ import { PAY_LABEL } from "@/lib/net/campaign";
 import { scrubContacts, safeUrl } from "@/lib/net/guard";
 import { goingDirectLosses } from "@/lib/net/trust";
 
-export const metadata = { title: "Deal · Colatch", robots: { index: false } };
+export const metadata = { title: "Deal", robots: { index: false } };
 
 const kindLabel = { cancelled: "Deal cancelled", refunded: "Brand refunded", live_link: "You shared the live link", signoff: "Brand signed off", funded: "Brand funded the deal", sow: "You accepted the terms", draft: "You sent a draft", changes: "Brand asked for changes", approved: "Draft approved", live: "Post verified live", released: "Payout approved", paid: "Paid", note: "You", results: "Results updated" };
 const load = (id, creatorId) => env.DB.prepare("SELECT * FROM creator_deals WHERE id=? AND creator_id=?").bind(id, creatorId).first();

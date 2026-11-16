@@ -18,7 +18,7 @@ async function setShowEarnings(fd) {
   redirect("/creator/earnings#flex");
 }
 
-export const metadata = { title: "Earnings · Colatch", robots: { index: false } };
+export const metadata = { title: "Earnings", robots: { index: false } };
 
 const reasonLabel = { creator_first_deal: "Creator you referred got their first paid deal", brand_fee_share: "Brand you referred ran a campaign", bypass_report: "Thank you for reporting an off-platform request" };
 const ms = (s) => Date.parse(String(s).replace(" ", "T") + "Z");

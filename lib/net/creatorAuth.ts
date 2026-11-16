@@ -17,14 +17,24 @@ function parseSubject(raw: string | null, prefix: 'cr' | 'tm'): { id: string; v:
 }
 
 /** Logged-in creator (account + creator row) or null. */
-export async function currentCreator(): Promise<{ accountId: string; email: string; creator: any } | null> {
+/**
+ * The logged-in creator, or null. If the account is a pending claim on a profile Colatch imported
+ * (claim_status <> 'own'), `creator` is a stand-in with a non-matching id: every page that
+ * queries by creator.id then shows nothing of the real creator's deals, earnings or payout details,
+ * and profile edits change no rows, until the team verifies the claim. `claimPending` says why.
+ */
+export async function currentCreator(): Promise<{ accountId: string; email: string; creator: any; claimPending: boolean } | null> {
   const sub = parseSubject(await readSession(await sessionSecret(env), cookies().get(CREATOR_COOKIE)?.value), 'cr');
   if (!sub) return null;
-  const acc = await env.DB.prepare('SELECT id, email, creator_id, session_version FROM creator_accounts WHERE id = ?').bind(sub.id).first<any>();
+  const acc = await env.DB.prepare('SELECT id, email, creator_id, session_version, claim_status FROM creator_accounts WHERE id = ?').bind(sub.id).first<any>();
   if (!acc || Number(acc.session_version || 1) !== sub.v) return null;
   const creator = await env.DB.prepare('SELECT * FROM creators WHERE id = ?').bind(acc.creator_id).first<any>();
   if (!creator) return null;
-  return { accountId: acc.id, email: acc.email, creator };
+  if ((acc.claim_status || 'own') !== 'own') {
+    const stub = { id: `pending:${acc.id}`, handle: creator.handle, name: creator.name, pending_claim: true };
+    return { accountId: acc.id, email: acc.email, creator: stub, claimPending: true };
+  }
+  return { accountId: acc.id, email: acc.email, creator, claimPending: false };
 }
 
 /** Call only from a Server Action or Route Handler. */

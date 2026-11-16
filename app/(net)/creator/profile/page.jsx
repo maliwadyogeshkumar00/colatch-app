@@ -8,7 +8,7 @@ import { profileFromForm, saveProfile, compact, str } from "@/lib/net/creators";
 import { lookupProfile, metaReady } from "@/lib/net/meta";
 import { profileGaps } from "@/lib/net/match";
 
-export const metadata = { title: "Your profile · Colatch", robots: { index: false } };
+export const metadata = { title: "Your profile", robots: { index: false } };
 
 const back = (tone, msg) => `/creator/profile?tone=${tone}&msg=${encodeURIComponent(msg)}`;
 

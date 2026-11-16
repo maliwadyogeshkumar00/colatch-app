@@ -10,7 +10,7 @@ import { inr } from "@/lib/net/creators";
 import { formatIST } from "@/lib/net/brief";
 import { DEMO_INSERTS, DEMO_DELETES } from "./demo";
 
-export const metadata = { title: "Network overview · Colatch Connect", robots: { index: false, follow: false } };
+export const metadata = { title: "Network overview", robots: { index: false, follow: false } };
 
 async function loadDemo() {
   "use server";

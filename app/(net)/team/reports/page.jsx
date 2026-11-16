@@ -6,7 +6,7 @@ import { env } from "@/lib/net/env";
 import { logEvent } from "@/lib/net/deal";
 import { audit } from "@/lib/net/security";
 
-export const metadata = { title: "Off-platform reports · Colatch Connect", robots: { index: false, follow: false } };
+export const metadata = { title: "Off-platform reports", robots: { index: false, follow: false } };
 
 const BOUNTY = 500;
 
