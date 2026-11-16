@@ -143,7 +143,7 @@ async function loadDone(token) {
 
 const CSS = `.pg-brief .bscore{display:flex;gap:16px;align-items:flex-start;padding:16px 18px;border-radius:14px;background:var(--ivory-2);border:1px solid var(--line)}
 .pg-brief .bscore-ring{flex:none;width:68px;height:68px;border-radius:50%;display:grid;place-content:center;text-align:center;border:3px solid var(--gold);line-height:1}
-.pg-brief .bscore-ring b{font-size:22px;color:var(--p900)}.pg-brief .bscore-ring span{font-size:10px;color:var(--ink-4)}
+.pg-brief .bscore-ring b{font-size:22px;color:var(--head)}.pg-brief .bscore-ring span{font-size:10px;color:var(--ink-4)}
 .pg-brief .bscore-ring.lo{border-color:#c98a3a}.pg-brief .bscore-ring.hi{border-color:var(--good)}
 .pg-brief .addon{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;border:1px solid var(--line);border-radius:12px;background:var(--paper);cursor:pointer}
 .pg-brief .addon input{margin-top:4px}.pg-brief .addon b{display:block}.pg-brief .addon .hint{display:block}

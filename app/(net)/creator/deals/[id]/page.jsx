@@ -136,7 +136,7 @@ export default async function Page({ params, searchParams }) {
   return (
     <PublicShell creatorName={me.creator.name || me.creator.handle} path="/creator/applications">
       <div className="spread" style={{ marginBottom: 16 }}>
-        <div><div className="lbl">{PAY_LABEL[k?.pay_type || "cash"]} deal</div><h1 style={{ margin: "6px 0 0", fontWeight: 300, fontSize: 30, color: "var(--p900)" }}>{d.sow_accepted_at ? d.brand || "Brand" : "Brand revealed after you accept"} · <b style={{ fontWeight: 600 }}>{d.deliverable || "Deliverables"}</b></h1></div>
+        <div><div className="lbl">{PAY_LABEL[k?.pay_type || "cash"]} deal</div><h1 style={{ margin: "6px 0 0", fontWeight: 300, fontSize: 30, color: "var(--head)" }}>{d.sow_accepted_at ? d.brand || "Brand" : "Brand revealed after you accept"} · <b style={{ fontWeight: 600 }}>{d.deliverable || "Deliverables"}</b></h1></div>
         {k?.slug && <a className="btn" href={`/creator/o/${k.slug}`}>See the brief</a>}
       </div>
       {flash && <div className={`note ${tone}`} style={{ marginBottom: 16 }}>{flash}</div>}
@@ -178,7 +178,9 @@ export default async function Page({ params, searchParams }) {
             </form>
           )}
 
-          {d.draft_status === "submitted" && <div className="panel pad"><h2>Draft in review</h2><p style={{ margin: 0 }}>The brand has until <b>{d.auto_approve_at ? new Date(d.auto_approve_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }) : "—"}</b> to reply ({countdown(d.auto_approve_at)} left). If they don't, your draft is approved automatically.</p></div>}
+          {d.draft_status === "submitted" && <div className="panel pad"><h2>Draft in review</h2><p style={{ margin: 0 }}>{d.auto_approve_at
+            ? <>The brand has until <b>{new Date(d.auto_approve_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })}</b> to reply ({countdown(d.auto_approve_at)} left). If they don't, your draft is approved automatically.</>
+            : <>The brand is reviewing your draft. We'll tell you as soon as they approve it or ask for changes.</>}</p></div>}
 
           {!closed && d.draft_status === "approved" && !d.live_at && d.post_url && <div className="note info">You shared {safeUrl(d.post_url) ? <a className="link" href={safeUrl(d.post_url)} target="_blank" rel="noopener noreferrer">your live post</a> : "your live post"}. The team is checking it. You can update the link below if it changed.</div>}
           {!closed && d.draft_status === "approved" && !d.live_at && (

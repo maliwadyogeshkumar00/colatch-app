@@ -22,14 +22,14 @@ const CSS = `
 .pg-ideas .idea{display:flex;flex-direction:column;background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:var(--sh-2);transition:transform .2s var(--ease),box-shadow .2s var(--ease)}
 .pg-ideas .idea:hover{transform:translateY(-3px);box-shadow:var(--sh-3)}
 .pg-ideas .occ{align-self:flex-start;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--gold-deep);background:rgba(232,184,75,.14);padding:4px 10px;border-radius:999px}
-.pg-ideas .idea h3{margin:12px 0 8px;font-size:18px;line-height:1.3;color:var(--p900);letter-spacing:-.01em}
+.pg-ideas .idea h3{margin:12px 0 8px;font-size:18px;line-height:1.3;color:var(--head);letter-spacing:-.01em}
 .pg-ideas .idea p{margin:0 0 14px;color:var(--ink-3);font-size:14px;line-height:1.55;display:-webkit-box;-webkit-line-clamp:5;-webkit-box-orient:vertical;overflow:hidden}
 .pg-ideas .by{display:flex;gap:10px;align-items:center;margin-top:auto;padding-top:14px;border-top:1px solid var(--line-2)}
 .pg-ideas .by .ava{width:34px;height:34px;font-size:12px}
 .pg-ideas .by b{display:block;font-size:13.5px}
 .pg-ideas .by span{display:block;font-size:12px;color:var(--ink-4)}
 .pg-ideas .price{display:flex;justify-content:space-between;align-items:center;margin-top:14px}
-.pg-ideas .price .amt{font-size:22px;font-weight:300;letter-spacing:-.02em;color:var(--p900)}
+.pg-ideas .price .amt{font-size:22px;font-weight:300;letter-spacing:-.02em;color:var(--head)}
 .pg-ideas .price small{display:block;font-size:11px;color:var(--ink-4)}
 `;
 

@@ -84,7 +84,7 @@ export default async function Page({ searchParams }) {
                 <span className={`pill ${k.status === "open" ? "good" : k.status === "pending" ? "ok" : ""}`}>{CAMPAIGN_STATUS_LABEL[k.status] || k.status}</span>
               </div>
             </div>
-            <div className="why">{requirementChips(k).map((r) => <span key={r} style={{ background: "var(--ivory-2)", color: "var(--p700)" }}>{r}</span>)}</div>
+            <div className="why">{requirementChips(k).map((r) => <span key={r} style={{ background: "var(--ivory-2)", color: "var(--accent-ink)" }}>{r}</span>)}</div>
             <div className="facts"><span><b>{k.apps}</b> applicants</span>{k.creators_needed ? <span>Needs <b>{k.creators_needed}</b></span> : null}{k.deliverables && <span>{k.deliverables}</span>}{k.budget_total ? <span>Budget <b>{inr(k.budget_total)}</b></span> : null}{k.deadline && <span>Apply by <b>{k.deadline}</b></span>}</div>
           </a>
         ))}

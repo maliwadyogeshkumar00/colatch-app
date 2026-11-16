@@ -10,6 +10,8 @@ import { blindBrand } from "@/lib/net/guard";
 import { colatchScore } from "@/lib/net/score";
 import { ScoreStrip } from "../_ui/Score";
 import { brandTrust, payByLine, isFeatured } from "@/lib/net/trust";
+import { nextMove, isMine } from "@/lib/net/moves";
+import { MoveRow } from "../_ui/Moves";
 
 export const metadata = { title: "Your opportunities", robots: { index: false } };
 
@@ -42,16 +44,36 @@ export default async function Page({ searchParams }) {
   const urgent = (d) => { const n = daysLeft(d); return n != null && n <= 2; };
   const first = (c.name || c.handle).split(" ")[0];
 
+  // The call sheet: every live deal, sorted by whose move it is (worked out by the deal state machine).
+  const deals = (await env.DB.prepare("SELECT * FROM creator_deals WHERE creator_id=? AND stage <> 'cancelled' AND pay_status NOT IN ('paid','refunded') ORDER BY updated_at DESC LIMIT 30").bind(c.id).all()).results ?? [];
+  const moves = deals.map((d) => ({ d, m: nextMove(d) })).filter((x) => x.m);
+  const myMoves = moves.filter((x) => isMine(x.m, "creator"));
+  const waiting = moves.filter((x) => !isMine(x.m, "creator"));
+  const pendingApps = ((await env.DB.prepare("SELECT a.status, k.title, k.slug, k.id FROM campaign_applications a JOIN campaigns k ON k.id=a.campaign_id WHERE a.creator_id=? AND a.status IN ('new','shortlisted') ORDER BY a.created_at DESC LIMIT 5").bind(c.id).all()).results ?? []);
+
   const hero = (
     <section className="hero"><div className="hero-in">
       <div className="eb">{welcome ? "Welcome to Colatch" : "Your opportunities"}</div>
-      <h1>{mine.length ? <>{mine.length} {mine.length === 1 ? "brief fits" : "briefs fit"} <b>you, {first}.</b></> : <>Your matches land <b>here.</b></>}</h1>
-      <p>We only show briefs where you meet what the brand asked for: your talent, size, city and language. Higher match means the brand is more likely to pick you. You decide what to apply for.</p>
+      <h1>{myMoves.length ? <>{myMoves.length === 1 ? "One thing" : `${myMoves.length} things`} need <b>you, {first}.</b></> : mine.length ? <>{mine.length} {mine.length === 1 ? "brief fits" : "briefs fit"} <b>you, {first}.</b></> : <>Your matches land <b>here.</b></>}</h1>
+      <p>{myMoves.length ? "Your move first, then what you're waiting on, then new briefs that fit you." : "Briefs where you meet what the brand asked for: talent, size, city and language. You decide what to apply for."}</p>
     </div></section>
   );
 
   return (
-    <PublicShell creatorName={c.name || c.handle} path="/creator" hero={hero}>
+    <PublicShell creatorName={c.name || c.handle} path="/creator" hero={hero} moves={myMoves.length}>
+      {(myMoves.length > 0 || waiting.length > 0 || pendingApps.length > 0) && (
+        <section aria-labelledby="sheet-mine" style={{ marginBottom: 32 }}>
+          {myMoves.length > 0 && <div className="sheet" style={{ marginBottom: 24 }}>
+            <div className="sheet__h"><h2 id="sheet-mine">Your move</h2><span className="n">{myMoves.length}</span></div>
+            {myMoves.map(({ d, m }) => <MoveRow key={d.id} kind="mine" href={`/creator/deals/${d.id}`} title={m.forCreator} sub={`${d.brand || "Brand"} · ${d.deliverable || "Deal"}`} cta="Open" />)}
+          </div>}
+          {(waiting.length > 0 || pendingApps.length > 0) && <div className="sheet">
+            <div className="sheet__h"><h2 id={myMoves.length ? undefined : "sheet-mine"}>Waiting on others</h2><span className="n">{waiting.length + pendingApps.length}</span></div>
+            {waiting.map(({ d, m }) => <MoveRow key={d.id} kind="wait" href={`/creator/deals/${d.id}`} title={m.forCreator} sub={`${d.brand || "Brand"} · ${d.deliverable || "Deal"}`} cta="View" />)}
+            {pendingApps.map((a) => <MoveRow key={a.id} kind="wait" href={`/creator/o/${a.slug}`} title={a.status === "shortlisted" ? "Shortlisted: the brand decides next" : "Applied: Colatch is reviewing"} sub={a.title} cta="View" />)}
+          </div>}
+        </section>
+      )}
       <ScoreStrip s={sc} />
       {early.length > 0 && (
         <div className="note info" style={{ marginBottom: 20 }}>
@@ -68,6 +90,7 @@ export default async function Page({ searchParams }) {
         </div>
       )}
 
+      <div className="sheet__h" style={{ marginTop: 8 }}><h2>Briefs that fit you</h2><span className="n">{mine.length}</span></div>
       <div className="spread" style={{ marginBottom: 14 }}>
         <div className="row" style={{ gap: 8 }}>
           {(c.skills || "").split(",").filter(Boolean).map((s) => <span key={s} className="tag">{s.trim()}</span>)}
@@ -94,8 +117,8 @@ export default async function Page({ searchParams }) {
               {k.brief && <p>{k.brief.length > 220 ? k.brief.slice(0, 220) + "…" : k.brief}</p>}
               <div className="why">{m.reasons.map((r) => <span key={r}>{r}</span>)}</div>
               <div className="facts">
-                <span className={`pill ${cash ? "good" : ""}`}>{PAY_LABEL[k.pay_type || "cash"]}</span>
-                <span><b>{rewardLine(k)}</b></span>
+                <span className="pill">{PAY_LABEL[k.pay_type || "cash"]}</span>
+                {rewardLine(k) !== PAY_LABEL[k.pay_type || "cash"] && <span><b>{rewardLine(k)}</b></span>}
                 {countdown(k.deadline) && <span className={urgent(k.deadline) ? "pill ok" : ""}>{countdown(k.deadline)}</span>}
                 {cash && <span>{payByLine(k)}</span>}
                 {trustById.get(k.id)?.verified && <span className="pill good">Verified brand</span>}
@@ -118,7 +141,7 @@ export default async function Page({ searchParams }) {
             <div key={k.id} className="opp" style={{ opacity: 0.75 }}><div className="br">{brandLabel(k)}</div><h3>{k.title}</h3>
               <div className="why">
                 {m.blockers.map((b) => <span key={b} className="no">{b}</span>)}
-                {requirementChips(k).slice(0, 3).map((r) => <span key={"r" + r} style={{ background: "var(--ivory-2)", color: "var(--p700)" }}>{r}</span>)}
+                {requirementChips(k).slice(0, 3).map((r) => <span key={"r" + r} style={{ background: "var(--ivory-2)", color: "var(--accent-ink)" }}>{r}</span>)}
               </div></div>
           ))}</div></div>
       )}

@@ -72,7 +72,7 @@ export default async function Page({ params, searchParams }) {
       <PublicShell mode="client" narrow>
         <div className="panel pad" style={{ maxWidth: 620, margin: "20px auto 0", textAlign: "center" }}>
           <div className="lbl" style={{ color: "var(--good)" }}>Booking received</div>
-          <h2 style={{ fontSize: 26, letterSpacing: "-.02em", textTransform: "none", color: "var(--p900)", margin: "10px 0 8px" }}>"{scrubContacts(done.title).text}" is yours to make happen.</h2>
+          <h2 style={{ fontSize: 26, letterSpacing: "-.02em", textTransform: "none", color: "var(--head)", margin: "10px 0 8px" }}>"{scrubContacts(done.title).text}" is yours to make happen.</h2>
           <p className="muted" style={{ margin: "0 0 18px" }}>We'll confirm the creator's dates{done.shortlist_due ? `, aiming for ${formatIST(done.shortlist_due)}` : ", usually within 2 working days"}, and email you your private campaign page. You approve the creator, fund the deal through Colatch, and see the post, the views and the proof in one place.</p>
           <div className="row" style={{ justifyContent: "center" }}><a className="btn" href="/pitches">Browse more ideas</a><a className="btn-foil" href="/brief">Post a full brief</a></div>
         </div>

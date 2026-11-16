@@ -81,7 +81,7 @@ export default async function Page({ searchParams }) {
     <PublicShell creatorName={c.name || c.handle} path="/creator/profile">
       <div className="wrap narrow" style={{ padding: 0 }}>
         <div className="spread" style={{ marginBottom: 18 }}>
-          <div><div className="lbl">Profile</div><h1 style={{ margin: "6px 0 0", fontWeight: 300, fontSize: 30, color: "var(--p900)" }}>@{c.handle}</h1></div>
+          <div><div className="lbl">Profile</div><h1 style={{ margin: "6px 0 0", fontWeight: 300, fontSize: 30, color: "var(--head)" }}>@{c.handle}</h1></div>
           <div className="row" style={{ gap: 12 }}><div className="score" style={{ "--v": done }}><i>{done}%</i></div><span className="small muted">complete</span></div>
         </div>
         <div className="note info" style={{ marginBottom: 16 }}>Your public media kit: <a className="link" href={`/m/${c.handle}`} target="_blank">{origin}/m/{c.handle}</a>. Put it in your Instagram bio so brands can book you through Colatch.</div>

@@ -33,14 +33,15 @@ export default function TeamShell({ active, eyebrow = "Colatch Connect", title, 
   const ico = (k) => <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{ __html: I[k] }} />;
   return (
     <div className="app">
+      <a className="skip" href="#main">Skip to content</a>
       <aside className="rail"><div className="jali" />
         <div className="rail__brand">
-          <svg className="em"><use href="#emblem-foil" /></svg>
+          <svg className="em" aria-hidden="true"><use href="#emblem-foil" /></svg>
           <div><svg className="wm"><use href="#wordmark" /></svg><div className="tg">Connect · Network</div></div>
         </div>
         <div className="navlabel">Creator network</div>
-        <nav className="nav">
-          {NAV.map((n) => <a key={n.key} className={n.key === active ? "on" : ""} href={n.href}>{ico(n.key)}<span>{n.label}</span></a>)}
+        <nav className="nav" aria-label="Creator network">
+          {NAV.map((n) => <a key={n.key} className={n.key === active ? "on" : ""} aria-current={n.key === active ? "page" : undefined} href={n.href}>{ico(n.key)}<span>{n.label}</span></a>)}
         </nav>
         <div className="navlabel">Team</div>
         <nav className="nav">
@@ -57,7 +58,7 @@ export default function TeamShell({ active, eyebrow = "Colatch Connect", title, 
           <a className="rail__out" href="/team/logout" aria-label="Sign out" title="Sign out"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><path d="m16 17 5-5-5-5M21 12H9" /></svg></a>
         </div>
       </aside>
-      <main className="main">
+      <main className="main" id="main" tabIndex={-1}>
         <div className="bar">
           <div><p className="eyebrow dash">{eyebrow}</p><h1 dangerouslySetInnerHTML={{ __html: title }} /></div>
           <div className="bar__right">{actions}</div>

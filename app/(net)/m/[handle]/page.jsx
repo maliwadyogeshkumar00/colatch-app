@@ -45,7 +45,7 @@ export default async function Page({ params }) {
     <PublicShell mode="client" hero={hero}>
       <div className="panel" style={{ display: "flex", alignItems: "center", gap: 16, padding: "14px 20px", marginBottom: 18, flexWrap: "wrap" }}>
         <div style={{ fontSize: 11, letterSpacing: ".14em", textTransform: "uppercase", color: "var(--ink-4)", fontWeight: 600 }}>Colatch Score</div>
-        <div style={{ fontSize: 26, fontWeight: 300, color: "var(--p900)", fontVariantNumeric: "tabular-nums" }}>{sc.score}<span style={{ fontSize: 14, color: "var(--ink-4)" }}> / 100</span></div>
+        <div style={{ fontSize: 26, fontWeight: 300, color: "var(--head)", fontVariantNumeric: "tabular-nums" }}>{sc.score}<span style={{ fontSize: 14, color: "var(--ink-4)" }}> / 100</span></div>
         <TierBadge tier={sc.tier} />
         <div style={{ flex: 1, minWidth: 220, fontSize: 13, color: "var(--ink-3)" }}>Built only from work Colatch verified: live posts, brand sign-offs, star ratings and on-time delivery. It can't be bought or self-reported.</div>
       </div>

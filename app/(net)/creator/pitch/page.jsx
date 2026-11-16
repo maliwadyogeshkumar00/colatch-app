@@ -14,7 +14,7 @@ export const metadata = { title: "Pitch an idea", robots: { index: false } };
 const CSS = `
 .pg-pitch .mine{display:grid;gap:14px}
 .pg-pitch .card-p{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px 20px;box-shadow:var(--sh-1)}
-.pg-pitch .card-p h3{margin:0 0 6px;font-size:17px;color:var(--p900)}
+.pg-pitch .card-p h3{margin:0 0 6px;font-size:17px;color:var(--head)}
 .pg-pitch .card-p p{margin:0 0 10px;color:var(--ink-2);font-size:14px;white-space:pre-line}
 .pg-pitch .tags{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px}
 .pg-pitch .tags span{font-size:11.5px;padding:3px 10px;border-radius:999px;background:var(--ivory-2);color:var(--ink-3);font-weight:600}

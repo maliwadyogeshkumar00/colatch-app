@@ -76,7 +76,7 @@ export default async function Page({ searchParams }) {
   return (
     <TeamShell active="home" title="Your creator <b>network</b>, at a glance." email={me.email}
       actions={<a className="btn-foil" href="/team/campaigns#new">+ New opportunity</a>}>
-      <p className="lead">Briefs from brands, creators who joined, and every deal from terms to payout. What needs you comes first.</p>
+      <p className="lead">What needs the team comes first: money, then drafts and applicants, then shortlists owed. Numbers for the network are below.</p>
       <div style={{ marginBottom: 16 }}><Flash sp={searchParams} /></div>
 
       {Number(k.reports_n) > 0 && (
@@ -84,37 +84,37 @@ export default async function Page({ searchParams }) {
           <b>{k.reports_n} open off-platform {Number(k.reports_n) === 1 ? "report" : "reports"}.</b> Someone says they were asked to deal outside Colatch. <a className="link" href="/team/reports">Review reports →</a>
         </div>
       )}
-      <div className="grid3">
+      <div className="sec">
+        <div className="h2">Needs you</div>
+        {nothing && <div className="panel empty"><b>Nothing waiting.</b>Share the brief link with brands and the join link with creators to get things moving.</div>}
+        <div className="grid2" style={{ alignItems: "start" }}>
+          {toPay.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Ready to pay out</h2></div>
+            <table className="tbl"><tbody>{toPay.slice(0, 5).map((d) => <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{nameOf(d)} × {d.brand}</a><div className="hint">{d.pay_status === "released" ? "Payout approved: send it, then record the UTR" : "Live and funded: verify the post, approve the payout"}</div></td><td className="num">{inr(d.fee)}</td></tr>)}</tbody></table>{toPay.length > 5 && <div className="pad" style={{ padding: "10px 16px" }}><a className="link small" href="/team/crm">See all payouts</a></div>}</div>}
+          {unfunded.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Terms accepted, brand not paid yet</h2></div>
+            <table className="tbl"><tbody>{unfunded.slice(0, 5).map((d) => <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{nameOf(d)} × {d.brand}</a><div className="hint">Collect the brand payment before the creator shoots</div></td><td className="num">{inr(d.fee)}</td></tr>)}</tbody></table>{unfunded.length > 5 && <div className="pad" style={{ padding: "10px 16px" }}><a className="link small" href="/team/crm">See all unpaid deals</a></div>}</div>}
+          {drafts.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Drafts in review</h2></div>
+            <table className="tbl"><tbody>{drafts.slice(0, 5).map((d) => <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{nameOf(d)} × {d.brand}</a></td><td className="num hint">{d.auto_approve_at ? `auto-approves ${formatIST(d.auto_approve_at)}` : ""}</td></tr>)}</tbody></table>{drafts.length > 5 && <div className="pad" style={{ padding: "10px 16px" }}><a className="link small" href="/team/crm">See all drafts</a></div>}</div>}
+          {newApps.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>New applicants to review</h2></div>
+            <table className="tbl"><tbody>{newApps.slice(0, 5).map((a) => <tr key={a.id}><td><a className="link" href={`/team/campaigns/${a.id}`}>{a.title}</a></td><td className="num"><span className="pill ok">{a.n} new</span></td></tr>)}</tbody></table>{newApps.length > 5 && <div className="pad" style={{ padding: "10px 16px" }}><a className="link small" href="/team/campaigns">See all briefs with applicants</a></div>}</div>}
+          {owed.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Shortlists owed to clients</h2></div>
+            <table className="tbl"><tbody>{owed.slice(0, 5).map((w) => {
+              const late = w.shortlist_due && Date.parse(w.shortlist_due) < now;
+              return <tr key={w.id}><td><a className="link" href={`/team/campaigns/${w.id}`}>{w.title}</a><div className="hint">{w.client_company || w.brand || "Brand"} · {w.status === "pending" ? "needs approval" : "open"}</div></td>
+                <td className="num">{w.shortlist_due ? <span className={`pill ${late ? "low" : "ok"}`}>{late ? "Late · " : "Due "}{formatIST(w.shortlist_due)}</span> : <span className="hint">no promise</span>}</td></tr>;
+            })}</tbody></table>{owed.length > 5 && <div className="pad" style={{ padding: "10px 16px" }}><a className="link small" href="/team/campaigns">See all {owed.length} briefs owed a shortlist</a></div>}</div>}
+          {pitchReqs.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Pitch requests from the idea board</h2></div>
+            <table className="tbl"><tbody>{pitchReqs.slice(0, 5).map((r) => <tr key={r.id}><td><a className="link" href={`/team/campaigns/${r.id}`}>{r.title}</a><div className="hint">{r.client_company || "Brand"} wants this idea · confirm the creator's dates</div></td>
+              <td className="num">{r.budget_total ? inr(r.budget_total) : ""}{r.shortlist_due ? <div className="hint">Due {formatIST(r.shortlist_due)}</div> : null}</td></tr>)}</tbody></table>{pitchReqs.length > 5 && <div className="pad" style={{ padding: "10px 16px" }}><a className="link small" href="/team/campaigns">See all pitch requests</a></div>}</div>}
+        </div>
+      </div>
+
+      <div className="grid3 sec">
         <div className="panel kpi"><div className="k">Open campaigns</div><div className="v">{k.open_n ?? 0}</div><div className="s">{k.pending_n ?? 0} waiting for approval</div></div>
         <div className="panel kpi"><div className="k">Shortlists owed</div><div className="v">{owed.length}</div><div className="s">{owed[0]?.shortlist_due ? `Next due ${formatIST(owed[0].shortlist_due)}` : "No promise pending"}</div></div>
         <div className="panel kpi"><div className="k">Applicants this week</div><div className="v">{k.apps_week ?? 0}</div><div className="s">across all briefs</div></div>
         <div className="panel kpi"><div className="k">Live deals</div><div className="v">{k.live_n ?? 0}</div><div className="s">posts up, payout pending</div></div>
         <div className="panel kpi"><div className="k">Creators</div><div className="v">{k.creators_n ?? 0}</div><div className="s">{k.accounts_n ?? 0} with a portal login</div></div>
         <div className="panel kpi"><div className="k">Paid this month</div><div className="v">{inr(k.paid_month ?? 0)}</div><div className="s">creator fees cleared</div></div>
-      </div>
-
-      <div className="sec">
-        <div className="h2">Needs you</div>
-        {nothing && <div className="panel empty"><b>Nothing waiting.</b>Share the brief link with brands and the join link with creators to get things moving.</div>}
-        <div className="grid2" style={{ alignItems: "start" }}>
-          {pitchReqs.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Pitch requests from the idea board</h2></div>
-            <table className="tbl"><tbody>{pitchReqs.map((r) => <tr key={r.id}><td><a className="link" href={`/team/campaigns/${r.id}`}>{r.title}</a><div className="hint">{r.client_company || "Brand"} wants this idea · confirm the creator's dates</div></td>
-              <td className="num">{r.budget_total ? inr(r.budget_total) : ""}{r.shortlist_due ? <div className="hint">Due {formatIST(r.shortlist_due)}</div> : null}</td></tr>)}</tbody></table></div>}
-          {owed.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Shortlists owed to clients</h2></div>
-            <table className="tbl"><tbody>{owed.map((w) => {
-              const late = w.shortlist_due && Date.parse(w.shortlist_due) < now;
-              return <tr key={w.id}><td><a className="link" href={`/team/campaigns/${w.id}`}>{w.title}</a><div className="hint">{w.client_company || w.brand || "Brand"} · {w.status === "pending" ? "needs approval" : "open"}</div></td>
-                <td className="num">{w.shortlist_due ? <span className={`pill ${late ? "low" : "ok"}`}>{late ? "Late · " : "Due "}{formatIST(w.shortlist_due)}</span> : <span className="hint">no promise</span>}</td></tr>;
-            })}</tbody></table></div>}
-          {newApps.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>New applicants to review</h2></div>
-            <table className="tbl"><tbody>{newApps.map((a) => <tr key={a.id}><td><a className="link" href={`/team/campaigns/${a.id}`}>{a.title}</a></td><td className="num"><span className="pill ok">{a.n} new</span></td></tr>)}</tbody></table></div>}
-          {drafts.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Drafts in review</h2></div>
-            <table className="tbl"><tbody>{drafts.map((d) => <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{nameOf(d)} × {d.brand}</a></td><td className="num hint">{d.auto_approve_at ? `auto-approves ${formatIST(d.auto_approve_at)}` : ""}</td></tr>)}</tbody></table></div>}
-          {toPay.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Ready to pay out</h2></div>
-            <table className="tbl"><tbody>{toPay.map((d) => <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{nameOf(d)} × {d.brand}</a><div className="hint">{d.pay_status === "released" ? "Payout approved: send it, then record the UTR" : "Live and funded: verify the post, approve the payout"}</div></td><td className="num">{inr(d.fee)}</td></tr>)}</tbody></table></div>}
-          {unfunded.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Terms accepted, brand not paid yet</h2></div>
-            <table className="tbl"><tbody>{unfunded.map((d) => <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{nameOf(d)} × {d.brand}</a><div className="hint">Collect the brand payment before the creator shoots</div></td><td className="num">{inr(d.fee)}</td></tr>)}</tbody></table></div>}
-        </div>
       </div>
 
       <div className="grid2 sec" style={{ alignItems: "start" }}>

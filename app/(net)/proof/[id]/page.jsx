@@ -35,7 +35,7 @@ export default async function Page({ params }) {
         <div className="panel pad" style={{ textAlign: "center", padding: "34px 26px" }}>
           <div className="lbl" style={{ color: "var(--good)" }}>✓ Verified by Colatch</div>
           {safeUrl(d.profile_pic) && <img src={safeUrl(d.profile_pic)} alt="" style={{ width: 84, height: 84, borderRadius: "50%", objectFit: "cover", margin: "18px auto 0" }} />}
-          <h1 style={{ margin: "14px 0 4px", fontWeight: 300, fontSize: 30, color: "var(--p900)" }}>{name} × <b style={{ fontWeight: 600 }}>{d.brand}</b></h1>
+          <h1 style={{ margin: "14px 0 4px", fontWeight: 300, fontSize: 30, color: "var(--head)" }}>{name} × <b style={{ fontWeight: 600 }}>{d.brand}</b></h1>
           <p className="muted" style={{ margin: 0 }}>@{d.handle} · {d.deliverable || "Campaign"} · live {String(d.live_at).slice(0, 10)}</p>
           <div className="grid3" style={{ marginTop: 24, textAlign: "left" }}>
             <div className="panel kpi" style={{ boxShadow: "none" }}><div className="k">Views</div><div className="v">{compact(d.actual_views)}</div></div>

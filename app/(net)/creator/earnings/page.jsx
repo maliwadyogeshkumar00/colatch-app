@@ -72,7 +72,7 @@ export default async function Page() {
   return (
     <PublicShell creatorName={c.name || c.handle} path="/creator/earnings">
       <div className="lbl">Earnings</div>
-      <h1 style={{ margin: "6px 0 20px", fontWeight: 300, fontSize: 32, color: "var(--p900)" }}>{inr(earned + refPaid)} <span style={{ fontSize: 16, color: "var(--ink-3)" }}>earned through Colatch</span></h1>
+      <h1 style={{ margin: "6px 0 20px", fontWeight: 300, fontSize: 32, color: "var(--head)" }}>{inr(earned + refPaid)} <span style={{ fontSize: 16, color: "var(--ink-3)" }}>earned through Colatch</span></h1>
 
       <div className="grid4">
         <div className="panel kpi"><div className="k">Paid to you</div><div className="v">{inr(earned)}</div><div className="s">{paid.length} {paid.length === 1 ? "deal" : "deals"}{tds ? ` · ${inr(tds)} TDS you can claim back` : ""}</div></div>

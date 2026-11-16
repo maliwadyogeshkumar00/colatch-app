@@ -22,7 +22,7 @@ export function ScoreRing({ score, tier, size = 64 }) {
   const inner = Math.round(size * 0.78);
   return (
     <div aria-label={`Colatch Score ${score} of 100`} style={{ width: size, height: size, borderRadius: "50%", flex: "none", display: "grid", placeItems: "center", background: `conic-gradient(${t.ring} ${score * 3.6}deg, rgba(31,21,36,.08) 0)` }}>
-      <i style={{ fontStyle: "normal", width: inner, height: inner, borderRadius: "50%", background: "var(--paper)", display: "grid", placeItems: "center", fontSize: Math.round(size * 0.3), fontWeight: size > 80 ? 300 : 700, color: "var(--p900)", fontVariantNumeric: "tabular-nums" }}>{score}</i>
+      <i style={{ fontStyle: "normal", width: inner, height: inner, borderRadius: "50%", background: "var(--paper)", display: "grid", placeItems: "center", fontSize: Math.round(size * 0.3), fontWeight: size > 80 ? 300 : 700, color: "var(--head)", fontVariantNumeric: "tabular-nums" }}>{score}</i>
     </div>
   );
 }

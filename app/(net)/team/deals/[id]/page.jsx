@@ -135,7 +135,7 @@ export default async function Page({ params, searchParams }) {
 
       {flash && <div className={`note ${tone}`} style={{ marginBottom: 16 }}>{flash}</div>}
       {priority && !closed && d.pay_status !== "paid" && <div className="note info" style={{ marginBottom: 16 }}><b>{tier} creator: priority payout.</b> Pay this creator as soon as the post is verified.</div>}
-      <DealRail d={d} side="team" />
+      <DealRail d={d} side="team" role={me.role} />
 
       <div className="grid4 sec" style={{ marginTop: 18 }}>
         <div className="panel kpi"><div className="k">Creator fee</div><div className="v">{inr(d.fee)}</div><div className="s">{q ? `Brand pays ${inr(q.total)} all-in${q.frozen ? " (locked at payment)" : ""}` : "Set the fee below"}</div></div>

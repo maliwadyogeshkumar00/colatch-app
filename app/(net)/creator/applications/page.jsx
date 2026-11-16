@@ -36,7 +36,7 @@ export default async function Page() {
         })}</div></div>}
       <div className="lbl">My applications</div>
       <p className="hint" style={{ margin: "0 0 10px" }}>The team aims to decide within 3 days and gives a reason if it's a no. You can withdraw from the brief page until you're selected.</p>
-      <h1 style={{ margin: "6px 0 20px", fontWeight: 300, fontSize: 30, color: "var(--p900)" }}>{apps.length} {apps.length === 1 ? "application" : "applications"}</h1>
+      <h1 style={{ margin: "6px 0 20px", fontWeight: 300, fontSize: 30, color: "var(--head)" }}>{apps.length} {apps.length === 1 ? "application" : "applications"}</h1>
       {apps.length ? (
         <div className="panel scroll-x"><table className="tbl"><thead><tr><th>Brief</th><th>Applied</th><th className="num">Match</th><th>Status</th></tr></thead><tbody>
           {apps.map((a, i) => (

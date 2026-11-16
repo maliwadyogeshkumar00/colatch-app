@@ -23,7 +23,7 @@ const CSS = `
 .pg-flex .card{width:100%;aspect-ratio:9/16;border-radius:22px;box-shadow:0 30px 60px -30px rgba(31,21,36,.55);display:block;background:#1E1128}
 .pg-flex .gets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:22px}
 .pg-flex .get{padding:18px;border-radius:14px;background:var(--paper);border:1px solid var(--line)}
-.pg-flex .get b{display:block;color:var(--p900);font-size:15px}
+.pg-flex .get b{display:block;color:var(--head);font-size:15px}
 .pg-flex .get span{font-size:13.5px;color:var(--ink-3)}
 @media(max-width:820px){.pg-flex .wrapx{grid-template-columns:1fr}.pg-flex .card{max-width:320px;margin:0 auto}}
 `;
