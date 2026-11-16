@@ -1,10 +1,15 @@
 /**
- * In-app email/password auth backed by Cloudflare D1 — replaces Supabase Auth.
- * Passwords: PBKDF2-SHA256, 100k iterations, per-user random salt.
- * Sessions: stateless signed cookie (userId.expiry.HMAC) — no session table.
+ * Email/password auth.
+ * Passwords: PBKDF2-SHA256 with a per-user random salt. New hashes use 600,000 iterations (OWASP
+ * guidance) and are stored as "p600k$<hash>"; older 100,000-iteration hashes still verify and are
+ * upgraded the next time that person logs in (see needsRehash).
+ * Sessions: signed cookie (subject.expiry.HMAC). The subject carries a session version, so bumping
+ * the version in the database signs that person out everywhere (logout-all, password change, disable).
  */
 
-const ITER = 100_000;
+const ITER = 600_000;
+const LEGACY_ITER = 100_000;
+const PREFIX = 'p600k$';
 
 function b64url(bytes: Uint8Array): string {
   let s = '';
@@ -19,20 +24,41 @@ function b64urlToBytes(s: string): Uint8Array {
   return out;
 }
 
-export async function hashPassword(password: string, saltB64?: string) {
-  const salt = saltB64 ? b64urlToBytes(saltB64) : crypto.getRandomValues(new Uint8Array(16));
+async function pbkdf2(password: string, salt: Uint8Array, iterations: number): Promise<string> {
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations: ITER, hash: 'SHA-256' }, key, 256);
-  return { hash: b64url(new Uint8Array(bits)), salt: b64url(salt) };
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', salt, iterations, hash: 'SHA-256' }, key, 256);
+  return b64url(new Uint8Array(bits));
 }
 
-export async function verifyPassword(password: string, hashB64: string, saltB64: string) {
-  const { hash } = await hashPassword(password, saltB64);
-  // constant-time-ish compare
-  if (hash.length !== hashB64.length) return false;
+/** New hash for a password. Returns { hash, salt } to store as password_hash and salt. */
+export async function hashPassword(password: string, saltB64?: string) {
+  const salt = saltB64 ? b64urlToBytes(saltB64) : crypto.getRandomValues(new Uint8Array(16));
+  return { hash: PREFIX + (await pbkdf2(password, salt, ITER)), salt: b64url(salt) };
+}
+
+function equal(a: string, b: string) {
+  if (a.length !== b.length) return false;
   let diff = 0;
-  for (let i = 0; i < hash.length; i++) diff |= hash.charCodeAt(i) ^ hashB64.charCodeAt(i);
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return diff === 0;
+}
+
+export async function verifyPassword(password: string, storedHash: string, saltB64: string) {
+  if (!storedHash || !saltB64 || storedHash === 'login-disabled') return false;
+  const salt = b64urlToBytes(saltB64);
+  if (storedHash.startsWith(PREFIX)) return equal(PREFIX + (await pbkdf2(password, salt, ITER)), storedHash);
+  return equal(await pbkdf2(password, salt, LEGACY_ITER), storedHash);
+}
+
+/** True when a stored hash uses the old iteration count and should be replaced after a good login. */
+export const needsRehash = (storedHash: string) => !!storedHash && !storedHash.startsWith(PREFIX);
+
+/** Minimum rules for any new password. Returns an error message, or null when it is fine. */
+export function passwordProblem(pw: string): string | null {
+  if (pw.length < 10) return 'Use at least 10 characters.';
+  if (pw.length > 200) return 'That password is too long.';
+  if (/^(.)\1+$/.test(pw) || /^(0123456789|1234567890|password|qwerty)/i.test(pw)) return 'Pick something harder to guess.';
+  return null;
 }
 
 async function hmac(secret: string, msg: string): Promise<string> {
@@ -56,7 +82,7 @@ export async function readSession(secret: string, cookie: string | undefined): P
   if (parts.length !== 3) return null;
   const [userId, exp, sig] = parts;
   if (Number(exp) < Date.now()) return null;
-  if ((await hmac(secret, `${userId}.${exp}`)) !== sig) return null;
+  if (!equal(await hmac(secret, `${userId}.${exp}`), sig)) return null;
   return userId;
 }
 

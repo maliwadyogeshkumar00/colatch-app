@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: colatch_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      # A throwaway database that exists only for this run. Nothing here touches the live Neon database.
+      DATABASE_URL: postgres://postgres:postgres@localhost:5432/colatch_test
+      TEAM_OWNER_EMAILS: owner@colatch-test.local
+      NODE_ENV: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install --no-audit --no-fund
+      - name: Session secret for this run only
+        run: echo "SESSION_SECRET=$(openssl rand -hex 32)" >> "$GITHUB_ENV"
+      - name: Unit tests
+        run: npm run test:unit
+      - name: Integration tests (real Postgres)
+        run: npm run test:int
+      - name: Production build
+        run: npm run build
+        env:
+          NODE_ENV: production
+      - name: Install browser
+        run: npx playwright install --with-deps chromium
+      - name: Start app
+        run: |
+          NODE_ENV=production npx next start -p 3000 > server.log 2>&1 &
+          for i in $(seq 1 60); do curl -sf http://localhost:3000/api/net/health && break; sleep 1; done
+      - name: End-to-end tests
+        run: npm run test:e2e
+        env:
+          BASE_URL: http://localhost:3000
+      - name: Server log
+        if: always()
+        run: tail -n 300 server.log || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7

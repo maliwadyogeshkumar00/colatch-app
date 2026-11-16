@@ -1,5 +1,10 @@
-node_modules
-.next
-.vercel
-.env*
 *.log
+.env*
+.next
+.next/
+.test-build/
+.vercel
+node_modules
+node_modules/
+playwright-report/
+test-results/
