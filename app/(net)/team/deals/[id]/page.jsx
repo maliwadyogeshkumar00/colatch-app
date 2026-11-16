@@ -97,7 +97,7 @@ export default async function Page({ params, searchParams }) {
   const events = (await env.DB.prepare("SELECT * FROM deal_events WHERE deal_id=? ORDER BY created_at DESC LIMIT 50").bind(d.id).all()).results ?? [];
   const fy = (await env.DB.prepare("SELECT COALESCE(SUM(fee),0) s FROM creator_deals WHERE creator_id=? AND pay_status='paid' AND paid_at >= ? AND id <> ?").bind(d.creator_id, fyStart(), d.id).first())?.s ?? 0;
   const q = await priceDeal(env, d, k || {}, Boolean(c?.gstin));
-  const ledger = (await env.DB.prepare("SELECT kind, amount_paise, tds_paise, utr, method, actor_id, created_at FROM finance_ledger WHERE deal_id=? ORDER BY id").bind(d.id).all()).results ?? [];
+  const ledger = (await env.DB.prepare("SELECT kind, amount_paise, tds_paise, utr, method, actor_id, at AS created_at FROM finance_ledger WHERE deal_id=? ORDER BY id").bind(d.id).all()).results ?? [];
   const money = can(me.role, "finance");
   const progress = can(me.role, "shortlist");
   const boss = me.role === "owner" || me.role === "admin";
@@ -233,7 +233,7 @@ export default async function Page({ params, searchParams }) {
           {money && <div className="panel pad">
             <h2>Money recorded</h2>
             {ledger.length ? <table className="tbl"><tbody>{ledger.map((l, i) => <tr key={i}>
-              <td>{({ brand_payment_received: "Brand paid Colatch", creator_payout_sent: "Paid to creator", brand_refund_sent: "Refunded to brand", referral_payout_sent: "Referral payout", adjustment: "Adjustment" })[l.kind] || l.kind}<div className="hint">{l.utr} · {l.actor_id} · {String(l.created_at).slice(0, 16)}</div></td>
+              <td>{({ brand_payment_received: "Brand paid Colatch", creator_payout_sent: "Paid to creator", brand_refund_sent: "Refunded to brand", referral_payout_sent: "Referral payout", adjustment: "Adjustment" })[l.kind] || l.kind}<div className="hint">{l.utr} · {l.actor_id} · {new Date(l.created_at).toISOString().slice(0, 16).replace("T", " ")}</div></td>
               <td className="num">{formatPaise(Number(l.amount_paise))}{Number(l.tds_paise) ? <div className="hint">TDS {formatPaise(Number(l.tds_paise))}</div> : null}</td></tr>)}</tbody></table>
               : <p className="hint">No money recorded on this deal yet.</p>}
             <p className="hint" style={{ margin: "10px 0 0" }}>Entries can't be edited or deleted. A mistake is fixed with an adjustment.</p>
