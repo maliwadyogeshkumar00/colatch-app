@@ -9,6 +9,8 @@ import { extractNeeds, slugify } from "@/lib/net/brief";
 import { needsToFields, requirementChips, CAMPAIGN_STATUS_LABEL } from "@/lib/net/campaign";
 import { inr } from "@/lib/net/creators";
 import { scrubContacts } from "@/lib/net/guard";
+import { weekSeries } from "@/lib/net/dashboard";
+import { PageHeader, KpiStrip, FilterBar, FilterChips, DataTable, Grid, Section, Card, AsideCard, InlineState, Pill, Tags, Split, Cell, Figure } from "@/components/ui";
 
 export const metadata = { title: "Open campaigns", robots: { index: false, follow: false } };
 
@@ -52,56 +54,99 @@ export default async function Page({ searchParams }) {
   const h = headers();
   const origin = `${h.get("x-forwarded-proto") || "https"}://${h.get("host")}`;
 
+  // Everything below is worked out from the rows already loaded: no extra queries.
+  const now = Date.now();
+  const nowSql = new Date(now).toISOString().replace("T", " ").slice(0, 19);
+  const by = (s) => camps.filter((c) => c.status === s).length;
+  const sum = (k) => camps.reduce((a, c) => a + Number(c[k] || 0), 0);
+  const newApps = sum("newapps"), allApps = sum("apps");
+  const weekly = weekSeries(camps.map((c) => c.created_at), now, 8);
+  const briefs8 = weekly.reduce((a, b) => a + b, 0);
+  const rush = camps.filter((c) => Number(c.rush) === 1 && c.status === "pending").length;
+  const held = camps.filter((c) => c.held_reason).length;
+  const plural = (n, one, many) => `${n.toLocaleString("en-IN")} ${n === 1 ? one : many}`;
+  const TABS = [["all", "All", camps.length], ["pending", "Waiting", counts.pending], ["open", "Open", counts.open], ["closed", "Closed", by("closed")], ["rejected", "Rejected", by("rejected")]];
+  const STATUS_TONE = { open: "done", pending: "wait", closed: "off", rejected: "off" };
+
+  const columns = [
+    { key: "title", label: "Campaign", render: (k) => (
+      <Cell eyebrow={`${k.brand || k.client_company || "Brand confidential"} · ${k.source === "client" ? "from client" : "team"}`} title={k.title}
+        sub={(requirementChips(k).length > 0 || k.deliverables) && <><Tags items={requirementChips(k)} max={4} />{k.deliverables && <span>{k.deliverables}</span>}</>} />
+    ) },
+    { key: "status", label: "Status", primary: true, render: (k) => (
+      <span className="ui-pills">
+        <Pill tone={STATUS_TONE[k.status] || "quiet"}>{CAMPAIGN_STATUS_LABEL[k.status] || k.status}</Pill>
+        {k.held_reason && <Pill tone="mine" title={k.held_reason}>On hold: verify brand</Pill>}
+        {Number(k.rush) === 1 && k.status === "pending" && <Pill tone="plum">Rush</Pill>}
+        {k.featured_until && String(k.featured_until) > nowSql && <Pill tone="gold">Featured</Pill>}
+      </span>
+    ) },
+    { key: "apps", label: "Applicants", num: true, render: (k) => (
+      <Figure value={Number(k.apps || 0)} note={k.newapps > 0 ? `${k.newapps} new` : k.creators_needed ? `needs ${k.creators_needed}` : null} />
+    ) },
+    { key: "budget_total", label: "Budget", num: true, render: (k) => (k.budget_total ? <Figure value={inr(k.budget_total)} /> : null) },
+    { key: "deadline", label: "Apply by", num: true, render: (k) => (k.deadline ? day(k.deadline) || k.deadline : null) },
+  ];
+
   return (
-    <TeamShell active="campaigns" eyebrow="Creator tools" title="Briefs in, <b>right creators</b> out." email={me.email}
-      actions={<a className="btn-foil" href="#new">+ New opportunity</a>}>
-      <p className="lead">Clients send briefs from the public brief page, or the team pastes one in here. AI turns it into clear needs: talent, city, size and language. Once you approve it, only creators who fit can see it and apply.</p>
-      {dbErr && <div className="note bad" style={{ marginBottom: 16 }}><b>Database not reachable.</b> ({dbErr})</div>}
+    <TeamShell active="campaigns" email={me.email} role={me.role}>
+      <PageHeader
+        crumbs={[{ label: "Creator tools" }, { label: "Open campaigns" }]}
+        actions={<a className="btn-foil" href="#new">+ New opportunity</a>}
+        eyebrow="Creator tools · Briefs"
+        title="Briefs in, <b>right creators</b> out."
+        sub="Clients send briefs from the public brief page, or the team pastes one in here. AI turns it into clear needs: talent, city, size and language. Once you approve it, only creators who fit can see it and apply."
+      />
+      {dbErr && <div style={{ marginBottom: 16 }}><InlineState kind="error" label="Database not reachable.">{dbErr}</InlineState></div>}
       <div style={{ marginBottom: 16 }}><Flash sp={searchParams} /></div>
 
-      <div className="grid3">
-        <div className="panel kpi"><div className="k">Waiting for approval</div><div className="v">{counts.pending}</div><div className="s">client and team briefs</div></div>
-        <div className="panel kpi"><div className="k">Live for creators</div><div className="v">{counts.open}</div><div className="s">shown only to matching creators</div></div>
-        <div className="panel kpi"><div className="k">Share these links</div><div className="s" style={{ marginTop: 8 }}>Clients: <code className="k">{origin}/brief</code></div><div className="s" style={{ marginTop: 6 }}>Creators: <code className="k">{origin}/join</code></div></div>
-      </div>
+      <KpiStrip label="Campaigns at a glance" items={[
+        { label: "Waiting for approval", value: counts.pending, foot: rush ? `${rush} marked rush · client and team briefs` : "client and team briefs", href: "?tab=pending" },
+        { label: "Live for creators", value: counts.open, foot: "shown only to matching creators", href: "?tab=open" },
+        { featured: true, label: "New applicants to review", value: newApps, foot: `${plural(allApps, "applicant", "applicants")} in all` },
+        { label: "Briefs in · 8 weeks", value: briefs8, spark: weekly, sparkLabel: "Briefs created per week, last 8 weeks", foot: "per week, oldest first" },
+      ]} />
 
-      <div className="row sec" style={{ marginTop: 24 }}>
-        {[["all", "All"], ["pending", "Waiting"], ["open", "Open"], ["closed", "Closed"], ["rejected", "Rejected"]].map(([key, l]) => <a key={key} className={`btn sm ${tab === key ? "plum" : ""}`} href={`?tab=${key}`}>{l}</a>)}
-      </div>
+      <Grid aside={<>
+        <AsideCard eyebrow="Insight" title="Where briefs stand" foot={<a href="?tab=all">See every brief</a>}>
+          <Split label="Campaigns by status" parts={[
+            { label: "Waiting", n: counts.pending, href: "?tab=pending" },
+            { label: "Open", n: counts.open, href: "?tab=open" },
+            { label: "Closed", n: by("closed"), href: "?tab=closed" },
+            { label: "Rejected", n: by("rejected"), href: "?tab=rejected" },
+          ]} />
+          <p className="small">{counts.pending ? <><b>{plural(counts.pending, "brief", "briefs")}</b> waiting for approval{held ? <>, {held} on hold until the brand is verified</> : null}. Approve to show them to matching creators.</> : <>Nothing waiting for approval.</>}</p>
+        </AsideCard>
+        <AsideCard eyebrow="Share these links" title="Bring in briefs and creators">
+          <p className="small">Clients: <code className="k">{origin}/brief</code></p>
+          <p className="small">Creators: <code className="k">{origin}/join</code></p>
+        </AsideCard>
+        <AsideCard tone="night" eyebrow="Read a brief with AI" title="Paste it as it came.">
+          <p className="small">A WhatsApp message, an email or deck notes. AI picks out talent, cities, follower range, languages, deliverables and budget, and lists what to clarify.</p>
+          <p className="small"><a href="#new">Paste a brief →</a></p>
+        </AsideCard>
+      </>}>
+        <Section title="Campaigns" sub={`${plural(shown.length, "brief", "briefs")}${tab === "all" ? "" : ` · ${TABS.find((t) => t[0] === tab)?.[1] || tab}`}. Waiting for approval first, then open, newest first.`}>
+          <FilterBar label="Filter campaigns">
+            <FilterChips name="tab" label="Filter by status" current={tab} hrefFor={(v) => `?tab=${v}`} options={TABS.map(([value, label, count]) => ({ value, label, count }))} />
+          </FilterBar>
+          <DataTable caption="Campaigns" columns={columns} rows={shown} rowHref={(k) => `/team/campaigns/${k.id}`}
+            empty={{ title: "Nothing here yet.", body: tab === "all" ? "Paste a brief below, or send clients the brief link." : "No campaigns with this status.", action: tab === "all" ? <a className="btn sm" href="#new">Paste a brief</a> : <a className="btn sm" href="?tab=all">See all campaigns</a> }} />
+        </Section>
 
-      <div className="stack" style={{ marginTop: 14 }}>
-        {shown.map((k) => (
-          <a key={k.id} className="opp" href={`/team/campaigns/${k.id}`}>
-            <div className="top">
-              <div style={{ minWidth: 0 }}>
-                <div className="br">{k.brand || k.client_company || "Brand confidential"} · {k.source === "client" ? "from client" : "team"}</div>
-                <h3>{k.title}</h3>
+        <Section id="new" title="New opportunity from a brief" sub="Paste the client's WhatsApp message, email or deck notes as it is. AI picks out the talent, cities, follower range, languages, deliverables and budget, and lists questions to clarify. You check it before anything goes live.">
+          <Card>
+            <form action={readBrief}>
+              <div className="form-grid">
+                <div className="fld full"><label htmlFor="f-team-campaigns-raw-1">Brief</label><textarea id="f-team-campaigns-raw-1" name="raw" rows={6} placeholder="Need 4 female Bhangra dancers in Delhi/Chandigarh, 50K+ followers, Punjabi, 1 reel + 2 stories each for our Lohri launch. Shoot 8 Jan. Budget ₹3L." /></div>
+                <div className="fld"><label htmlFor="f-team-campaigns-brand-2">Brand <span className="opt">— optional</span></label><input id="f-team-campaigns-brand-2" name="brand" /></div>
               </div>
-              <div className="row" style={{ gap: 8, flex: "none" }}>
-                {k.held_reason && <span className="pill bad" title={k.held_reason}>On hold: verify brand</span>}
-                {Number(k.rush) === 1 && k.status === "pending" && <span className="pill bad">Rush</span>}
-                {k.featured_until && String(k.featured_until) > new Date().toISOString().replace("T", " ").slice(0, 19) && <span className="pill ok">Featured</span>}
-                {k.newapps > 0 && <span className="pill ok">{k.newapps} new</span>}
-                <span className={`pill ${k.status === "open" ? "good" : k.status === "pending" ? "ok" : ""}`}>{CAMPAIGN_STATUS_LABEL[k.status] || k.status}</span>
-              </div>
-            </div>
-            <div className="why">{requirementChips(k).map((r) => <span key={r} style={{ background: "var(--ivory-2)", color: "var(--accent-ink)" }}>{r}</span>)}</div>
-            <div className="facts"><span><b>{k.apps}</b> {Number(k.apps) === 1 ? "applicant" : "applicants"}</span>{k.creators_needed ? <span>Needs <b>{k.creators_needed}</b></span> : null}{k.deliverables && <span>{k.deliverables}</span>}{k.budget_total ? <span>Budget <b>{inr(k.budget_total)}</b></span> : null}{k.deadline && <span>Apply by <b>{day(k.deadline) || k.deadline}</b></span>}</div>
-          </a>
-        ))}
-        {!shown.length && <div className="panel empty"><b>Nothing here yet.</b>Paste a brief below, or send clients the brief link.</div>}
-      </div>
-
-      <form className="panel pad sec" id="new" action={readBrief}>
-        <h2>New opportunity from a brief</h2>
-        <p className="hint" style={{ marginTop: -6 }}>Paste the client's WhatsApp message, email or deck notes as it is. AI picks out the talent, cities, follower range, languages, deliverables and budget, and lists questions to clarify. You check it before anything goes live.</p>
-        <div className="form-grid">
-          <div className="fld full"><label htmlFor="f-team-campaigns-raw-1">Brief</label><textarea id="f-team-campaigns-raw-1" name="raw" rows={6} placeholder="Need 4 female Bhangra dancers in Delhi/Chandigarh, 50K+ followers, Punjabi, 1 reel + 2 stories each for our Lohri launch. Shoot 8 Jan. Budget ₹3L." /></div>
-          <div className="fld"><label htmlFor="f-team-campaigns-brand-2">Brand <span className="opt">— optional</span></label><input id="f-team-campaigns-brand-2" name="brand" /></div>
-        </div>
-        <button className="btn plum" style={{ marginTop: 14 }}>Read brief →</button>
-        {!env.ANTHROPIC_API_KEY && <p className="hint" style={{ margin: "10px 0 0" }}>No AI key is set, so keyword rules read the brief. Add <code className="k">ANTHROPIC_API_KEY</code> in Vercel for full AI reading.</p>}
-      </form>
+              <button className="btn plum" style={{ marginTop: 14 }}>Read brief →</button>
+              {!env.ANTHROPIC_API_KEY && <p className="hint" style={{ margin: "10px 0 0" }}>No AI key is set, so keyword rules read the brief. Add <code className="k">ANTHROPIC_API_KEY</code> in Vercel for full AI reading.</p>}
+            </form>
+          </Card>
+        </Section>
+      </Grid>
     </TeamShell>
   );
 }

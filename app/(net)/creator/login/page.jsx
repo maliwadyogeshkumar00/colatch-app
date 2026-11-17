@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import PublicShell from "../../_ui/PublicShell";
+import { SplitAuth } from "@/components/ui";
 import Flash, { flashUrl } from "../../_ui/flash";
 import { env } from "@/lib/net/env";
 import { startCreatorSession, currentCreator } from "@/lib/net/creatorAuth";
@@ -28,23 +29,31 @@ async function login(fd) {
 export default async function Page({ searchParams }) {
   const next = searchParams?.next ?? "";
   if (await currentCreator()) redirect(safe(next));
+  const joinHref = `/join${next ? `?next=${encodeURIComponent(next)}` : ""}`;
   return (
-    <PublicShell path="/creator/login">
-      <div className="wrap narrow" style={{ maxWidth: 440, padding: "20px 0 0" }}>
+    <PublicShell path="/creator/login" flush>
+      <SplitAuth
+        panel={{
+          eyebrow: "Colatch for creators",
+          title: "Brand briefs that <em>fit you</em>, and fees that arrive.",
+          lede: "One desk for every brief you match, every draft you send and every rupee you are owed. Colatch shows you only the briefs that fit your niche, city and size.",
+          quote: { text: "Brands fund the deal before you shoot, and Colatch pays you once the post is live. No chasing invoices.", source: "How a Colatch deal works" },
+          stats: [{ value: "₹0", label: "To join", gold: true }, { value: "8 steps", label: "Brief to payout" }],
+        }}
+        intro={{ eyebrow: "Welcome back", title: "Log in to your <b>creator desk</b>.", sub: "See the brand briefs that match you." }}
+      >
         <form className="panel pad" action={login}>
           <input type="hidden" name="next" value={next} />
-          <h2>Log in</h2>
-          <p className="muted" style={{ margin: "-4px 0 18px" }}>See the brand briefs that match you.</p>
           <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
           <div className="stack">
             <div className="fld"><label htmlFor="f-creator-login-email-1">Email</label><input id="f-creator-login-email-1" name="email" type="email" required autoComplete="email" /></div>
             <div className="fld"><label htmlFor="f-creator-login-password-2">Password</label><input id="f-creator-login-password-2" name="password" type="password" required autoComplete="current-password" /></div>
           </div>
           <button className="btn-foil" style={{ marginTop: 20, width: "100%", justifyContent: "center" }}>Log in</button>
-          <p className="hint" style={{ margin: "16px 0 0" }}>New here? <a className="link" href={`/join${next ? `?next=${encodeURIComponent(next)}` : ""}`}>Join free</a> · <a className="link" href="/reset/request">Forgot your password?</a></p>
+          <p className="hint" style={{ margin: "16px 0 0" }}>New here? <a className="link" href={joinHref}>Join free</a> · <a className="link" href="/reset/request">Forgot your password?</a></p>
           <p className="hint" style={{ margin: "8px 0 0" }}>Brand? <a className="link" href="/brand/login">Brand log in</a></p>
         </form>
-      </div>
+      </SplitAuth>
     </PublicShell>
   );
 }

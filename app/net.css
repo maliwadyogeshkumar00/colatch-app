@@ -1056,3 +1056,394 @@ html:has(.net){scroll-padding-top:80px}
 }
 @media (prefers-reduced-motion:reduce){.net .dsh-big__n{animation:none}}
 /* end dashboard */
+
+/* === ui kit === */
+/* Shared page components (components/ui, docs in components/ui/README.md). Every class is prefixed ui-, built
+   from the tokens above, light + dark, 375px first, reduced-motion safe. Status is shape + plum/gold shade +
+   words, never red/green. One gold-foil CTA per view (.btn-foil); gold figures are for one featured number. */
+.net{
+  --ui-accent:var(--p700);--ui-solid:var(--p700);--ui-on-solid:#FFFFFF;--ui-tint:var(--p100);--ui-wash:rgba(46,36,102,.035);
+  --ui-gold-wash:var(--gold-tint);--ui-gold-ink:var(--gold-deep);--ui-on-night:#F4EFE3;--ui-on-night-2:rgba(244,239,227,.78);--ui-night-line:rgba(244,239,227,.18);
+  --ui-r:14px;--ui-r-lg:18px;
+  /* the dashboard charts (components/dash/Charts) read these outside .dsh too */
+  --purple-tint:var(--ui-tint);--purple-wash:var(--ui-wash);
+  --ui-night:radial-gradient(85% 60% at 100% 0,rgba(214,162,86,.2),transparent 60%),radial-gradient(60% 70% at 0 100%,rgba(74,62,143,.55),transparent 60%),linear-gradient(165deg,var(--p700) 0%,var(--p900) 55%,var(--purple-night) 100%);
+  --ui-jali:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80' viewBox='0 0 80 80'%3E%3Cg fill='none' stroke='%23C8962E' stroke-width='0.5' opacity='0.6'%3E%3Cpath d='M40 0 C54 14 54 26 40 40 C26 26 26 14 40 0Z'/%3E%3Cpath d='M40 80 C54 66 54 54 40 40 C26 54 26 66 40 80Z'/%3E%3Cpath d='M0 40 C14 54 26 54 40 40 C26 26 14 26 0 40Z'/%3E%3Cpath d='M80 40 C66 54 54 54 40 40 C54 26 66 26 80 40Z'/%3E%3Ccircle cx='40' cy='40' r='1.6' fill='%23C8962E'/%3E%3C/g%3E%3C/svg%3E");
+}
+@media (prefers-color-scheme:dark){
+  .net{--ui-accent:var(--p200);--ui-solid:var(--p200);--ui-on-solid:var(--p900);--ui-tint:var(--p700);--ui-wash:rgba(255,255,255,.03);--ui-gold-wash:rgba(214,162,86,.14);--ui-gold-ink:var(--gold-2)}
+}
+.net .ui-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+.net .ui-dim{color:var(--ink-4)}
+.net .ui-foil{background:var(--gold-foil);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent}
+.net .ui-c{text-align:center}
+
+/* ---- PageHeader */
+.net .main:has(> .ui-head)>.bar{display:none}
+.net .ui-head{margin:0 0 28px;min-width:0}
+.net .ui-head__top{display:flex;align-items:center;gap:12px 16px;flex-wrap:wrap;padding:0 0 16px;margin:0 0 24px;border-bottom:1px solid var(--line)}
+.net .ui-crumbs{flex:1 1 auto;min-width:0}
+.net .ui-crumbs ol{list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:13.5px;color:var(--ink-3)}
+.net .ui-crumbs li{display:inline-flex;align-items:center;gap:10px;min-width:0}
+.net .ui-crumbs li+li::before{content:"/";color:var(--ink-5)}
+.net .ui-crumbs a{display:inline-flex;align-items:center;min-height:32px}
+.net .ui-crumbs a:hover{color:var(--ui-accent);text-decoration:underline;text-underline-offset:3px}
+.net .ui-crumbs [aria-current]{color:var(--ink);font-weight:600}
+.net .ui-head__actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-left:auto}
+.net .ui-head__main{display:grid;grid-template-columns:minmax(0,1fr);gap:20px;align-items:end;padding-bottom:24px;border-bottom:1px solid var(--line)}
+.net .ui-head__text{min-width:0}
+.net .ui-eyebrow{display:inline-flex;align-items:center;gap:10px;margin:0;font-size:11.5px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--eyebrow)}
+.net .ui-eyebrow::before{content:"";flex:none;width:24px;height:1px;background:var(--gold-foil)}
+.net .ui-title{margin:12px 0 0;font-family:var(--font-display);font-size:clamp(32px,8.6vw,40px);font-weight:300;letter-spacing:-.028em;line-height:1.05;color:var(--ink);text-wrap:balance;max-width:24ch;overflow-wrap:break-word}
+.net .ui-title b{font-weight:500;color:var(--ui-accent)}
+.net .ui-title em,.net .ui-head--hero .ui-title b{font-style:normal;font-weight:500;background:var(--gold-foil);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent}
+.net .ui-sub{margin:14px 0 0;max-width:62ch;font-size:15.5px;line-height:1.6;color:var(--ink-3)}
+.net .ui-sub b{color:var(--ink);font-weight:600}
+.net .ui-head__cta{margin-top:22px;display:flex;gap:12px;flex-wrap:wrap}
+.net .ui-head__meta{min-width:0}
+/* head stats */
+.net .ui-hstats{margin:0;display:flex;align-items:stretch;flex-wrap:wrap;background:var(--paper);border:1px solid var(--line);border-radius:var(--ui-r);padding:14px 0;box-shadow:var(--sh-1)}
+.net .ui-hs{flex:1 1 0;min-width:0;padding:0 16px;display:flex;flex-direction:column-reverse;gap:6px}
+.net .ui-hs+.ui-hs{border-left:1px solid var(--line)}
+.net .ui-hs__v{margin:0;font-family:var(--font-display);font-size:24px;font-weight:400;letter-spacing:-.02em;line-height:1.05;color:var(--ink);font-variant-numeric:tabular-nums lining-nums;white-space:nowrap}
+.net .ui-hs__v small{font-size:.58em;font-weight:400;color:var(--ink-3);margin-left:4px;letter-spacing:0}
+.net .ui-hs__l{font-size:10.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-4)}
+/* hero variant: the dark 669 band (full width when passed to PublicShell's hero prop) */
+.net .ui-head--hero{position:relative;overflow:hidden;margin:0;background:var(--ui-night);color:var(--ui-on-night)}
+.net .ui-head--hero::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.1;background-image:var(--ui-jali)}
+.net .ui-head--hero .ui-head__in{position:relative;max-width:1120px;margin:0 auto;padding:32px max(16px,env(safe-area-inset-left,0px)) 36px}
+.net .main>.ui-head--hero{border-radius:var(--ui-r-lg);margin-bottom:28px}
+.net .main>.ui-head--hero .ui-head__in{padding:28px clamp(16px,3vw,40px) 32px}
+.net .ui-head--hero .ui-head__top,.net .ui-head--hero .ui-head__main{border-color:var(--ui-night-line)}
+.net .ui-head--hero .ui-head__main{border-bottom:0;padding-bottom:0}
+.net .ui-head--hero .ui-crumbs ol{color:var(--ui-on-night-2)}
+.net .ui-head--hero .ui-crumbs [aria-current]{color:var(--ui-on-night)}
+.net .ui-head--hero .ui-crumbs a:hover{color:var(--gold-2)}
+.net .ui-head--hero .ui-crumbs li+li::before{color:var(--ui-night-line)}
+.net .ui-head--hero .ui-eyebrow{color:var(--gold-2)}
+.net .ui-head--hero .ui-title{color:#FFFFFF;font-weight:200}
+.net .ui-head--hero .ui-sub{color:var(--ui-on-night-2)}
+.net .ui-head--hero .ui-sub b{color:var(--ui-on-night)}
+.net .ui-head--hero .ui-hstats{background:rgba(15,10,40,.35);border-color:var(--ui-night-line);box-shadow:none}
+.net .ui-head--hero .ui-hs+.ui-hs{border-left-color:var(--ui-night-line)}
+.net .ui-head--hero .ui-hs__v{color:#FFFFFF;font-weight:300}
+.net .ui-head--hero .ui-hs__v small{color:var(--ui-on-night-2)}
+.net .ui-head--hero .ui-hs__l{color:var(--ui-on-night-2)}
+.net .ui-head--hero :focus-visible{outline-color:var(--gold-2)}
+@media (min-width:768px){
+  .net .ui-title{font-size:clamp(40px,4.6vw,60px)}
+  .net .ui-head--hero .ui-head__in{padding-top:44px;padding-bottom:48px}
+  .net .ui-hs{padding:0 22px}
+  .net .ui-hs__v{font-size:clamp(24px,2.2vw,30px)}
+}
+@media (min-width:1025px){
+  .net .ui-head__main:has(> .ui-head__meta){grid-template-columns:minmax(0,1fr) auto}
+  .net .ui-head__meta .ui-hstats{flex-wrap:nowrap}
+}
+@media (prefers-reduced-motion:no-preference){
+  .net .ui-title em,.net .ui-head--hero .ui-title b{animation:foilshine 9s ease-in-out infinite}
+}
+
+/* ---- KpiStrip */
+.net .ui-kpis{list-style:none;margin:0 0 24px;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.net .ui-kpis>li{min-width:0;display:flex}
+.net .ui-kpis>li:last-child:nth-child(odd){grid-column:1/-1}
+.net .ui-kpi{flex:1;min-width:0;background:var(--paper);border:1px solid var(--line);border-radius:var(--ui-r);padding:14px;display:flex;flex-direction:column;gap:8px;color:inherit;
+  transition:border-color var(--d) var(--ease),box-shadow var(--d) var(--ease)}
+.net a.ui-kpi:hover{border-color:var(--line-3);box-shadow:var(--sh-2)}
+.net .ui-kpi--featured{background:radial-gradient(120% 80% at 100% 100%,rgba(214,162,86,.11),transparent 55%),var(--paper)}
+.net .ui-kpi__label{margin:0;font-size:12.5px;font-weight:500;line-height:1.35;color:var(--ink-3)}
+.net .ui-kpi__value{margin:0;font-family:var(--font-display);font-size:clamp(28px,8vw,34px);font-weight:300;letter-spacing:-.026em;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums lining-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.net .ui-kpi__unit{font-size:.5em;font-weight:400;color:var(--ink-3);margin-left:.25em;letter-spacing:0}
+.net .ui-kpi--featured .ui-kpi__num{background:var(--gold-foil);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent}
+.net .ui-kpi__spark .dsh-spark{height:30px}
+.net .ui-kpi__foot{margin-top:auto;display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;font-size:12px;line-height:1.4;color:var(--ink-3)}
+.net .ui-trend{display:inline-flex;align-items:baseline;gap:4px;padding:3px 8px;border-radius:5px;background:var(--ui-tint);color:var(--ui-accent);font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.net .ui-trend--flat{background:var(--ivory-2);color:var(--ink-3)}
+@media (min-width:768px){
+  .net .ui-kpis{grid-template-columns:repeat(var(--n,4),minmax(0,1fr));gap:16px;margin-bottom:28px}
+  .net .ui-kpis>li:last-child:nth-child(odd){grid-column:auto}
+  .net .ui-kpi{padding:20px 22px;gap:12px}
+  .net .ui-kpi__label{font-size:13px}
+  .net .ui-kpi__value{font-size:clamp(32px,3.2vw,44px)}
+  .net .ui-kpi__foot{font-size:12.5px}
+}
+
+/* ---- ChartCard */
+.net .ui-chart{background:var(--paper);border:1px solid var(--line);border-radius:var(--ui-r);padding:16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.net .ui-chart--featured{background:radial-gradient(120% 80% at 100% 100%,rgba(214,162,86,.1),transparent 55%),var(--paper)}
+.net .ui-chart__head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.net .ui-chart__title{margin:0;font-family:var(--font-sans);font-size:13.5px;font-weight:600;line-height:1.35;letter-spacing:0;text-transform:none;color:var(--ink)}
+.net .ui-chart__period{flex:none;font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-4);white-space:nowrap}
+.net .ui-chart__fig{margin:0;font-family:var(--font-display);font-size:clamp(28px,7vw,34px);font-weight:300;letter-spacing:-.026em;line-height:1;color:var(--ink);font-variant-numeric:tabular-nums lining-nums;white-space:nowrap}
+.net .ui-chart__body{min-width:0}
+.net .ui-chart__foot{margin-top:auto;font-size:12.5px;color:var(--ink-3);display:flex;gap:6px 10px;flex-wrap:wrap;align-items:center}
+@media (min-width:768px){.net .ui-chart{padding:20px 24px;gap:14px}.net .ui-chart__fig{font-size:clamp(32px,3vw,42px)}}
+
+/* ---- FilterBar + FilterChips (links, wrap on phones: no sideways scroll) */
+.net .ui-filters{display:flex;align-items:center;justify-content:space-between;gap:10px 12px;flex-wrap:wrap;margin:0 0 16px}
+.net .ui-filters__main{display:flex;align-items:center;gap:10px 12px;flex-wrap:wrap;min-width:0}
+.net .ui-filters__end{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.net .ui-chips{display:flex;flex-wrap:wrap;gap:4px;padding:4px;border-radius:12px;background:var(--paper);border:1px solid var(--line);box-shadow:var(--sh-1);max-width:100%}
+.net .ui-chip{min-height:44px;padding:0 12px;border-radius:8px;display:inline-flex;align-items:center;gap:7px;font-size:13.5px;font-weight:600;color:var(--ink-3);white-space:nowrap;
+  transition:background var(--d) var(--ease),color var(--d) var(--ease)}
+.net .ui-chip:hover{color:var(--ink);background:var(--ui-wash)}
+.net .ui-chip.on{background:var(--ui-solid);color:var(--ui-on-solid);box-shadow:0 1px 2px rgba(46,36,102,.2)}
+.net .ui-chip__n{font-size:10.5px;font-weight:700;padding:2px 6px;border-radius:4px;background:var(--ivory-2);color:var(--ink-4);font-variant-numeric:tabular-nums}
+.net .ui-chip.on .ui-chip__n{background:rgba(255,255,255,.2);color:inherit}
+@media (min-width:768px){.net .ui-chip{min-height:36px;padding:0 14px}}
+
+/* ---- DataTable: desktop card + sticky header, tablet scroll, phone = .tbl.stack cards (rules above) */
+.net .ui-table-wrap{background:var(--paper);border:1px solid var(--line);border-radius:16px;min-width:0;margin:0}
+.net .ui-table-wrap.scroll-x{overflow-x:auto}
+.net .ui-table{border-collapse:separate;border-spacing:0;font-size:14px;font-variant-numeric:tabular-nums lining-nums}
+.net .ui-table>tbody{margin-top:0}
+.net .ui-table th{background:var(--ivory);font-size:10.5px;font-weight:600;letter-spacing:.14em;color:var(--ink-4);padding:12px;border-bottom:1px solid var(--line)}
+.net .ui-table td{padding:14px 12px;color:var(--ink-2);border-bottom:1px solid var(--line-2)}
+.net .ui-table th:first-child,.net .ui-table td:first-child{padding-left:20px}
+.net .ui-table th:last-child,.net .ui-table td:last-child{padding-right:20px}
+.net .ui-table thead th:first-child{border-top-left-radius:15px}
+.net .ui-table thead th:last-child{border-top-right-radius:15px}
+.net .ui-table tbody tr:last-child td{border-bottom:0}
+.net .ui-table tbody tr:last-child td:first-child{border-bottom-left-radius:15px}
+.net .ui-table tbody tr:last-child td:last-child{border-bottom-right-radius:15px}
+.net .ui-table tbody tr:hover{background:var(--ui-wash)}
+.net .ui-table td.num,.net .ui-table th.num{text-align:right}
+.net .ui-table .ui-td-title{color:var(--ink);min-width:0}
+@media (min-width:641px){.net .ui-table th:first-child{min-width:200px}}
+.net .ui-table tr.ui-linked{position:relative;cursor:pointer}
+.net .ui-rowlink{color:inherit;display:block;border-radius:4px}
+.net .ui-rowlink::after{content:"";position:absolute;inset:0;z-index:1}
+.net .ui-rowlink:focus-visible{outline:none}
+.net .ui-table tr.ui-linked:has(.ui-rowlink:focus-visible){outline:2px solid var(--focus);outline-offset:-2px}
+.net .ui-table tr.ui-linked:hover .ui-td-title{color:var(--ui-accent)}
+.net .ui-table td :is(a:not(.ui-rowlink),button,select,input,textarea,label,form,summary,details){position:relative;z-index:2}
+.net .ui-table-wrap--empty .ui-empty{border:0;background:none}
+/* cells: title (eyebrow, name, tags) and figures */
+.net .ui-cell{display:flex;flex-direction:column;gap:3px;min-width:0}
+.net .ui-cell__eb{font-size:10.5px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--eyebrow);overflow-wrap:anywhere}
+.net .ui-cell__t{font-size:15px;font-weight:600;line-height:1.3;letter-spacing:-.008em;color:var(--ink);overflow-wrap:anywhere}
+.net .ui-cell__sub{margin-top:4px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px;font-size:12.5px;color:var(--ink-3)}
+.net .ui-fig{display:inline-flex;flex-direction:column;align-items:flex-end;gap:2px;line-height:1.1}
+.net .ui-fig b{font-family:var(--font-display);font-size:17px;font-weight:500;color:var(--ink);font-variant-numeric:tabular-nums lining-nums;white-space:nowrap}
+.net .ui-fig small{font-size:11.5px;color:var(--ink-4);white-space:nowrap}
+.net .ui-pills{display:inline-flex;flex-wrap:wrap;gap:4px 6px;align-items:center}
+@media (min-width:1025px){
+  .net .ui-table-wrap.scroll-x:not(.ui-table-wrap--scroll){overflow:visible}
+  .net .ui-table thead th{position:sticky;top:0;z-index:3}
+}
+@media (max-width:640px){
+  .net .ui-table-wrap.scroll-x{overflow:visible;background:var(--paper)}
+  .net .ui-table .ui-hide-sm{display:none!important}
+  .net .ui-table.tbl.stack tr{padding:14px 16px;gap:2px}
+  .net .ui-table.tbl.stack td.first{font-size:15px}
+  .net .ui-table tbody tr:last-child td{border-radius:0}
+  .net .ui-table.tbl.stack td.key .ui-pills{justify-content:flex-end}
+  .net .ui-fig{flex-direction:row;align-items:baseline;gap:8px}
+}
+
+/* ---- StatusRail (rail itself: .drail above) */
+.net .ui-rail__head{margin-bottom:12px}
+.net .ui-rail__note{margin:12px 0 0}
+
+/* ---- Layout: Grid, Section, Card, AsideCard */
+.net .ui-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:24px;align-items:start;min-width:0}
+.net .ui-grid__main,.net .ui-grid__aside{min-width:0;display:flex;flex-direction:column;gap:20px}
+.net .ui-grid__main>*,.net .ui-grid__aside>*{margin-top:0;margin-bottom:0}
+.net .ui-grid--aside-first .ui-grid__aside{order:-1}
+.net .ui-cols{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;min-width:0}
+.net .ui-cols>*{min-width:0}
+.net :is(.ui-grid,.ui-cols):not(:last-child){margin-bottom:24px}
+.net .ui-cols--4{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+@media (min-width:768px){.net .ui-cols--2,.net .ui-cols--3,.net .ui-cols--4{grid-template-columns:repeat(2,minmax(0,1fr));gap:16px}}
+@media (min-width:1081px){
+  .net .ui-grid--aside{grid-template-columns:minmax(0,1fr) 340px;gap:28px}
+  .net .ui-grid--aside-first .ui-grid__aside{order:0}
+  .net .ui-cols--3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .net .ui-cols--4{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
+.net .ui-sec{min-width:0;margin:32px 0 0;scroll-margin-top:24px}
+.net .ui-grid__main>.ui-sec,.net .ui-sec:first-child{margin-top:0}
+.net .ui-sec__head{display:flex;align-items:flex-end;justify-content:space-between;gap:10px 16px;flex-wrap:wrap;margin:0 0 14px}
+.net .ui-sec__text{min-width:0}
+.net .ui-sec__title{margin:0;display:flex;align-items:center;gap:10px;font-family:var(--font-sans);font-size:18px;font-weight:600;letter-spacing:-.012em;line-height:1.25;text-transform:none;color:var(--ink)}
+.net .ui-sec__title::before{content:"";flex:none;width:6px;height:6px;border-radius:50%;background:var(--gold);box-shadow:0 0 0 3px var(--ui-gold-wash)}
+.net .ui-sec__title b{font-weight:600;color:var(--ui-accent)}
+.net .ui-sec__sub{margin:4px 0 0;font-size:13px;color:var(--ink-3);max-width:70ch}
+.net .ui-sec__actions{display:flex;gap:8px 16px;flex-wrap:wrap;align-items:center}
+@media (min-width:768px){.net .ui-sec__title{font-size:19px}}
+.net .ui-card{position:relative;min-width:0;background:var(--paper);border:1px solid var(--line);border-radius:16px;color:var(--ink)}
+.net .ui-card--pad{padding:16px}
+.net .ui-card--lg{padding:20px}
+.net .ui-card--gold{background:linear-gradient(180deg,var(--ui-gold-wash),var(--paper) 70%);border-color:color-mix(in srgb,var(--gold) 30%,transparent)}
+.net .ui-card--night{overflow:hidden;background:var(--ui-night);color:var(--ui-on-night);border-color:transparent;box-shadow:inset 0 0 0 .5px rgba(255,243,219,.14),0 24px 56px -28px rgba(15,10,40,.55)}
+.net .ui-card--night::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.1;background-image:var(--ui-jali)}
+.net .ui-card--night>*{position:relative}
+.net .ui-card--night :is(h2,h3,b,strong){color:#FFFFFF}
+.net .ui-card--night :is(p,li,dd){color:var(--ui-on-night-2)}
+.net .ui-card--night a:not(.btn-foil):not(.btn){color:var(--gold-2)}
+.net .ui-card--night :focus-visible{outline-color:var(--gold-2)}
+@media (min-width:768px){.net .ui-card--pad{padding:20px 24px}.net .ui-card--lg{padding:28px 32px}}
+.net .ui-aside{display:flex;flex-direction:column}
+.net .ui-aside__head{padding:16px 18px 0}
+.net .ui-aside__eb{margin:0 0 6px;font-size:10.5px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--eyebrow)}
+.net .ui-card--night .ui-aside__eb{color:var(--gold-2)}
+.net .ui-aside__title{margin:0;font-family:var(--font-sans);font-size:16px;font-weight:600;letter-spacing:-.01em;line-height:1.3;text-transform:none;color:inherit}
+.net .ui-aside__title b{color:var(--ui-accent)}
+.net .ui-aside__body{padding:12px 18px 18px;font-size:14px;line-height:1.55;color:var(--ink-2);min-width:0}
+.net .ui-aside__body>*{margin:0}
+.net .ui-aside__body>*+*{margin-top:12px}
+.net .ui-card .dsh-legend a,.net .ui-chart .dsh-legend a{display:inline-flex;align-items:center;min-height:28px}
+.net .ui-aside__foot{margin-top:auto;padding:12px 18px;border-top:1px solid var(--line);font-size:13px;color:var(--ink-3);display:flex;gap:8px 16px;flex-wrap:wrap;align-items:center}
+.net .ui-card--night .ui-aside__foot{border-color:var(--ui-night-line)}
+.net .ui-aside__foot a{color:var(--ui-accent);font-weight:600;min-height:32px;display:inline-flex;align-items:center}
+@media (min-width:768px){.net .ui-aside__head{padding:20px 22px 0}.net .ui-aside__body{padding:12px 22px 22px}.net .ui-aside__foot{padding:12px 22px}}
+
+/* ---- EmptyState + InlineState */
+.net .ui-empty{display:flex;flex-direction:column;align-items:center;text-align:center;gap:6px;padding:36px 20px;border:1px dashed var(--line-3);border-radius:16px;background:var(--paper);color:var(--ink-3)}
+.net .ui-empty__glyph{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--ui-wash);box-shadow:inset 0 0 0 1px var(--line);color:var(--ui-accent);margin-bottom:6px}
+.net .ui-empty__title{margin:0;font-family:var(--font-display);font-size:20px;font-weight:400;letter-spacing:-.015em;color:var(--ink)}
+.net .ui-empty__body{margin:0;max-width:52ch;font-size:14px;line-height:1.55}
+.net .ui-empty__act{margin-top:12px;display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.net .ui-state{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border-radius:12px;font-size:14px;line-height:1.5;background:var(--ivory-2);color:var(--ink-2);border:1px solid transparent}
+.net .ui-state__t{margin:0;min-width:0}
+.net .ui-state__t b{color:var(--ink);font-weight:600}
+.net .ui-state__g{flex:none;width:14px;height:14px;margin-top:3px;border-radius:50%;box-sizing:border-box}
+.net .ui-state--info .ui-state__g{border:1.5px solid var(--ui-accent);background:radial-gradient(circle,var(--ui-accent) 0 1.5px,transparent 2px)}
+.net .ui-state--loading .ui-state__g{border:2px solid var(--line-3);border-top-color:var(--ui-accent)}
+.net .ui-state--error{background:var(--paper);border-color:var(--line-3);box-shadow:inset 3px 0 0 var(--ui-accent)}
+.net .ui-state--error .ui-state__g{border-radius:2px;transform:rotate(45deg) scale(.8);border:2px solid var(--ui-accent);background:var(--ui-tint)}
+@media (prefers-reduced-motion:no-preference){.net .ui-state--loading .ui-state__g{animation:ui-spin .9s linear infinite}}
+@keyframes ui-spin{to{transform:rotate(360deg)}}
+
+/* ---- SplitAuth (login / signup): dark editorial panel + ivory form column */
+.net .ui-flush{display:block;min-width:0}
+.net .ui-auth{display:grid;grid-template-columns:minmax(0,1fr);min-height:calc(100vh - 64px);min-height:calc(100dvh - 64px);background:var(--bg)}
+.net .ui-auth__panel{position:relative;overflow:hidden;display:flex;flex-direction:column;gap:20px;padding:28px max(16px,env(safe-area-inset-left,0px)) 24px;color:var(--ui-on-night);
+  background:radial-gradient(70% 50% at 80% 10%,rgba(214,162,86,.22),transparent 60%),radial-gradient(60% 50% at 10% 90%,rgba(110,90,174,.4),transparent 60%),linear-gradient(165deg,var(--p700) 0%,var(--p900) 55%,var(--purple-night) 100%)}
+.net .ui-auth__panel::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.1;background-image:var(--ui-jali)}
+.net .ui-auth__panel>*{position:relative;z-index:1}
+.net .ui-auth__pbody{max-width:540px}
+.net .ui-auth__eb{margin:0;display:inline-flex;align-items:center;gap:10px;font-size:11px;font-weight:600;letter-spacing:.22em;text-transform:uppercase;color:var(--gold-2)}
+.net .ui-auth__eb::before{content:"";width:22px;height:1px;background:var(--gold-2)}
+.net .ui-auth__display{margin:14px 0 0;font-family:var(--font-display);font-size:clamp(28px,8vw,34px);font-weight:200;line-height:1.05;letter-spacing:-.035em;color:#FFFFFF;text-wrap:balance}
+.net .ui-auth__display :is(b,em){font-style:normal;font-weight:600;background:var(--gold-foil);background-size:200% 100%;-webkit-background-clip:text;background-clip:text;color:transparent}
+.net .ui-auth__lede{display:none;margin:24px 0 0;max-width:46ch;font-size:15px;line-height:1.6;color:var(--ui-on-night-2)}
+.net .ui-auth__pfoot{padding-top:18px;border-top:1px solid var(--ui-night-line);display:grid;gap:22px}
+.net .ui-auth__quote{display:none;margin:0;position:relative;padding-left:26px}
+.net .ui-auth__quote::before{content:"\201C";position:absolute;left:0;top:-10px;font-family:var(--font-display);font-size:44px;font-weight:600;line-height:1;color:var(--gold)}
+.net .ui-auth__quote blockquote{margin:0;font-size:14.5px;line-height:1.6;color:var(--ui-on-night-2)}
+.net .ui-auth__quote figcaption{margin-top:12px;font-size:10.5px;font-weight:600;letter-spacing:.2em;text-transform:uppercase;color:var(--gold-2)}
+.net .ui-auth__stats{margin:0;display:flex;align-items:stretch;gap:20px}
+.net .ui-auth__stat{display:flex;flex-direction:column-reverse;gap:6px;min-width:0}
+.net .ui-auth__stat+.ui-auth__stat{padding-left:20px;border-left:1px solid var(--ui-night-line)}
+.net .ui-auth__stat dd{margin:0;font-family:var(--font-display);font-size:24px;font-weight:200;letter-spacing:-.028em;line-height:1;color:#FFFFFF;font-variant-numeric:tabular-nums;white-space:nowrap}
+.net .ui-auth__stat dt{font-size:10.5px;font-weight:500;letter-spacing:.16em;text-transform:uppercase;color:rgba(244,239,227,.6)}
+.net .ui-auth__col{display:flex;flex-direction:column;min-width:0;padding:20px max(16px,env(safe-area-inset-left,0px)) 40px}
+.net .ui-auth__top{display:flex;align-items:center;justify-content:flex-end;gap:8px 12px;flex-wrap:wrap;font-size:13px;color:var(--ink-3)}
+.net .ui-auth__top a{color:var(--ui-accent);font-weight:600;min-height:44px;display:inline-flex;align-items:center}
+.net .ui-auth__form{flex:1;display:flex;flex-direction:column;justify-content:center;width:100%;max-width:420px;margin:0 auto;padding:20px 0 8px}
+.net .ui-auth__hi{margin:0;display:inline-flex;align-items:center;gap:10px;font-size:12px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--ui-gold-ink)}
+.net .ui-auth__title{margin:12px 0 0;font-family:var(--font-display);font-size:clamp(28px,7.6vw,32px);font-weight:200;letter-spacing:-.028em;line-height:1.1;color:var(--ink);text-wrap:balance}
+.net .ui-auth__title b{font-weight:700;color:var(--ui-accent)}
+.net .ui-auth__sub{margin:12px 0 0;font-size:15px;line-height:1.55;color:var(--ink-3)}
+.net .ui-auth__intro{margin-bottom:24px}
+/* any form dropped in keeps its fields; the card chrome goes so it sits on the ivory column */
+.net .ui-auth__form>form.panel{background:none;border:0;box-shadow:none;border-radius:0;padding:0}
+.net .ui-auth__form .btn-foil{min-height:52px}
+@media (min-width:600px){
+  .net .ui-auth__lede{display:block}
+  .net .ui-auth__panel{padding-top:36px;padding-bottom:32px}
+}
+@media (min-width:900px){
+  .net .ui-auth{grid-template-columns:minmax(0,1.05fr) minmax(0,1fr)}
+  .net .ui-auth__panel{padding:48px clamp(32px,4.5vw,72px) 44px;gap:32px}
+  .net .ui-auth__pbody{flex:1;display:flex;flex-direction:column;justify-content:center}
+  .net .ui-auth__display{font-size:clamp(40px,4.4vw,64px);line-height:1.02}
+  .net .ui-auth__eb{margin-bottom:8px}
+  .net .ui-auth__pfoot{padding-top:28px}
+  .net .ui-auth__quote{display:block}
+  .net .ui-auth__stat dd{font-size:28px}
+  .net .ui-auth__col{padding:28px clamp(24px,4vw,64px) 40px}
+  .net .ui-auth__title{font-size:clamp(30px,2.8vw,38px)}
+}
+@media (min-width:1200px){.net .ui-auth__pfoot{grid-template-columns:minmax(0,1fr) auto;align-items:end;gap:32px}}
+@media (prefers-reduced-motion:no-preference){.net .ui-auth__display :is(b,em){animation:foilshine 9s ease-in-out infinite}}
+
+/* the page's gold CTA is the form's submit: the header's gold "Join free" steps back to an outline here */
+.net:has(.ui-auth) .tnav a.cta{background:transparent;color:#FFFFFF;box-shadow:inset 0 0 0 1px rgba(244,239,227,.45)}
+.net:has(.ui-auth) .tnav a.cta:hover{background:rgba(255,255,255,.1)}
+
+/* ---- FormSteps + SummaryRail */
+.net .ui-steps{margin:0 0 24px}
+.net .ui-steps__cap{margin:0 0 10px;font-size:12.5px;color:var(--ink-3)}
+.net .ui-steps__cap b{color:var(--ink);font-weight:600}
+.net .ui-steps ol{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(var(--n,4),minmax(0,1fr));gap:6px}
+.net .ui-steps li{min-width:0;display:flex;flex-direction:column;gap:8px}
+.net .ui-steps li::before{content:"";height:4px;border-radius:var(--r-pill);background:var(--line-3)}
+.net .ui-steps li.done::before{background:var(--ui-accent)}
+.net .ui-steps li.now::before{background:var(--gold-foil)}
+.net .ui-steps li>a,.net .ui-steps li>span:not(.ui-sr){display:none;align-items:baseline;gap:8px;font-size:12.5px;line-height:1.3;color:var(--ink-4);min-width:0}
+.net .ui-steps li>a{min-height:32px}
+.net .ui-steps li>a:hover .ui-steps__l{color:var(--ui-accent);text-decoration:underline}
+.net .ui-steps__n{font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.04em}
+.net .ui-steps__l{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.net .ui-steps li.done>:is(a,span){color:var(--ink-3)}
+.net .ui-steps li.now>span{color:var(--ink);font-weight:600}
+.net .ui-steps li.now .ui-steps__n{color:var(--ui-gold-ink)}
+@media (min-width:768px){
+  .net .ui-steps__cap{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+  .net .ui-steps li>a,.net .ui-steps li>span:not(.ui-sr){display:flex}
+}
+.net .ui-summary{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px;min-width:0}
+.net .ui-summary__title{margin:0 0 12px;font-family:var(--font-sans);font-size:11px;font-weight:600;letter-spacing:.18em;text-transform:uppercase;color:var(--eyebrow)}
+.net .ui-summary__list{margin:0}
+.net .ui-summary__row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:9px 0;border-top:1px solid var(--line-2);font-size:14px}
+.net .ui-summary__row:first-child{border-top:0;padding-top:0}
+.net .ui-summary__row dt{color:var(--ink-3);flex:none;max-width:50%}
+.net .ui-summary__row dd{margin:0;color:var(--ink);font-weight:500;text-align:right;min-width:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.net .ui-summary__total{margin-top:12px;padding-top:14px;border-top:1px solid var(--line);display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.net .ui-summary__total span{font-size:13px;color:var(--ink-3)}
+.net .ui-summary__total b{font-family:var(--font-display);font-size:26px;font-weight:300;letter-spacing:-.02em;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
+.net .ui-summary__foot{margin-top:16px;display:flex;flex-direction:column;gap:10px}
+@media (min-width:1081px){.net .ui-summary{position:sticky;top:24px;padding:22px}}
+
+/* ---- Pill, Tag, Avatar */
+.net .ui-pill.ui-pill--gold{background:var(--ui-gold-wash);color:var(--ui-gold-ink)}
+.net .ui-pill.ui-pill--gold::before{content:"";width:6px;height:6px;transform:rotate(45deg);background:currentColor;border-radius:1px}
+.net .ui-pill.ui-pill--quiet{background:var(--ivory-2);color:var(--ink-2)}
+.net .ui-pill.ui-pill--quiet::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.7}
+.net .ui-tags{display:inline-flex;flex-wrap:wrap;align-items:center;gap:4px}
+.net .ui-tag{margin:0;font-size:12px;line-height:1.5}
+.net .ui-tags__more{font-size:12px}
+.net .ui-ava{--s:40px;flex:none;width:var(--s);height:var(--s);border-radius:50%;display:inline-grid;place-items:center;overflow:hidden;font-size:calc(var(--s) * .34);font-weight:600;letter-spacing:.02em;line-height:1;
+  color:var(--gold-tint);background:linear-gradient(140deg,var(--p400),var(--p700));box-shadow:inset 0 0 0 .5px rgba(255,255,255,.12),0 0 0 2px var(--paper)}
+.net .ui-ava--1{background:linear-gradient(140deg,var(--p500),var(--p900))}
+.net .ui-ava--2{background:linear-gradient(140deg,var(--gold-soft),var(--gold-deep))}
+.net .ui-ava--ring{box-shadow:inset 0 0 0 .5px rgba(255,255,255,.12),0 0 0 2px var(--paper),0 0 0 3.5px var(--gold)}
+.net .ui-ava img{width:100%;height:100%;object-fit:cover}
+
+/* ---- dark theme touches */
+@media (prefers-color-scheme:dark){
+  .net .ui-chip.on{box-shadow:none}
+  .net .ui-chip.on .ui-chip__n{background:rgba(27,19,66,.18)}
+  .net .ui-kpi--featured,.net .ui-chart--featured{background:radial-gradient(120% 80% at 100% 100%,rgba(214,162,86,.14),transparent 55%),var(--paper)}
+  .net .ui-table th{background:var(--sunk)}
+  .net .ui-card--night{box-shadow:inset 0 0 0 1px rgba(214,162,86,.24),0 24px 56px -28px rgba(0,0,0,.6)}
+}
+@media (prefers-reduced-motion:reduce){
+  .net .ui-title em,.net .ui-head--hero .ui-title b,.net .ui-auth__display :is(b,em),.net .ui-state--loading .ui-state__g{animation:none}
+}
+/* end ui kit */
+
+/* === v2: brand and public pages === */
+/* end v2 brand */
+
+/* === v2: creator pages === */
+/* end v2 creator */
+
+/* === v2: team records === */
+/* end v2 team records */
+
+/* === v2: team money and admin === */
+/* end v2 team admin */

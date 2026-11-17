@@ -42,6 +42,7 @@ const ADMIN_NAV = [
 ];
 const ROLE_NAME = { owner: "Owner", admin: "Admin", shortlist: "Shortlister", finance: "Finance", viewer: "Viewer" };
 
+// Leave `title` out when the page renders its own <PageHeader> (components/ui) as the first child.
 export default function TeamShell({ active, eyebrow = "Colatch Connect", title, email = "", role = "", actions = null, children }) {
   const initial = (email?.[0] ?? "C").toUpperCase();
   const ico = (k) => <svg className="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" dangerouslySetInnerHTML={{ __html: I[k] }} />;
@@ -73,10 +74,12 @@ export default function TeamShell({ active, eyebrow = "Colatch Connect", title, 
         </div>
       </aside>
       <main className="main" id="main" tabIndex={-1}>
-        <div className="bar">
-          <div><p className="eyebrow dash">{eyebrow}</p><h1 dangerouslySetInnerHTML={{ __html: title }} /></div>
-          <div className="bar__right">{actions}</div>
-        </div>
+        {title != null && (
+          <div className="bar">
+            <div><p className="eyebrow dash">{eyebrow}</p><h1 dangerouslySetInnerHTML={{ __html: title }} /></div>
+            <div className="bar__right">{actions}</div>
+          </div>
+        )}
         {children}
         <nav className="desk-more" aria-label="More">
           {ADMIN_NAV.map((n) => <a key={n.key} className="link small" href={n.href}>{n.label}</a>)}
