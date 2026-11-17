@@ -16,6 +16,11 @@ import { notify } from "@/lib/net/notify";
 import { audit, logError } from "@/lib/net/security";
 import { REASONS, raiseDispute, DisputeError } from "@/lib/net/disputes";
 import { currentBrand } from "@/lib/net/creatorAuth";
+import DealThread from "@/components/deal/DealThread";
+import { UsageLine, ShipmentStatus, ShipPill } from "@/components/deal/DealExtras";
+import { postMessage, notifyMessage, messagesForCampaign, unreadForCampaign, markCampaignRead, MessageError } from "@/lib/net/messages";
+import { shipmentStatusForCampaign } from "@/lib/net/shipments";
+import { syncUsageStart, usageStatus } from "@/lib/net/usage";
 
 // Checked here as well as in the page: metadata runs before the page streams, so a bad link gets a real 404 status.
 export async function generateMetadata({ params }) {
@@ -92,6 +97,27 @@ async function rate(f) {
     ).bind(crypto.randomUUID(), dealId, "brand", stars, scrubContacts(String(f.get("note") ?? "")).text.slice(0, 300) || null).run();
   }
   redirect(back(token, "Rating saved. It helps other brands pick well."));
+}
+
+/** The brand messages the creator and the Colatch team on one booked deal of this campaign. Contact details are scrubbed. */
+async function brandMessage(f) {
+  "use server";
+  const { token, k, dealId, own } = await ownDeal(f);
+  const to = (msg, tone = "ok") => redirect(back(token, msg, tone) + `#deal-${encodeURIComponent(dealId)}`);
+  if (!own) to("That creator isn't booked on this campaign.", "err");
+  const d = await env.DB.prepare("SELECT stage, pay_status FROM creator_deals WHERE id=?").bind(dealId).first();
+  if (!d || d.stage === "cancelled" || d.pay_status === "refunded") to("This deal is closed, so messages are off. Reply to the Colatch team by email if you need anything.", "err");
+  const sender = { kind: "brand", id: k.id };
+  let r;
+  try {
+    r = await postMessage(dealId, sender, f.get("body"), f.get("mid"));
+  } catch (e) {
+    if (e instanceof MessageError) to(e.message, "err");
+    await logError("shortlist.message", e, { deal: dealId });
+    to("Something went wrong, your message wasn't sent. Try again.", "err");
+  }
+  if (r.created) await notifyMessage(dealId, r.id, sender);
+  to(!r.created ? "That message was already sent." : r.scrubbed ? "Message sent. Contact details were hidden: keep the deal on Colatch." : "Message sent.");
 }
 
 /** The brand raises a dispute on one booked deal of this campaign. Ownership is checked in raiseDispute. */
@@ -245,6 +271,14 @@ export default async function Page({ params, searchParams }) {
   const lblDim = { color: "rgba(244,239,227,.6)" };
   // Header only: a signed-in brand keeps its own nav here. Access to this page is still the share link.
   const signedIn = await currentBrand().catch(() => null);
+  // Deal room per booked creator: messages, shipment status (never the address) and usage rights.
+  const brandReader = { kind: "brand", id: k.id };
+  for (const d of deals) await syncUsageStart(d).catch(() => false);
+  const threads = deals.length ? await messagesForCampaign(k.id).catch(() => ({})) : {};
+  const unreadBy = deals.length ? await unreadForCampaign(k.id, brandReader).catch(() => ({})) : {};
+  if (Object.keys(threads).length) await markCampaignRead(k.id, brandReader).catch(() => {});
+  const shipBy = deals.length ? await shipmentStatusForCampaign(k.id).catch(() => ({})) : {};
+  const roomDeals = deals.filter((d) => d.stage !== "cancelled" || (threads[d.id] || []).length);
 
   const hero = (
     <Hero eyebrow={`Your Colatch shortlist · ${k.brand || k.client_company || ""}`} title={escapeHtml(k.title)}>
@@ -385,6 +419,36 @@ export default async function Page({ params, searchParams }) {
           </table></div>
           {ranked.length > 1 && <p className="hint" style={{ margin: "10px 0 0" }}>Best value so far: <b>{ranked[0].name || ranked[0].handle}</b> at ₹{(ranked[0].fee / ranked[0].actual_views).toFixed(2)} per view.</p>}
         </div>}
+
+        {roomDeals.length > 0 && <section aria-labelledby="room-h" style={{ marginBottom: 34 }} className="dr-room">
+          <div className="sheet__h"><h2 id="room-h">Messages, products and usage</h2><span className="n">{roomDeals.length}</span></div>
+          <div className="stack">{roomDeals.map((d) => {
+            const unread = unreadBy[d.id] || 0;
+            const ships = shipBy[d.id] || [];
+            const u = usageStatus(d);
+            const closedDeal = d.stage === "cancelled" || d.pay_status === "refunded";
+            return (
+              <details key={d.id} id={`deal-${d.id}`} className="panel pad dr-panel" open={unread > 0}>
+                <summary className="dr-sum">
+                  <span className="dr-sum-who"><b>{d.name || d.handle}</b><span className="hint">{d.deliverable}</span></span>
+                  <span className="row" style={{ gap: 6 }}>
+                    {unread > 0 && <span className="pill dr-new">{unread} new</span>}
+                    {ships.length > 0 && <ShipPill status={ships[ships.length - 1].status} />}
+                    {u.state === "expired" && <span className="dr-ship dr-ship-returned">Usage expired</span>}
+                  </span>
+                </summary>
+                <div className="dr-room-body">
+                  {(ships.length > 0 || u.state !== "none") && <div className="dr-room-side">
+                    <ShipmentStatus shipments={ships} showCarrier={false} title={ships.length ? "Product" : ""} />
+                    {u.state !== "none" && <UsageLine d={d} style={{ marginTop: ships.length ? 12 : 0 }} />}
+                  </div>}
+                  <DealThread id={`thread-${d.id}`} messages={threads[d.id] || []} me="brand" unread={unread} action={brandMessage} canPost={!closedDeal} compact
+                    hidden={[["token", token], ["deal", d.id]]} mid={crypto.randomUUID()} names={{ creator: d.name || d.handle }} readOnlyNote="This deal is closed, so messages are off." />
+                </div>
+              </details>
+            );
+          })}</div>
+        </section>}
 
         <div className="grid3" style={{ marginBottom: 22 }}>
           <div className="panel kpi"><div className="k">Approved</div><div className="v">{approvedOrBooked.length} / {k.creators_needed || rows.length}</div><div className="s">creators, including booked</div></div>

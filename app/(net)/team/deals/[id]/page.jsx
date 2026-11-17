@@ -15,6 +15,12 @@ import { can, logError } from "@/lib/net/security";
 import { colatchScore } from "@/lib/net/score";
 import { dealStepLine } from "@/components/team/dealStep";
 import { dayTime } from "@/components/team/labels";
+import DealThread from "@/components/deal/DealThread";
+import { UsageLine, ShipPill } from "@/components/deal/DealExtras";
+import { listMessages, unreadCount, markRead, postMessage, notifyMessage, MessageError } from "@/lib/net/messages";
+import { listShipments, addShipment, moveShipment, nextStatuses, creatorAddress, addressLines, SHIP_LABEL, ShipError } from "@/lib/net/shipments";
+import { saveUsage, syncUsageStart, prefillFromText, toDate, USAGE_CHANNELS, MAX_USAGE_MONTHS, UsageError } from "@/lib/net/usage";
+import { audit } from "@/lib/net/security";
 
 export const metadata = { title: "Deal", robots: { index: false, follow: false } };
 
@@ -76,6 +82,56 @@ async function act(fd) {
   redirect(err ? flashUrl(back, "err", err) : flashUrl(back, "ok", msg));
 }
 
+/**
+ * Deal room: messages, gifting shipments and usage rights. Its own action so the permission rules stay separate
+ * from the money/progress steps: anyone with shortlist or finance may message and log shipments; usage rights
+ * need shortlist (owner/admin/shortlister). Viewers can read but not change anything.
+ */
+async function room(fd) {
+  "use server";
+  const id = String(fd.get("id") ?? "");
+  const a = String(fd.get("action") ?? "");
+  const base = `/team/deals/${encodeURIComponent(id)}`;
+  const anchor = a === "message" ? "#messages" : a === "usage" ? "#usage" : "#shipments";
+  const me = await requireTeam("view", base);
+  const allowed = a === "usage" ? can(me.role, "shortlist") : can(me.role, "shortlist") || can(me.role, "finance");
+  if (!allowed) redirect(flashUrl(base, "err", `Your role (${me.role}) can't do that. Ask an owner or admin.`) + anchor);
+  let msg = "", err = "";
+  try {
+    const d = await load(id);
+    if (!d) throw new FlowError("That deal does not exist.", "not_found");
+    const actor = { kind: "team", id: me.email };
+    if (a === "message") {
+      const r = await postMessage(d.id, actor, fd.get("body"), fd.get("mid"));
+      if (r.created) await notifyMessage(d.id, r.id, actor);
+      msg = r.created ? "Message sent." : "That message was already sent.";
+    } else if (a === "ship_add") {
+      const s = await addShipment(d.id, { product: fd.get("product"), carrier: fd.get("carrier"), awb: fd.get("awb"), note: fd.get("ship_note"), status: fd.get("ship_status") }, me.email);
+      await logEvent(env, d.id, `team:${me.email}`, "note", `Shipment added: ${s.product} (${SHIP_LABEL[s.status]})`);
+      await audit(actor, "shipment.add", "deal", d.id, { shipment: s.id, status: s.status });
+      msg = "Shipment added.";
+    } else if (a === "ship_move") {
+      const to = String(fd.get("to") ?? "");
+      const s = await moveShipment(d.id, String(fd.get("shipment") ?? ""), to, { carrier: fd.get("carrier"), awb: fd.get("awb") });
+      await logEvent(env, d.id, `team:${me.email}`, "note", `Shipment ${SHIP_LABEL[s.status].toLowerCase()}: ${s.product}${s.awb ? ` (${s.carrier || "AWB"} ${s.awb})` : ""}`);
+      await audit(actor, "shipment.move", "deal", d.id, { shipment: s.id, to: s.status });
+      msg = `Shipment marked ${SHIP_LABEL[s.status].toLowerCase()}.`;
+    } else if (a === "usage") {
+      const u = await saveUsage(d.id, { channels: fd.get("usage_channels"), months: fd.get("usage_months"), starts: fd.get("usage_starts") });
+      await logEvent(env, d.id, `team:${me.email}`, "note", `Usage rights: ${u.usage_channels} for ${u.usage_months} months`);
+      await audit(actor, "deal.usage", "deal", d.id, { channels: u.usage_channels, months: u.usage_months, expires: u.usage_expires_at ? String(toDate(u.usage_expires_at)?.toISOString()) : null });
+      msg = "Usage rights saved.";
+    } else throw new FlowError("Unknown action.");
+  } catch (e) {
+    if (e instanceof FlowError || e instanceof MessageError || e instanceof ShipError || e instanceof UsageError) err = e.message;
+    else { await logError("team/deal.room", e, { action: a, deal: id }); err = "Something went wrong, nothing was changed. Try again."; }
+  }
+  redirect((err ? flashUrl(base, "err", err) : flashUrl(base, "ok", msg)) + anchor);
+}
+
+/** 'YYYY-MM-DD' in India for a date input. */
+const istDay = (v) => { const d = toDate(v); return d ? new Date(d.getTime() + 5.5 * 36e5).toISOString().slice(0, 10) : ""; };
+
 const mask = (s) => { const t = String(s || ""); return t ? `•••• ${t.slice(-4)}` : "Not added"; };
 
 export default async function Page({ params, searchParams }) {
@@ -123,6 +179,19 @@ export default async function Page({ params, searchParams }) {
   const extraRound = d.revisions_used >= d.revisions_included;
   const openReports = Number((await env.DB.prepare("SELECT COUNT(*) n FROM bypass_reports WHERE deal_id=? AND status='open'").bind(d.id).first().catch(() => null))?.n ?? 0);
   const kindLabel = { cancelled: "Cancelled", refunded: "Refunded", live_link: "Live link shared", signoff: "Brand signed off", funded: "Brand paid", sow: "Terms accepted", draft: "Draft submitted", changes: "Changes requested", approved: "Draft approved", live: "Went live", released: "Payout approved", paid: "Creator paid", note: "Note", results: "Results updated" };
+  // Deal room. Each part is optional: a problem here must not take the deal page down.
+  await syncUsageStart(d).catch(() => false);
+  const reader = { kind: "team", id: me.email };
+  const thread = await listMessages(d.id).catch(() => []);
+  const unread = await unreadCount(d.id, reader).catch(() => 0);
+  if (thread.length) await markRead(d.id, reader).catch(() => {});
+  const shipments = await listShipments(d.id).catch(() => []);
+  const address = await creatorAddress(d.creator_id);
+  const crew = progress || money;
+  const pre = prefillFromText(k?.usage_rights);
+  const usageChannels = d.usage_channels || pre.channels;
+  const usageMonths = d.usage_months || pre.months || "";
+  const roomHidden = (a) => <><input type="hidden" name="id" value={d.id} /><input type="hidden" name="action" value={a} /></>;
   const esc = (s) => String(s).replace(/</g, "&lt;");
   const hidden = (a) => <><input type="hidden" name="id" value={d.id} /><input type="hidden" name="action" value={a} /></>;
 
@@ -218,6 +287,56 @@ export default async function Page({ params, searchParams }) {
             </div>
             <button className="btn plum" style={{ marginTop: 14 }}>Save results</button>
           </form>}
+
+          <div className="panel pad dr-panel" id="usage">
+            <h2>Usage rights</h2>
+            <UsageLine d={d} style={{ marginBottom: 12 }} />
+            {progress ? <form action={room} className="stack">
+              {roomHidden("usage")}
+              <div className="form-grid">
+                <div className="fld full"><label htmlFor="f-dr-usage-channels">Channels</label><input id="f-dr-usage-channels" name="usage_channels" required maxLength={500} defaultValue={usageChannels} placeholder="Organic repost, Paid ads (Meta), Website" /></div>
+                <div className="fld"><label htmlFor="f-dr-usage-months">Months</label><input id="f-dr-usage-months" name="usage_months" type="number" inputMode="numeric" min={1} max={MAX_USAGE_MONTHS} step={1} required defaultValue={usageMonths} /></div>
+                <div className="fld"><label htmlFor="f-dr-usage-starts">Starts <span className="opt">— empty = the live date</span></label><input id="f-dr-usage-starts" name="usage_starts" type="date" defaultValue={istDay(d.usage_starts_at)} /></div>
+              </div>
+              <p className="hint" style={{ margin: 0 }}>Common: {USAGE_CHANNELS.join(" · ")}. {!d.usage_channels && k?.usage_rights ? <>Prefilled from the campaign: "{k.usage_rights}".</> : null} The expiry is the start plus the months; the creator and the brand see it on their pages.</p>
+              <div className="row"><button className="btn plum">Save usage rights</button></div>
+            </form> : !d.usage_channels && <p className="hint" style={{ margin: 0 }}>{k?.usage_rights ? `Campaign terms: ${k.usage_rights}` : "No usage rights set yet."}</p>}
+          </div>
+
+          <div className="panel pad dr-panel" id="shipments">
+            <h2>Gifting and product shipments</h2>
+            <div className="dr-address">
+              <div className="lbl">Ship to <span className="opt">— team only, never shown to the brand</span></div>
+              {address ? <div className="small" style={{ marginTop: 4 }}>{addressLines(address).map((l, i) => <div key={i}>{l}</div>)}</div>
+                : <p className="hint" style={{ margin: "4px 0 0" }}>No address yet — ask the creator to add it in Settings.</p>}
+            </div>
+            {shipments.length > 0 && <div className="dr-ships" style={{ marginTop: 14 }}>{shipments.map((s) => (
+              <div key={s.id} className="dr-shiprow">
+                <div className="spread" style={{ gap: 8 }}><b className="small">{s.product}</b><ShipPill status={s.status} /></div>
+                <div className="hint">{s.carrier || "Courier not set"}{s.awb ? <> · AWB <code className="k">{s.awb}</code></> : null} · added {dayTime(s.created_at)}{s.shipped_at ? ` · shipped ${dayTime(s.shipped_at)}` : ""}{s.delivered_at ? ` · delivered ${dayTime(s.delivered_at)}` : ""}{s.created_by ? ` · ${s.created_by}` : ""}</div>
+                {s.note && <div className="small muted" style={{ marginTop: 2 }}>{s.note}</div>}
+                {crew && nextStatuses(s.status).length > 0 && <form action={room} className="dr-move">
+                  {roomHidden("ship_move")}<input type="hidden" name="shipment" value={s.id} />
+                  {s.status === "pending" && <><input className="in" name="carrier" maxLength={80} placeholder="Courier" defaultValue={s.carrier ?? ""} aria-label="Courier" /><input className="in" name="awb" maxLength={40} placeholder="AWB number" defaultValue={s.awb ?? ""} aria-label="AWB number" /></>}
+                  {nextStatuses(s.status).map((to) => <button key={to} className="btn sm" name="to" value={to}>Mark {SHIP_LABEL[to].toLowerCase()}</button>)}
+                </form>}
+              </div>
+            ))}</div>}
+            {crew ? <details className="dr-add">
+              <summary className="hint">Add a shipment</summary>
+              <form action={room} className="stack" style={{ marginTop: 10 }}>
+                {roomHidden("ship_add")}
+                <div className="form-grid">
+                  <div className="fld full"><label htmlFor="f-dr-ship-product">Product</label><input id="f-dr-ship-product" name="product" required minLength={2} maxLength={200} placeholder="Diwali hamper, 2 kurtas (M)" /></div>
+                  <div className="fld"><label htmlFor="f-dr-ship-carrier">Courier <span className="opt">— optional</span></label><input id="f-dr-ship-carrier" name="carrier" maxLength={80} placeholder="Delhivery, Blue Dart…" /></div>
+                  <div className="fld"><label htmlFor="f-dr-ship-awb">AWB <span className="opt">— optional</span></label><input id="f-dr-ship-awb" name="awb" maxLength={40} pattern="[A-Za-z0-9\- ]{4,40}" /></div>
+                  <div className="fld"><label htmlFor="f-dr-ship-status">Status</label><select id="f-dr-ship-status" name="ship_status" defaultValue="pending"><option value="pending">Packing (not sent yet)</option><option value="shipped">Already shipped</option></select></div>
+                  <div className="fld"><label htmlFor="f-dr-ship-note">Note <span className="opt">— team only</span></label><input id="f-dr-ship-note" name="ship_note" maxLength={500} /></div>
+                </div>
+                <div className="row"><button className="btn plum">Add shipment</button><span className="hint">The creator sees the courier and AWB; the brand sees the status only.</span></div>
+              </form>
+            </details> : !shipments.length && <p className="hint" style={{ margin: "10px 0 0" }}>No shipments on this deal.</p>}
+          </div>
         </div>
 
         <div className="stack">
@@ -255,6 +374,11 @@ export default async function Page({ params, searchParams }) {
             {avoid.length > 0 && <><div className="lbl" style={{ marginTop: 12 }}>Must not</div>{avoid.map((m, i) => <div key={i} className="small" style={{ marginTop: 6 }}>✕ {m}</div>)}</>}
             <p className="hint" style={{ margin: "10px 0 0" }}>Ticks come from the creator when they submit a draft.</p>
           </div>}
+
+          <div className="panel pad dr-panel">
+            <DealThread id="messages" messages={thread} me="team" unread={unread} action={room} canPost={crew} hidden={[["id", d.id], ["action", "message"]]} mid={crypto.randomUUID()}
+              names={{ brand: d.brand || "Brand", creator: name }} readOnlyNote="Viewers can read messages but not send them." />
+          </div>
 
           <div className="panel pad">
             <h2>Timeline</h2>

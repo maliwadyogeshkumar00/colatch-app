@@ -2,13 +2,16 @@ import { redirect } from "next/navigation";
 import TeamShell from "../../../_ui/TeamShell";
 import { flashUrl } from "../../../_ui/flash";
 import { requireTeam } from "../../_guard";
-import { audit } from "@/lib/net/security";
+import { audit, can } from "@/lib/net/security";
 import { env } from "@/lib/net/env";
 import { lookupProfile, metaReady } from "@/lib/net/meta";
-import { upsertFromInstagram, aiReview, compact, inr, erBand, tierFor, int, str, NICHES, CREATOR_STATUSES, DEAL_STAGES, STAGE_LABEL } from "@/lib/net/creators";
+import { upsertFromInstagram, aiReview, compact, inr, erBand, tierFor, int, str, NICHES, CREATOR_STATUSES, DEAL_STAGES, STAGE_LABEL, creatorPlatforms } from "@/lib/net/creators";
 import { SKILLS, list } from "@/lib/net/match";
 import { appStatusLabel, creatorStatusLabel, day } from "@/components/team/labels";
 import { dealStepName } from "@/components/team/dealStep";
+import { formatAudience, audienceSourceLabel, audienceSummary } from "@/lib/net/audience";
+import { findSimilar } from "@/lib/net/lookalike";
+import { AudienceBars, PlatformList } from "../../../_ui/CreatorProfileFields";
 
 export const metadata = { title: "Creator", robots: { index: false, follow: false } };
 
@@ -51,6 +54,13 @@ async function act(fd) {
       const cl = await env.DB.prepare("UPDATE creator_accounts SET claim_status='own', claim_verified_by=? WHERE creator_id=? AND claim_status='pending'").bind(me.email, id).run();
       await audit({ kind: "team", id: me.email }, "creator.owner_verified", "creator", id, { claims_cleared: cl.meta?.changes || 0 });
       msg = cl.meta?.changes ? "Ownership verified. The creator's account can now see their deals." : "Ownership marked verified.";
+    } else if (action === "audience_check" || action === "audience_uncheck") {
+      // Marks the creator's self-reported split as checked against their Insights screenshot (or undoes it).
+      const checked = action === "audience_check";
+      const r = await env.DB.prepare("UPDATE creators SET audience_source = ? WHERE id = ? AND audience IS NOT NULL").bind(checked ? "team_checked" : "self_reported", id).run();
+      if (!r.meta?.changes) throw new Error("This creator has no audience numbers to check yet.");
+      await audit({ kind: "team", id: me.email }, checked ? "audience.checked" : "audience.unchecked", "creator", id);
+      msg = checked ? "Audience marked as checked against the screenshot." : "Audience check removed. It shows as self-reported again.";
     } else if (action === "deal") {
       // A hand-made CRM deal starts in a pipeline stage; confirmed/live/paid only come from the deal steps.
       const stage = String(fd.get("stage") || "shortlisted");
@@ -100,6 +110,14 @@ export default async function Page({ params, searchParams }) {
   const ig = metaReady(env);
   const esc = (s) => String(s).replace(/</g, "&lt;");
   const hidden = (a) => <><input type="hidden" name="id" value={id} /><input type="hidden" name="action" value={a} /></>;
+  const aud = formatAudience(c.audience);
+  const platforms = await creatorPlatforms(env, id);
+  const canEdit = can(me.role, "shortlist");
+  // Private shipping address for product seeding: shown to team members who run deals, never to brands.
+  const address = canEdit ? await env.DB.prepare("SELECT name, line1, line2, city, state, pincode, phone, updated_at FROM creator_addresses WHERE creator_id = ?").bind(id).first().catch(() => null) : null;
+  let similar = [];
+  let similarErr = "";
+  try { similar = await findSimilar(env, c, { limit: 8 }); } catch (e) { console.error("[team/creator] similar", e); similarErr = "Similar creators could not be loaded right now."; }
 
   return (
     <TeamShell active="finder" eyebrow="Creator profile" title={`${esc(c.name || "@" + c.handle)}${c.verified ? " <b>✓</b>" : ""}`} email={me.email}
@@ -186,6 +204,47 @@ export default async function Page({ params, searchParams }) {
           </div>
         </div>
       </div>
+      <div className="sec grid2" style={{ alignItems: "start" }}>
+        <section className="panel pad aud-card" id="audience" aria-labelledby="t-aud-h">
+          <div className="spread"><h2 id="t-aud-h" style={{ margin: 0 }}>Audience</h2>{aud && <span className={`pill ${c.audience_source === "team_checked" ? "good" : "ok"}`}>{c.audience_source === "team_checked" ? "Checked against screenshot" : "Self-reported"}</span>}</div>
+          {aud ? <>
+            <p className="aud-src">{audienceSourceLabel(c)}</p>
+            <p className="small" style={{ margin: "0 0 8px" }}><b>{audienceSummary(c)}</b></p>
+            <AudienceBars aud={aud} />
+            {canEdit && <form action={act} className="row" style={{ marginTop: 14 }}>
+              {hidden(c.audience_source === "team_checked" ? "audience_uncheck" : "audience_check")}
+              <button className="btn plum sm">{c.audience_source === "team_checked" ? "Undo check" : "Checked against screenshot"}</button>
+              {c.audience_source !== "team_checked" && <span className="hint">Ask the creator for an Insights screenshot, compare, then mark it.</span>}
+            </form>}
+          </> : <p className="hint" style={{ margin: "10px 0 0" }}>No audience split yet. The creator adds it from Instagram Insights on their profile page (Your audience).</p>}
+        </section>
+
+        <div className="stack">
+          <section className="panel pad" aria-labelledby="t-pf-h">
+            <h2 id="t-pf-h">Other platforms</h2>
+            {platforms.length ? <PlatformList platforms={platforms} links /> : <p className="hint" style={{ margin: 0 }}>Only Instagram so far.</p>}
+          </section>
+          {canEdit && <section className="panel pad ship-card" aria-labelledby="t-ship-h">
+            <div className="spread"><h2 id="t-ship-h" style={{ margin: 0 }}>Shipping address</h2><span className="pill">Team only</span></div>
+            {address ? <address className="ship-addr">
+              {address.name}<br />{address.line1}{address.line2 ? <><br />{address.line2}</> : null}<br />{address.city}{address.state ? `, ${address.state}` : ""} {address.pincode}{address.phone ? <><br />Phone {address.phone}</> : null}
+            </address> : <p className="hint" style={{ margin: "10px 0 0" }}>Not added. The creator adds it in their account settings for gifting and product seeding.</p>}
+            <p className="hint" style={{ margin: "10px 0 0" }}>Never share this with brands. Ship products from Colatch or give the courier only.</p>
+          </section>}
+        </div>
+      </div>
+
+      <section className="panel sec" aria-labelledby="t-sim-h">
+        <div className="pad spread" style={{ padding: "18px 20px 6px" }}><h2 id="t-sim-h" style={{ margin: 0 }}>Similar creators</h2><a className="link small" href={`/team/creators?like=${encodeURIComponent(c.handle)}`}>See more like @{c.handle} →</a></div>
+        {similarErr ? <p className="hint" style={{ padding: "0 20px 18px" }}>{similarErr}</p>
+          : similar.length ? <ol className="sim-list">{similar.map((r) => (
+            <li key={r.creator.id}>
+              <a className="who" href={`/team/creators/${r.creator.id}`}><div className="ava">{r.creator.profile_pic ? <img src={r.creator.profile_pic} alt="" loading="lazy" /> : String(r.creator.name || r.creator.handle).slice(0, 2).toUpperCase()}</div><div><b>{r.creator.name || r.creator.handle}{r.creator.verified ? " ✓" : ""}</b><span>@{r.creator.handle} · {compact(r.creator.followers)}</span></div></a>
+              <p className="sim-why">{r.why}</p>
+              <span className="sim-score" title="How alike, out of 100">{r.score}<small>/100</small></span>
+            </li>
+          ))}</ol> : <p className="hint" style={{ padding: "0 20px 18px" }}>No similar creators yet. Add a niche, city, languages and follower count to this profile to find lookalikes.</p>}
+      </section>
     </TeamShell>
   );
 }

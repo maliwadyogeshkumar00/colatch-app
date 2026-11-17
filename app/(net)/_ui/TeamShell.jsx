@@ -16,6 +16,7 @@ const I = {
   finance: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M7 15h3"/>',
   audit: '<path d="M8 3h8l4 4v14H4V3h4"/><path d="M8 11h8M8 15h6"/>',
   system: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+  integrations: '<path d="M8 3v4M16 3v4"/><path d="M6 7h12v4a6 6 0 0 1-12 0Z"/><path d="M12 17v4"/>',
   connect: '<path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/>',
 };
 const NAV = [
@@ -36,6 +37,7 @@ const ADMIN_NAV = [
   { key: "bell", href: "/team/notifications", label: "Notifications" },
   { key: "audit", href: "/team/audit", label: "Audit log" },
   { key: "system", href: "/team/system", label: "System health" },
+  { key: "integrations", href: "/team/integrations", label: "Integrations" },
   { key: "settings", href: "/team/settings", label: "My settings" },
 ];
 const ROLE_NAME = { owner: "Owner", admin: "Admin", shortlist: "Shortlister", finance: "Finance", viewer: "Viewer" };

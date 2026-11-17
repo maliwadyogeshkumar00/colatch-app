@@ -14,6 +14,11 @@ import { scrubContacts, safeUrl } from "@/lib/net/guard";
 import { goingDirectLosses } from "@/lib/net/trust";
 import { REASONS, raiseDispute, DisputeError, openDispute, lastClosedDispute } from "@/lib/net/disputes";
 import { logError } from "@/lib/net/security";
+import DealThread from "@/components/deal/DealThread";
+import { UsageLine, ShipmentStatus } from "@/components/deal/DealExtras";
+import { listMessages, unreadCount, markRead, postMessage, notifyMessage, MessageError } from "@/lib/net/messages";
+import { listShipments } from "@/lib/net/shipments";
+import { syncUsageStart } from "@/lib/net/usage";
 
 export const metadata = { title: "Deal", robots: { index: false } };
 
@@ -116,6 +121,23 @@ async function dispute(fd) {
   redirect(err ? back(d.id, "bad", err) : back(d.id, "good", "Dispute sent. The Colatch team will look into it and reply here and by email."));
 }
 
+/** A message to the brand and the Colatch team on this deal. Contact details are scrubbed before it is stored. */
+async function sendMessage(fd) {
+  "use server";
+  const { d, me } = await ctx(fd);
+  if (isClosed(d)) redirect(back(d.id, "bad", "This deal is closed, so messages are off. WhatsApp the Colatch team if you need anything.") + "#messages");
+  let r;
+  try {
+    r = await postMessage(d.id, { kind: "creator", id: me.creator.id }, fd.get("body"), fd.get("mid"));
+  } catch (e) {
+    if (e instanceof MessageError) redirect(back(d.id, "bad", e.message) + "#messages");
+    await logError("creator/deal.message", e, { deal: d.id });
+    redirect(back(d.id, "bad", "Something went wrong, your message wasn't sent. Try again.") + "#messages");
+  }
+  if (r.created) await notifyMessage(d.id, r.id, { kind: "creator", id: me.creator.id });
+  redirect(back(d.id, "good", !r.created ? "That message was already sent." : r.scrubbed ? "Message sent. Contact details were hidden: keep the deal on Colatch." : "Message sent.") + "#messages");
+}
+
 export default async function Page({ params, searchParams }) {
   const me = await currentCreator();
   if (!me) redirect(`/creator/login?next=${encodeURIComponent(`/creator/deals/${params.id}`)}`);
@@ -154,6 +176,13 @@ export default async function Page({ params, searchParams }) {
   const otherDispute = brandDispute || teamDispute;
   const otherBy = brandDispute ? "The brand" : "The Colatch team";
   const lastDispute = myDispute ? null : await lastClosedDispute(d.id, "creator").catch(() => null);
+  // Deal room: messages, product shipment and usage rights. Each part is optional so the page never breaks on it.
+  await syncUsageStart(d).catch(() => false);
+  const reader = { kind: "creator", id: me.creator.id };
+  const thread = await listMessages(d.id).catch(() => []);
+  const unread = await unreadCount(d.id, reader).catch(() => 0);
+  if (thread.length) await markRead(d.id, reader).catch(() => {});
+  const shipments = await listShipments(d.id).catch(() => []);
 
   return (
     <PublicShell creatorName={me.creator.name || me.creator.handle} path="/creator/applications">
@@ -231,9 +260,18 @@ export default async function Page({ params, searchParams }) {
             ) : <p className="hint" style={{ margin: "10px 0 0" }}>You rated this brand {"★".repeat(myRating.stars)}.</p>}
             {!me.creator.upi_id && <p className="hint" style={{ margin: "10px 0 0" }}>Add your UPI ID in <a className="link" href="/creator/profile#payout">your payout details</a> so we can pay you.</p>}
           </div>}
+
+          <div className="panel pad dr-panel">
+            <DealThread id="messages" messages={thread} me="creator" unread={unread} action={sendMessage} canPost={!closed} hidden={[["id", d.id]]} mid={crypto.randomUUID()}
+              names={{ brand: d.sow_accepted_at ? d.brand || "Brand" : "Brand" }} readOnlyNote="This deal is closed, so messages are off." />
+          </div>
         </div>
 
         <div className="stack">
+          {(shipments.length > 0 || d.usage_channels) && <div className="panel pad dr-panel">
+            <ShipmentStatus shipments={shipments} showCarrier title={shipments.length === 1 ? "Product shipment" : "Product shipments"} />
+            {d.usage_channels && <><h2 style={{ marginTop: shipments.length ? 18 : 0 }}>Usage rights</h2><UsageLine d={d} /></>}
+          </div>}
           {th && <div className="panel pad">
             <h2>What you take home</h2>
             <table className="tbl"><tbody>

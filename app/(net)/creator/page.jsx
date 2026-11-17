@@ -23,7 +23,8 @@ export default async function Page({ searchParams }) {
   if (me.claimPending) return <PublicShell creatorName={me.creator.name || me.creator.handle} path="/creator"><ClaimNote status="pending" /></PublicShell>;
   const c = me.creator;
   const today = new Date().toISOString().slice(0, 10);
-  const camps = (await env.DB.prepare("SELECT * FROM campaigns WHERE status='open' AND is_open=1 AND (deadline IS NULL OR deadline >= ?) ORDER BY created_at DESC LIMIT 300").bind(today).all()).results ?? [];
+  // published_at: when the team last published the brief (campaigns has no column for it, so it comes from the audit log).
+  const camps = (await env.DB.prepare("SELECT k.*, (SELECT MAX(a.at) FROM audit_log a WHERE a.entity='campaign' AND a.entity_id=k.id AND a.action IN ('campaign.approve','campaign.publish','campaign.reopen')) AS published_at FROM campaigns k WHERE k.status='open' AND k.is_open=1 AND (k.deadline IS NULL OR k.deadline >= ?) ORDER BY k.created_at DESC LIMIT 300").bind(today).all()).results ?? [];
   const appRows = (await env.DB.prepare("SELECT campaign_id, match_score, status FROM campaign_applications WHERE (creator_id=? OR handle=?) AND status <> 'withdrawn'").bind(c.id, c.handle).all()).results ?? [];
   const applied = new Set(appRows.map((r) => r.campaign_id));
   // The chip on a brief card shows where that application or deal stands now, with the same labels as My deals.
@@ -38,9 +39,10 @@ export default async function Page({ searchParams }) {
   const revealed = new Set(((await env.DB.prepare("SELECT campaign_id FROM creator_deals WHERE creator_id=? AND sow_accepted_at IS NOT NULL").bind(c.id).all()).results ?? []).map((r) => r.campaign_id));
   const brandLabel = (k) => (revealed.has(k.id) ? k.brand || blindBrand(k) : blindBrand(k));
   const sc = await colatchScore(env, c.id);
-  // Icon early access: briefs younger than 24 hours are shown only to Icon creators (and to anyone already in them).
-  const cutoff = new Date(Date.now() - 24 * 3600 * 1000).toISOString().replace("T", " ").slice(0, 19);
-  const isFresh = (k) => String(k.created_at || "") > cutoff;
+  // Icon early access: for 24 hours after a brief is published it is shown only to Icon creators (and to anyone
+  // already in it). The window starts at publish time, not creation: every brief is created 'pending' and published
+  // later. Without a recorded publish time the window can't be placed, so the brief is open to everyone.
+  const isFresh = (k) => { const t = k.published_at ? new Date(k.published_at).getTime() : NaN; return Number.isFinite(t) && Date.now() - t < 24 * 36e5; };
   const early = sc.tier === "Icon" ? [] : camps.filter((k) => isFresh(k) && !applied.has(k.id) && match(c, k).eligible);
   const visible = sc.tier === "Icon" ? camps : camps.filter((k) => !isFresh(k) || applied.has(k.id));
   const scored = visible.map((k) => ({ k, m: match(c, k) }));

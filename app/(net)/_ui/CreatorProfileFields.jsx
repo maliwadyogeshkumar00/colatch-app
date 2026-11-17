@@ -1,6 +1,6 @@
 // Creator profile fields shared by /join and /creator/profile (ported from CreatorProfileFields.astro).
 import { SKILLS, LANGUAGES, CITIES, list } from "@/lib/net/match";
-import { NICHES } from "@/lib/net/creators";
+import { NICHES, PLATFORM_LABEL, platformInfo, compact, safeHref } from "@/lib/net/creators";
 
 export default function CreatorProfileFields({ v = {} }) {
   const has = (k, x) => list(v[k]).map((s) => s.toLowerCase()).includes(x.toLowerCase());
@@ -41,5 +41,39 @@ export default function CreatorProfileFields({ v = {} }) {
       </div>
       <datalist id="pcities">{CITIES.map((c) => <option key={c} value={c} />)}</datalist>
     </>
+  );
+}
+
+/** Audience split as labelled bars (share of followers). Shared by the media kit and the team record. `aud` comes from formatAudience() in lib/net/audience.ts. */
+export function AudienceBars({ aud }) {
+  const group = (title, rows) => rows.length > 0 && (
+    <div className="aud-g">
+      <h3>{title}</h3>
+      <ul className="bars">{rows.map((r) => (
+        <li key={r.label}><span className="bl">{r.label}</span><span className="bt" aria-hidden="true"><i style={{ width: `${Math.max(0, Math.min(100, r.pct))}%` }} /></span><span className="bv">{Math.round(r.pct * 10) / 10}%</span></li>
+      ))}</ul>
+    </div>
+  );
+  return <>{group("Top cities", aud.cities)}{group("Gender", aud.gender)}{group("Age", aud.age)}</>;
+}
+
+/**
+ * Other platforms as a list: mark, name, followers and average views. With `links`, the handle is shown and
+ * linked (team view only; the public media kit leaves handles and links out, like other contact details).
+ */
+export function PlatformList({ platforms, links = false }) {
+  return (
+    <ul className="pf-list">{platforms.map((p) => {
+      const href = links ? safeHref(p.url) : null;
+      return (
+        <li key={p.platform}>
+          <span className="pf-mark" aria-hidden="true">{platformInfo(p.platform)?.mark}</span>
+          <div className="pf-txt">
+            <b>{PLATFORM_LABEL[p.platform] || p.platform}</b>
+            <span>{links && <>{href ? <a className="link" href={href} target="_blank" rel="noopener noreferrer nofollow">@{p.handle} ↗</a> : `@${p.handle}`} · </>}{p.followers != null ? `${compact(p.followers)} followers` : "Followers not added"}{p.avg_views != null ? ` · ${compact(p.avg_views)} avg views` : ""}</span>
+          </div>
+        </li>
+      );
+    })}</ul>
   );
 }
