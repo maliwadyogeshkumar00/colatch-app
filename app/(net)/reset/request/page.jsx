@@ -51,6 +51,11 @@ export default function Page({ searchParams }) {
           <button className="btn-foil" style={{ marginTop: 20, width: "100%", justifyContent: "center" }}>Send reset link</button>
           <p className="hint" style={{ margin: "16px 0 0" }}>Back to <a className="link" href="/creator/login">creator log in</a> · <a className="link" href="/brand/login">brand log in</a></p>
         </form>
+        <ol className="v2b-next" aria-label="What happens next">
+          <li><b>We email a link</b><span>To the address you joined with, if it has an account.</span></li>
+          <li><b>It works once</b><span>And expires in {RESET_HOURS} hours.</span></li>
+          <li><b>Choose a new password</b><span>Every other device is signed out.</span></li>
+        </ol>
       </SplitAuth>
     </PublicShell>
   );

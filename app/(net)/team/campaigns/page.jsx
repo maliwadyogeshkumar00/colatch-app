@@ -10,7 +10,7 @@ import { needsToFields, requirementChips, CAMPAIGN_STATUS_LABEL } from "@/lib/ne
 import { inr } from "@/lib/net/creators";
 import { scrubContacts } from "@/lib/net/guard";
 import { weekSeries } from "@/lib/net/dashboard";
-import { PageHeader, KpiStrip, FilterBar, FilterChips, DataTable, Grid, Section, Card, AsideCard, InlineState, Pill, Tags, Split, Cell, Figure } from "@/components/ui";
+import { PageHeader, KpiStrip, FilterBar, FilterChips, DataTable, Grid, Section, Card, AsideCard, InlineState, Pill, Tags, Split, Cell, Figure, Pager, paginate, pageHref } from "@/components/ui";
 
 export const metadata = { title: "Open campaigns", robots: { index: false, follow: false } };
 
@@ -51,6 +51,8 @@ export default async function Page({ searchParams }) {
   } catch (e) { dbErr = e instanceof Error ? e.message : String(e); }
   const counts = { pending: camps.filter((c) => c.status === "pending").length, open: camps.filter((c) => c.status === "open").length };
   const shown = tab === "all" ? camps : camps.filter((c) => c.status === tab);
+  // 25 a page, like team home's "Showing 12 of 51"; the tab stays in the links.
+  const pg = paginate(shown, searchParams?.page, 25);
   const h = headers();
   const origin = `${h.get("x-forwarded-proto") || "https"}://${h.get("host")}`;
 
@@ -130,8 +132,9 @@ export default async function Page({ searchParams }) {
           <FilterBar label="Filter campaigns">
             <FilterChips name="tab" label="Filter by status" current={tab} hrefFor={(v) => `?tab=${v}`} options={TABS.map(([value, label, count]) => ({ value, label, count }))} />
           </FilterBar>
-          <DataTable caption="Campaigns" columns={columns} rows={shown} rowHref={(k) => `/team/campaigns/${k.id}`}
+          <DataTable caption="Campaigns" columns={columns} rows={pg.rows} rowHref={(k) => `/team/campaigns/${k.id}`}
             empty={{ title: "Nothing here yet.", body: tab === "all" ? "Paste a brief below, or send clients the brief link." : "No campaigns with this status.", action: tab === "all" ? <a className="btn sm" href="#new">Paste a brief</a> : <a className="btn sm" href="?tab=all">See all campaigns</a> }} />
+          <Pager p={pg} noun={["brief", "briefs"]} label="Campaign pages" hrefFor={(n) => pageHref(searchParams, n, { path: "/team/campaigns" })} />
         </Section>
 
         <Section id="new" title="New opportunity from a brief" sub="Paste the client's WhatsApp message, email or deck notes as it is. AI picks out the talent, cities, follower range, languages, deliverables and budget, and lists questions to clarify. You check it before anything goes live.">

@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import { cookies, headers } from "next/headers";
 import PublicShell from "../_ui/PublicShell";
-import { PageHeader, Grid, Section, Card, AsideCard } from "@/components/ui";
+import { PageHeader, Grid, Section, Card, AsideCard, FormSteps, KpiStrip } from "@/components/ui";
 import { MiniStats } from "@/components/brand/Facts";
 import BriefPreview from "@/components/brand/BriefPreview";
 import { env } from "@/lib/net/env";
@@ -190,6 +190,8 @@ export default async function Page({ searchParams }) {
   }
   const has = (k, x) => (v[k] ?? "").split(", ").includes(x);
   const origin = `https://${headers().get("host")}`;
+  // Read-only, for the form view: the network a brief is matched against. A failure only hides the strip.
+  const net = done ? null : await env.DB.prepare("SELECT COUNT(*) n, COUNT(DISTINCT LOWER(city)) cities, COUNT(*) FILTER (WHERE owner_verified=1) owned FROM creators WHERE status <> 'blacklisted'").first().catch(() => null);
 
   const hero = (
     <PageHeader variant="hero" eyebrow="For brands"
@@ -256,9 +258,22 @@ export default async function Page({ searchParams }) {
             </Card>
           </Grid>
         ) : (
-          <Grid aside={<AsideCard eyebrow="Live preview" title="What creators will see" className="v2b-sticky">
-            <BriefPreview form="brief-form" initial={initial} />
-          </AsideCard>}>
+          <>
+            {net && Number(net.n) > 0 && <KpiStrip label="The network your brief is matched against" items={[
+              { label: "Creators", value: Number(net.n), foot: "in the Colatch network" },
+              { label: "Cities", value: Number(net.cities), foot: "where those creators live" },
+              ...(Number(net.owned) > 0 ? [{ label: "Account ownership proven", value: Number(net.owned), foot: "creators who proved their handle" }] : []),
+              { label: "Shortlist", value: "2 days", foot: "usually, in working days; rush is 6 working hours" },
+            ]} />}
+          <Grid aside={<div className="v2b-sticky v2b-stack">
+            <AsideCard eyebrow="Live preview" title="What creators will see">
+              <BriefPreview form="brief-form" initial={initial} />
+            </AsideCard>
+            <AsideCard tone="night" eyebrow="After you send it" title="What happens next" foot={<a href="/faq">How Colatch works</a>}>
+              <ol className="v2b-steps"><li>A strategist checks the brief by hand.</li><li>Your shortlist appears on your private campaign page.</li><li>You approve each creator; nothing is booked or charged until you do.</li></ol>
+            </AsideCard>
+          </div>}>
+            <FormSteps label="Brief parts" current={0} steps={[{ label: "What you need", href: "#need" }, { label: "About you", href: "#you" }, { label: "Speed it up", href: "#speed" }]} />
             <form id="brief-form" className="v2b-form" action={submitBrief}>
               <div style={{ position: "absolute", left: -9999 }} aria-hidden="true"><input name="website" tabIndex={-1} autoComplete="off" /></div>
               {sp.ref && <input type="hidden" name="ref" value={String(sp.ref)} />}
@@ -310,6 +325,7 @@ export default async function Page({ searchParams }) {
               </Section>
             </form>
           </Grid>
+          </>
         )}
       </div>
     </PublicShell>

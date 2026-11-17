@@ -96,7 +96,7 @@ export default async function Page({ searchParams }) {
   const loginHref = `/creator/login${next ? `?next=${encodeURIComponent(next)}` : ""}`;
   return (
     <PublicShell path="/join" flush>
-      <SplitAuth
+      <SplitAuth className="cr-join-auth"
         panel={{
           eyebrow: "Colatch creator network",
           title: "Brand deals made for <em>what you do.</em>",

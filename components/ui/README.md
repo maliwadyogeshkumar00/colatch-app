@@ -53,6 +53,8 @@ pass strings that are already formatted (`inrShort(n)`) for money. `featured` tu
   { label: "Briefs in", value: 9, spark: weekly }]} />
 ```
 Also exported: `Trend({ dir, text })`.
+An item with `empty: "No views yet"` shows that phrase (with a dotted-ring mark) in place of the figure, for tiles that
+have no number yet. Use it instead of `"—"` or `"— / —"`, and say in `foot` what fills it in.
 
 ### ChartCard
 `{ title, period, figure, figureTitle, featured, children, foot, level = 3 }`
@@ -99,6 +101,17 @@ chip gets `aria-current="page"`. Chips wrap on phones and never scroll sideways.
 ```
 `Cell({ eyebrow, title, sub })` is the title cell (small caps line, bold name, then tags or facts).
 `Figure({ value, note, title })` is a Diodrum number with an optional note underneath.
+
+### Pager (+ paginate, pageHref)
+`paginate(rows, searchParams.page, 25)` slices rows the page already loaded and returns `{ rows, page, pages, from, to, total }`.
+`Pager({ p, hrefFor, noun, label })` renders "Showing 26–50 of 62 briefs · page 2 of 3" with Previous / Next links (plain
+links, no JS; the ends are shown as inert). `pageHref(searchParams, n, { path, hash, drop })` keeps every current
+filter in the link and drops `ok`/`err` flash params.
+```jsx
+const pg = paginate(shown, searchParams?.page, 25);
+<DataTable rows={pg.rows} … />
+<Pager p={pg} noun={["brief", "briefs"]} hrefFor={(n) => pageHref(searchParams, n, { path: "/team/campaigns" })} />
+```
 
 ### StatusRail
 `{ steps: [{ label, state: "done"|"now"|"todo" }], note, eyebrow?, badge?, label = "Progress", bare? }`
@@ -166,12 +179,14 @@ the one gold CTA.
 ```
 
 ### Pill, Tag, Tags, Avatar
-- `Pill({ tone, title })`. Tones: `done` (check), `wait` (dotted ring), `off` (dash: closed, rejected),
+- `Pill({ tone, title, onDark })`. `onDark` keeps the same shapes but uses ivory and gold shades that stay readable
+  on a night (dark 669) surface such as a hero band. Tones: `done` (check), `wait` (dotted ring), `off` (dash: closed, rejected),
   `mine` (triangle, solid plum: "your move"), `plum` (solid), `gold` (diamond: featured, money) and `quiet`
   (dot, the default). They map onto the existing `.pill` classes.
 - `Tag({ children })` / `Tags({ items, max = 6 })`: ivory requirement and fact labels, with "+N" for the rest.
 - `Avatar({ name, initials?, src?, size = 40, ring = true, label? })`: initials on one of three plum or gold
   gradients (chosen from the name) with the design's gold ring. It is decorative unless you pass `label`.
+- `initialsOf(name)` keeps letters and digits only: "Priya (sample)" → "PS".
 ```jsx
 <Pill tone="mine">Your move</Pill> <Tags items={["Mumbai", "Hindi", "50K+ followers"]} /> <Avatar name="Priya Sharma" />
 ```

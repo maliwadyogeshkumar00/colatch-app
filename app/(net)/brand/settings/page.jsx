@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
 import PublicShell from "../../_ui/PublicShell";
-import { PageHeader, Grid, Section, Card, AsideCard } from "@/components/ui";
-import { Facts } from "@/components/brand/Facts";
+import { PageHeader, Section, Card, AsideCard } from "@/components/ui";
+import { StatusTiles, istDay } from "@/components/creator/Parts";
 import Flash, { flashUrl } from "../../_ui/flash";
 import { env } from "@/lib/net/env";
 import { currentBrand, revokeSessions, startBrandSession } from "@/lib/net/creatorAuth";
@@ -72,28 +72,33 @@ async function resend() {
 
 export default async function Page({ searchParams }) {
   const b = await me();
-  const a = await env.DB.prepare("SELECT name, company, phone, website, gstin, verified_by FROM brand_accounts WHERE id=?").bind(b.id).first();
+  const a = await env.DB.prepare("SELECT name, company, phone, website, gstin, verified_by, last_login_at, created_at FROM brand_accounts WHERE id=?").bind(b.id).first();
+  // Read-only, for the status strip: campaigns on this account and the last security change. Failures only hide a figure.
+  const camps = (await env.DB.prepare("SELECT COUNT(*) n FROM campaigns WHERE brand_account_id=?").bind(b.id).first().catch(() => null))?.n ?? null;
+  const sec = await env.DB.prepare("SELECT action, at FROM audit_log WHERE actor_kind='brand' AND actor_id=? AND action IN ('brand.password_changed','brand.sessions_revoked') ORDER BY at DESC LIMIT 1").bind(b.id).first().catch(() => null);
+  const details = [a?.name, a?.company, a?.phone, a?.website, a?.gstin].filter(Boolean).length;
+  const tiles = [
+    { label: "Email", value: b.verified ? "Confirmed" : "Not confirmed", tone: b.verified ? "ok" : "todo", note: b.verified ? b.email : "Confirm it to see your campaigns", href: b.verified ? undefined : "#email" },
+    { label: "Brand check", value: a?.verified_by ? "Verified" : "Not yet verified", tone: a?.verified_by ? "ok" : "todo", note: a?.verified_by ? "Checked by the Colatch team" : a?.website ? "The team checks your website" : "Add your website so the team can check", href: a?.verified_by ? undefined : "#profile" },
+    { label: "Invoice details", value: a?.gstin ? "GSTIN added" : "No GSTIN", tone: a?.gstin ? "ok" : "info", note: `${details} of 5 details filled in`, href: "#profile" },
+    { label: "Security", value: sec ? (sec.action === "brand.password_changed" ? "Password changed" : "Signed out everywhere") : "Password set", tone: "info",
+      note: sec ? istDay(sec.at) : a?.last_login_at ? `Last sign-in ${istDay(a.last_login_at)}` : a?.created_at ? `Account since ${istDay(a.created_at)}` : null, href: "#password" },
+  ];
   const hero = (
     <PageHeader variant="hero" crumbs={[{ label: "My campaigns", href: "/brand" }, { label: "Settings" }]}
-      eyebrow={a?.company || b.company || "Your brand"} title="Settings" sub="Your details for invoices, your sign-in and the devices you're signed in on." />
+      eyebrow={a?.company || b.company || "Your brand"} title="Account <b>settings</b>" sub="Your details for invoices, your sign-in and the devices you're signed in on."
+      meta={[
+        ...(camps != null ? [{ label: "Campaigns", value: Number(camps) }] : []),
+        { label: "Details", value: `${details}/5` },
+      ]} />
   );
   return (
     <PublicShell mode="client" brandName={b.name || b.email} path="/brand/settings" hero={hero}>
       <div className="v2b v2b-own-cta">
         <div className="v2b-flash"><Flash sp={searchParams} /></div>
-        <Grid aside={<>
-          <AsideCard eyebrow="Account" title={a?.company || b.company || "Your brand"} foot={<><a href="/brand">My campaigns</a><a href="/faq">FAQ</a></>}>
-            <Facts label="Account status" items={[
-              { label: "Email", value: b.email },
-              { label: "Email status", value: b.verified ? "Confirmed" : "Not confirmed" },
-              { label: "Brand check", value: a?.verified_by ? "Verified by Colatch" : "Not yet verified" },
-              { label: "GSTIN", value: a?.gstin || "Not added" },
-            ]} />
-          </AsideCard>
-          <AsideCard tone="night" eyebrow="Why it matters" title="Verified brands get more applicants">
-            <p className="small">A confirmed email links the briefs you sent from it. Add your website and GSTIN so the Colatch team can verify your brand and invoice you correctly.</p>
-          </AsideCard>
-        </>}>
+        <StatusTiles label="Your account at a glance" items={tiles} />
+        <div className="v2b-setcols">
+          <div className="v2b-setcol">
           <Section id="email" title="Email" sub="Briefs sent from this address show up in your campaigns once it's confirmed.">
             <Card>
               <p className="row" style={{ gap: 10, alignItems: "center", flexWrap: "wrap", margin: 0 }}>
@@ -123,6 +128,8 @@ export default async function Page({ searchParams }) {
             </Card>
           </Section>
 
+          </div>
+          <div className="v2b-setcol">
           <Section id="password" title="Change password" sub="Changing it signs you out on every other device.">
             <Card>
               <form action={changePassword} aria-label="Change password">
@@ -143,7 +150,11 @@ export default async function Page({ searchParams }) {
               </form>
             </Card>
           </Section>
-        </Grid>
+          <AsideCard tone="night" eyebrow="Why it matters" title="Verified brands get more applicants" foot={<><a href="/brand">My campaigns</a><a href="/faq">FAQ</a></>}>
+            <p className="small">A confirmed email links the briefs you sent from it. Add your website and GSTIN so the Colatch team can verify your brand and invoice you correctly.</p>
+          </AsideCard>
+          </div>
+        </div>
       </div>
     </PublicShell>
   );

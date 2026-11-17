@@ -64,6 +64,7 @@ const CSS = `
 `;
 
 const day = (s) => String(s || "").slice(0, 10);
+const dayIST = (s) => { const t = Date.parse(String(s || "").slice(0, 10) + "T00:00:00+05:30"); return Number.isFinite(t) ? new Date(t).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" }) : String(s || ""); };
 
 export default async function Page({ params }) {
   const token = String(params?.token || "");
@@ -71,7 +72,7 @@ export default async function Page({ params }) {
   if (!k) notFound();
 
   // Only deals the brand has actually paid for count. A shortlisted or approved-but-unpaid creator isn't spend.
-  const deals = (await env.DB.prepare("SELECT d.*, c.name, c.handle FROM creator_deals d JOIN creators c ON c.id=d.creator_id WHERE d.campaign_id=? AND d.pay_status IN ('funded','released','paid') ORDER BY d.created_at ASC").bind(k.id).all()).results ?? [];
+  const deals = (await env.DB.prepare("SELECT d.*, c.name, c.handle, c.avg_views AS c_avg_views FROM creator_deals d JOIN creators c ON c.id=d.creator_id WHERE d.campaign_id=? AND d.pay_status IN ('funded','released','paid') ORDER BY d.created_at ASC").bind(k.id).all()).results ?? [];
   const payments = (await env.DB.prepare("SELECT kind, amount_paise, utr, at FROM finance_ledger WHERE campaign_id=? AND kind IN ('brand_payment_received','brand_refund_sent') ORDER BY id").bind(k.id).all()).results ?? [];
   const pct = feePct(env);
   const base = baselines(env);
@@ -96,6 +97,10 @@ export default async function Page({ params }) {
   const firstTime = deals.filter((d) => d.draft_status === "approved" && !(d.revisions_used > 0)).length;
   const signed = deals.filter((d) => d.brand_signoff_at).length;
   const fiveStar = (await env.DB.prepare("SELECT COUNT(*) n FROM ratings WHERE by_side='brand' AND stars=5 AND deal_id IN (SELECT id FROM creator_deals WHERE campaign_id=?)").bind(k.id).first())?.n ?? 0;
+  // Before any post is live the receipt leads with what is committed, not a return that can't exist yet.
+  const pending = deals.length > 0 && live.length === 0;
+  const expectedViews = deals.reduce((a, d) => a + (Number(d.c_avg_views) || 0), 0);
+  const nextLive = deals.map((d) => d.go_live_date).filter(Boolean).sort()[0] || null;
   const clicks = deals.reduce((a, d) => a + (d.clicks || 0), 0);
   const orders = deals.reduce((a, d) => a + (d.orders || 0), 0);
 
@@ -121,7 +126,7 @@ export default async function Page({ params }) {
     `  Saved vs a ${base.agencyPct}% agency markup: ${inr(tot.savedVsAgency)}`,
     `  ${compact(tot.views)} views, worth ${inr(tot.adsEquivalent)} as paid ads`,
     `  Sales from creator codes: ${inr(tot.sales)}`,
-    multiple ? `Return on Colatch: ${multiple.toFixed(1)}x` : "",
+    multiple && !pending ? `Return on Colatch: ${multiple.toFixed(1)}x` : pending ? "Results: no post is live yet; views and sales are added as each post goes live." : "",
     "",
     `Full receipt: ${origin}/receipt/${token}`,
   ].join("\n");
@@ -130,7 +135,10 @@ export default async function Page({ params }) {
   const hero = (
     <PageHeader variant="hero" crumbs={[{ label: "Your campaign", href: `/shortlist/${token}` }, { label: "Value receipt" }]}
       eyebrow={`Value receipt · ${receiptNo}`} title={k.title || "Your campaign"}
-      sub={`${brand} · ${deals.length} ${deals.length === 1 ? "creator" : "creators"} paid for · as of ${today}. Every rupee you spent, and everything it bought you.`} />
+      sub={pending
+        ? `${brand} · ${deals.length} ${deals.length === 1 ? "creator" : "creators"} paid for · as of ${today}. Nothing is live yet, so this shows what you've committed; views, sales and value are added as each post goes live.`
+        : `${brand} · ${deals.length} ${deals.length === 1 ? "creator" : "creators"} paid for · as of ${today}. Every rupee you spent, and everything it bought you.`}
+      meta={pending ? [{ label: "Status", value: "Results pending" }] : undefined} />
   );
   const parts = [
     { label: "Saved vs market rates", n: tot.savedVsMarket, text: inr(tot.savedVsMarket) },
@@ -143,7 +151,13 @@ export default async function Page({ params }) {
     <PublicShell mode="client" hero={<div className="v2b-noprint">{hero}</div>}>
       <div className="pg-receipt v2b v2b-own-cta">
         <style dangerouslySetInnerHTML={{ __html: CSS }} />
-        {deals.length > 0 && <div className="noprint"><KpiStrip label="Receipt at a glance" items={[
+        {pending && <div className="noprint"><KpiStrip label="Receipt at a glance" items={[
+          { featured: true, label: "Committed spend", value: inrShort(spend), title: inrFull(spend), foot: "creator fees, Colatch fee and GST" },
+          { label: "Creators booked", value: deals.length, foot: "paid for, getting ready to post" },
+          { label: "Expected views", value: expectedViews ? compact(expectedViews) : "—", foot: expectedViews ? `from each creator's average reel views` : "shows once creators' views are known" },
+          { label: "Posts live", value: `0 / ${deals.length}`, foot: nextLive ? `first go-live planned ${dayIST(nextLive)}` : "results start when the first post is live" },
+        ]} /></div>}
+        {deals.length > 0 && !pending && <div className="noprint"><KpiStrip label="Receipt at a glance" items={[
           { label: "Total spend", value: inrShort(spend), title: inrFull(spend), foot: "fees, Colatch fee and GST" },
           { featured: true, label: "Value received", value: inrShort(received), title: inrFull(received), foot: "savings, ads value and sales" },
           { label: "Kept in your pocket", value: inrShort(tot.saved), title: inrFull(tot.saved), foot: "vs market rates and agency markup" },
@@ -157,7 +171,11 @@ export default async function Page({ params }) {
               <PrintButton />
             </div>
           </AsideCard>
-          {received > 0 && <ChartCard title="Where the value came from" figure={inrShort(received)} figureTitle={inrFull(received)} level={2} foot="Nothing is counted twice">
+          {pending && <AsideCard eyebrow="Results pending" title="What happens next">
+            <p className="small">{deals.length === 1 ? "Your creator is" : `Your ${deals.length} creators are`} booked and paid for. Each post is checked live by the Colatch team, then its views, clicks and sales are added here.</p>
+            <a className="btn sm" href={`/shortlist/${token}#progress`}>See campaign progress</a>
+          </AsideCard>}
+          {received > 0 && !pending && <ChartCard title="Where the value came from" figure={inrShort(received)} figureTitle={inrFull(received)} level={2} foot="Nothing is counted twice">
             <ShareBar label="Value received by source" parts={parts} />
           </ChartCard>}
           {code && <AsideCard eyebrow="Refer a brand" title="Know another brand that needs creators?">
@@ -197,7 +215,7 @@ export default async function Page({ params }) {
                 <div className="tot mono"><span>Net received by Colatch</span><span>{formatPaise(paidIn - refunded)}</span></div>
               </>}
 
-              <div className="sect">Value received</div>
+              <div className="sect">{pending ? "Value so far (before any post is live)" : "Value received"}</div>
               <Line l="Saved vs creators' market rates" sub="Each creator's own rate card, or the typical rate for their size" v={inr(tot.savedVsMarket)} />
               <Line l={`Saved vs a ${base.agencyPct}% agency markup`} sub={`Colatch charged ${effPct}% on this campaign`} v={inr(tot.savedVsAgency)} />
               <Line l={`${compact(tot.views)} views, valued as paid ads`} sub={`At ₹${base.cpm} per 1,000 views`} v={inr(tot.adsEquivalent)} />
@@ -215,9 +233,9 @@ export default async function Page({ params }) {
               </div>
 
               <div className="grand">
-                <div className="k">Kept in your pocket</div>
+                <div className="k">{pending ? "Kept in your pocket so far" : "Kept in your pocket"}</div>
                 <div className="v mono">{inr(tot.saved)}</div>
-                <div className="s">{inr(received)} of value for {inr(spend)} spent{multiple != null && multiple >= 1 ? ` · ${multiple.toFixed(1)}× return` : ""}</div>
+                <div className="s">{pending ? `Savings on fees you've committed. Views and sales are added once posts go live.` : <>{inr(received)} of value for {inr(spend)} spent{multiple != null && multiple >= 1 ? ` · ${multiple.toFixed(1)}× return` : ""}</>}</div>
               </div>
               <p className="foot-note">How we count: market rate is each creator's own rate card, or the typical rate for their follower size. The agency baseline is a {base.agencyPct}% markup (the usual range is 15 to 30%). Paid-ads value prices your views at ₹{base.cpm} per 1,000. Sales come only from your tracked Colatch codes and links. Nothing is counted twice.</p>
             </>)}

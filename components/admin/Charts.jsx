@@ -110,20 +110,21 @@ export function Funnel({ steps = [], label }) {
 
 /**
  * HBars({ rows: [{ label, a, b?, tag? }], aLabel, bLabel?, label, fmt })
- * A ranked list of horizontal bars. With b, each row draws two thin bars, each scaled to its own
- * series' largest value (the legend says so), so a small demand can sit beside a large supply.
+ * A ranked list of horizontal bars. With b, each row draws two thin bars on ONE shared scale (the
+ * largest value of either series), so a pair can be compared honestly: 1 brief beside 4 creators
+ * draws as a short bar beside a bar four times longer.
  */
 export function HBars({ rows = [], aLabel, bLabel, label, fmt = (v) => Number(v || 0).toLocaleString("en-IN") }) {
-  const maxA = Math.max(1, ...rows.map((r) => Number(r.a) || 0));
-  const maxB = Math.max(1, ...rows.map((r) => Number(r.b) || 0));
   const two = bLabel != null;
+  const maxA = Math.max(1, ...rows.map((r) => Number(r.a) || 0), ...(two ? rows.map((r) => Number(r.b) || 0) : []));
+  const maxB = maxA;
   return (
     <div className="adm-hbars">
       {two && (
         <ul className="adm-legend" aria-hidden="true">
           <li><i className="adm-key adm-key--b" />{aLabel}</li>
           <li><i className="adm-key adm-key--a" />{bLabel}</li>
-          <li className="adm-legend__note">each bar to its own scale</li>
+          <li className="adm-legend__note">both bars on one scale</li>
         </ul>
       )}
       <ul className="adm-hbars__list" aria-label={label}>

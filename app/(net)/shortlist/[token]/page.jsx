@@ -224,7 +224,6 @@ export default async function Page({ params, searchParams }) {
      FROM campaign_applications a LEFT JOIN creators c ON c.id=a.creator_id WHERE a.campaign_id=? AND a.status IN ('shortlisted','accepted') ORDER BY a.match_score DESC NULLS LAST`
   ).bind(k.id).all()).results ?? [];
   const approved = rows.filter((r) => r.client_decision === "approved");
-  const views = approved.reduce((s, r) => s + (r.avg_views || 0), 0);
   const deals = (await env.DB.prepare("SELECT d.*, c.name, c.handle, c.profile_pic FROM creator_deals d JOIN creators c ON c.id=d.creator_id WHERE d.campaign_id=? AND d.stage <> ? ORDER BY d.updated_at DESC").bind(k.id, "dropped").all()).results ?? [];
   const live = deals.filter((d) => d.live_at);
   const tSpend = deals.reduce((a, d) => a + (d.fee || 0), 0);
@@ -263,6 +262,8 @@ export default async function Page({ params, searchParams }) {
   const bookedCreators = new Set(deals.filter((d) => d.stage !== "cancelled").map((d) => d.creator_id));
   // Approved = the brand said yes, or the creator is already booked on this brief. Fees come from the booked deals.
   const approvedOrBooked = rows.filter((r) => r.client_decision === "approved" || booked.has(r.id) || (r.creator_id && bookedCreators.has(r.creator_id)));
+  // Expected views count the same creators as "Creators approved": said yes, or already booked.
+  const views = approvedOrBooked.reduce((s, r) => s + (r.avg_views || 0), 0);
   const spend = deals.filter((d) => d.stage !== "cancelled").reduce((a, d) => a + (d.fee || 0), 0) || approved.reduce((a, r) => a + (r.rate_quote || 0), 0);
   const priced = Object.fromEntries(await Promise.all(deals.map(async (d) => [d.id, await priceDeal(env, d, k).catch(() => null)])));
   const drafts = deals.filter((d) => d.draft_status === "submitted" && d.stage !== "cancelled");
@@ -292,13 +293,15 @@ export default async function Page({ params, searchParams }) {
   const steps = [
     ["Brief in", true],
     ["Shortlist", rows.length > 0],
-    ["You approve", rows.length > 0 && waitingOnYou.length === 0 && approvedOrBooked.length > 0],
+    // Done once nobody waits on the brand, or once enough creators are approved or booked for the brief.
+    ["You approve", rows.length > 0 && approvedOrBooked.length > 0 && (waitingOnYou.length === 0 || (need > 0 && approvedOrBooked.length >= need))],
     ["Booked and paid", active.length > 0 && active.every((d) => ["funded", "released", "paid"].includes(d.pay_status))],
     ["Drafts approved", active.length > 0 && active.every((d) => d.draft_status === "approved" || d.live_at)],
     ["Live", active.length > 0 && active.every((d) => d.live_at)],
   ];
   const nowAt = steps.findIndex(([, done]) => !done);
-  const rail = steps.map(([label, done], i) => ({ label, state: done ? "done" : i === nowAt ? "now" : "todo" }));
+  // The rail reads in order: every step after the current one stays open, even if part of it has started.
+  const rail = steps.map(([label, done], i) => ({ label, state: nowAt === -1 || i < nowAt ? "done" : i === nowAt ? "now" : "todo" }));
   const myMoves = drafts.length + waitingOnYou.length;
   const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
   const sel = (v) => {

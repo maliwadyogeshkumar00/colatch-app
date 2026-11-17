@@ -9,6 +9,7 @@ import { inrFull } from "@/components/team/labels";
 import { inrShort } from "@/lib/net/dashboard";
 import { PageHeader, KpiStrip, ChartCard, FilterBar, FilterChips, DataTable, Grid, Section, Card, AsideCard, EmptyState, Pill, Cell, Figure } from "@/components/ui";
 import { DualBars, ShareBar, monthKeys, versus, StateMark, stamp } from "@/components/admin/Charts";
+import Pager, { PER_PAGE, pageOf } from "@/components/admin/Pager";
 
 export const metadata = { title: "Money and ledger", robots: { index: false, follow: false } };
 
@@ -37,13 +38,17 @@ export default async function Page({ searchParams }) {
   if (from) { where.push("l.at >= ?::date"); vals.push(from); }
   if (to) { where.push("l.at < (?::date + 1)"); vals.push(to); }
   const w = where.length ? "WHERE " + where.join(" AND ") : "";
+  const totals = (await env.DB.prepare(`SELECT l.kind, COUNT(*) AS n, COALESCE(SUM(l.amount_paise),0) AS paise, COALESCE(SUM(l.tds_paise),0) AS tds FROM finance_ledger l ${w} GROUP BY l.kind`).bind(...vals).all().catch(() => ({ results: [] }))).results ?? [];
+  const tot = Object.fromEntries(totals.map((t) => [t.kind, t]));
+  // 25 rows a page, newest first; the type and date filters ride along on every page link.
+  const matching = totals.reduce((a, t) => a + Number(t.n || 0), 0);
+  const pages = Math.max(1, Math.ceil(matching / PER_PAGE));
+  const page = Math.min(pageOf(searchParams), pages);
   const rows = (await env.DB.prepare(
     `SELECT l.*, d.brand, c.name AS creator_name, c.handle FROM finance_ledger l
      LEFT JOIN creator_deals d ON d.id = l.deal_id LEFT JOIN creators c ON c.id = d.creator_id
-     ${w} ORDER BY l.id DESC LIMIT 300`
+     ${w} ORDER BY l.id DESC LIMIT ${PER_PAGE} OFFSET ${(page - 1) * PER_PAGE}`
   ).bind(...vals).all().catch(() => ({ results: [] }))).results ?? [];
-  const totals = (await env.DB.prepare(`SELECT l.kind, COUNT(*) AS n, COALESCE(SUM(l.amount_paise),0) AS paise, COALESCE(SUM(l.tds_paise),0) AS tds FROM finance_ledger l ${w} GROUP BY l.kind`).bind(...vals).all().catch(() => ({ results: [] }))).results ?? [];
-  const tot = Object.fromEntries(totals.map((t) => [t.kind, t]));
   const checks = await reconcile();
   const issues = checks.reduce((a, c) => a + c.rows.length, 0);
   const qs = new URLSearchParams({ ...(kind ? { kind } : {}), ...(from ? { from } : {}), ...(to ? { to } : {}) }).toString();
@@ -142,7 +147,7 @@ export default async function Page({ searchParams }) {
           </ul>
         </AsideCard>
       }>
-        <Section id="ledger" title="Ledger" sub={rows.length ? `${plural(rows.length, "row", "rows")}${rows.length === 300 ? " (the latest 300)" : ""}${filtered ? " for this filter" : ""}, newest first` : filtered ? "No rows for this filter." : "Nothing recorded yet."}>
+        <Section id="ledger" title="Ledger" sub={matching ? `${plural(matching, "row", "rows")}${filtered ? " for this filter" : ""}, newest first` : filtered ? "No rows for this filter." : "Nothing recorded yet."}>
           <FilterBar label="Filter the ledger" end={
             <form className="adm-datefilter" method="get">
               {kind && <input type="hidden" name="kind" value={kind} />}
@@ -162,6 +167,7 @@ export default async function Page({ searchParams }) {
             { key: "tds", label: "TDS", num: true, render: (l) => (Number(l.tds_paise) ? formatPaise(Number(l.tds_paise)) : null) },
             { key: "ref", label: "Reference", render: (l) => <span className="adm-ref">{tail(l.utr)}{l.method ? <small>{l.method.replace(/_/g, " ")}</small> : null}</span> },
           ]} empty={{ title: `No money recorded${filtered ? " for this filter" : " yet"}.`, body: "Rows appear when finance records a brand payment or a payout in a deal room.", action: filtered ? <a className="btn sm" href="/team/finance#ledger">Clear the filter</a> : <a className="btn sm" href="/team/crm">Open the deals</a> }} />
+          <Pager page={page} total={matching} keep={{ ...(kind ? { kind } : {}), ...(from ? { from } : {}), ...(to ? { to } : {}), ...(recAll ? { rec: "all" } : {}) }} hash="ledger" noun="rows" prev="Newer" next="Older" />
         </Section>
       </Grid>
     </TeamShell>

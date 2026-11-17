@@ -13,9 +13,12 @@ const PILL = {
   quiet: "ui-pill--quiet", // dot, ivory
 };
 
-/** Pill({ tone, title, children }) — tone: 'done'|'wait'|'off'|'mine'|'plum'|'gold'|'quiet' (default 'quiet'). */
-export function Pill({ tone = "quiet", title, children, className }) {
-  return <span className={cx("pill", "ui-pill", PILL[tone] || PILL.quiet, className)} title={title}>{children}</span>;
+/**
+ * Pill({ tone, title, onDark, children }) — tone: 'done'|'wait'|'off'|'mine'|'plum'|'gold'|'quiet' (default 'quiet').
+ * onDark: for pills on a night (dark 669) surface. Same shapes, ivory/gold shades that stay readable on the dark band.
+ */
+export function Pill({ tone = "quiet", title, onDark = false, children, className }) {
+  return <span className={cx("pill", "ui-pill", PILL[tone] || PILL.quiet, onDark && "ui-pill--on-dark", className)} title={title}>{children}</span>;
 }
 
 /** Tag({ children }) — a small ivory label for facts and requirements (city, language, follower range). */
@@ -30,7 +33,8 @@ export function Tags({ items = [], max = 6, className }) {
   return <span className={cx("ui-tags", className)}>{shown.map((t) => <Tag key={t}>{t}</Tag>)}{items.length > max && <span className="ui-dim ui-tags__more">+{items.length - max}</span>}</span>;
 }
 
-const initialsOf = (s) => String(s || "").replace(/^@/, "").split(/[\s._-]+/).filter(Boolean).slice(0, 2).map((w) => w[0]).join("").toUpperCase() || "·";
+// Letters and digits only: "Priya (sample)" → "PS", "@aarav.mehta" → "AM", "E2E [test]" → "ET".
+export const initialsOf = (s) => String(s || "").replace(/^@/, "").replace(/[^\p{L}\p{M}\p{N}]+/gu, " ").trim().split(/\s+/).filter(Boolean).slice(0, 2).map((w) => [...w][0]).join("").toUpperCase() || "·";
 
 /**
  * Avatar({ name, initials?, src?, size?, ring?, label? })

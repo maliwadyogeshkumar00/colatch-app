@@ -151,7 +151,13 @@ export default async function Page({ params, searchParams }) {
   try { ai = JSON.parse(k.ai_notes || "{}"); } catch {}
   const flags = checkBrief([k.raw_brief, k.brief, k.title, k.brand].join(" "));
   const slApps = apps.filter((a) => ["shortlisted", "accepted"].includes(a.status));
-  const slTotal = slApps.length, slOk = slApps.filter((a) => a.client_decision === "approved").length, slNo = slApps.filter((a) => a.client_decision === "declined").length;
+  // Same rule as the brand's shortlist page: a booked creator counts as approved even without a client_decision.
+  const dealRows = (await env.DB.prepare("SELECT application_id, creator_id, stage FROM creator_deals WHERE campaign_id=?").bind(id).all().catch(() => null))?.results ?? [];
+  const bookedApps = new Set(dealRows.filter((x) => x.stage !== "cancelled" && x.application_id).map((x) => x.application_id));
+  const bookedCreators = new Set(dealRows.filter((x) => x.stage !== "cancelled").map((x) => x.creator_id));
+  const isBooked = (a) => bookedApps.has(a.id) || Boolean(a.creator_id && bookedCreators.has(a.creator_id));
+  const slTotal = slApps.length, slOk = slApps.filter((a) => a.client_decision === "approved" || isBooked(a)).length, slNo = slApps.filter((a) => a.client_decision === "declined" && !isBooked(a)).length;
+  const slBooked = slApps.filter(isBooked).length;
   const h = headers();
   const origin = `${h.get("x-forwarded-proto") || "https"}://${h.get("host")}`;
   const inviteText = (name) => `Hi ${name}! Colatch here. We have a paid opportunity that fits your profile: "${k.title}"${k.budget_note ? ` (${k.budget_note})` : ""}. See the brief and apply: ${origin}/creator/o/${k.slug}`;
@@ -167,10 +173,11 @@ export default async function Page({ params, searchParams }) {
   const booked = (await env.DB.prepare("SELECT COUNT(*) n, COALESCE(SUM(fee),0) fee, SUM(CASE WHEN live_at IS NOT NULL THEN 1 ELSE 0 END) live FROM creator_deals WHERE campaign_id=? AND stage NOT IN ('cancelled','dropped')").bind(id).first().catch(() => null)) || { n: 0, fee: 0, live: 0 };
   const bookedN = Number(booked.n || 0), bookedFee = Number(booked.fee || 0), liveN = Number(booked.live || 0);
   const STATUS_TONE = { open: "done", pending: "wait", closed: "off", rejected: "off" };
-  const reached = [k.status !== "pending", ["open", "closed"].includes(k.status), slTotal > 0, bookedN > 0, liveN > 0];
+  // "Booked" stays the current step until a post is live, so the rail never marks Live while nothing is live.
+  const reached = [k.status !== "pending", ["open", "closed"].includes(k.status), slTotal > 0, bookedN > 0 && liveN > 0, liveN > 0 && liveN >= bookedN];
   const firstTodo = reached.findIndex((x) => !x);
   const railSteps = ["Draft", "Approved", "Shortlist", "Booked", "Live"].map((label, i) => ({
-    label, state: k.status === "rejected" ? (i === 0 ? "done" : "todo") : reached[i] ? "done" : i === firstTodo ? "now" : "todo",
+    label, state: k.status === "rejected" ? (i === 0 ? "done" : "todo") : reached[i] ? "done" : i === firstTodo && (i < 4 || liveN > 0) ? "now" : "todo",
   }));
   const railNote = k.status === "rejected" ? "This brief was rejected. Reopen it to publish again."
     : k.status === "pending" ? "Check the needs below, then approve to publish it to matching creators."
@@ -259,7 +266,7 @@ export default async function Page({ params, searchParams }) {
         <KpiStrip label="Campaign at a glance" items={[
           { label: "Applicants", value: apps.length, foot: `${eligibleN} ${eligibleN === 1 ? "meets" : "meet"} every requirement`, href: "#applicants" },
           { label: "Shortlisted", value: slTotal, foot: `${pool.length + eligibleN}${pool.length === 40 ? "+" : ""} matching creators in the database` },
-          { label: "Approved by client", value: slOk, foot: slTotal ? `${slNo} declined · ${slTotal - slOk - slNo} waiting` : "Shortlist creators to ask the client" },
+          { label: "Approved by client", value: slOk, title: "Approved on the client's page, or already booked: the same count the brand sees", foot: slTotal ? `${slBooked ? `${slBooked} booked · ` : ""}${slNo} declined · ${slTotal - slOk - slNo} waiting` : "Shortlist creators to ask the client" },
           { featured: true, label: "Booked spend", value: bookedN ? inrShort(bookedFee) : "—", title: bookedN ? inr(bookedFee) : undefined, foot: `${plural(bookedN, "deal")}${k.budget_total ? ` · budget ${inrShort(k.budget_total)}` : ""}${k.creators_needed ? ` · needs ${k.creators_needed}` : ""}` },
         ]} />
       </div>
@@ -277,7 +284,7 @@ export default async function Page({ params, searchParams }) {
         <AsideCard id="shortlist" eyebrow="Client shortlist" title={slTotal ? `${slOk} of ${slTotal} <b>approved</b>` : "Client shortlist"}
           foot={k.share_token ? <a href={`/shortlist/${k.share_token}`} target="_blank">Open the client's page ↗</a> : null}>
           <p className="small">Shortlisted and accepted creators appear on a private page where the client approves or declines each one. Your note on each creator is shown as "Why we picked them".</p>
-          {slTotal > 0 && <Split label="Client decisions" parts={[{ label: "Approved", n: slOk }, { label: "Declined", n: slNo }, { label: "Waiting", n: slTotal - slOk - slNo }]} />}
+          {slTotal > 0 && <Split label="Client decisions" parts={[{ label: "Approved or booked", n: slOk }, { label: "Declined", n: slNo }, { label: "Waiting", n: slTotal - slOk - slNo }]} />}
           {k.share_token
             ? <div className="tr-copy"><code className="k">{origin}/shortlist/{k.share_token.slice(0, 8)}…</code><CopyButton url={`${origin}/shortlist/${k.share_token}`} /></div>
             : <form action={act}>{hidden("share")}<button className="btn plum">Create client link</button></form>}

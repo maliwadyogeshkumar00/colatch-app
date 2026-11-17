@@ -1434,6 +1434,35 @@ html:has(.net){scroll-padding-top:80px}
 @media (prefers-reduced-motion:reduce){
   .net .ui-title em,.net .ui-head--hero .ui-title b,.net .ui-auth__display :is(b,em),.net .ui-state--loading .ui-state__g{animation:none}
 }
+/* ---- Pager (components/ui/Pager) */
+.net .ui-pager{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;margin-top:14px;padding:12px 4px 0;border-top:1px solid var(--line-2)}
+.net .ui-pager__text{margin:0;font-size:13px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.net .ui-pager__links{display:flex;gap:8px}
+.net .ui-pager__off{opacity:1;color:var(--ink-4);background:transparent;border-style:dashed;cursor:default}
+@media (max-width:640px){.net .ui-pager__links{width:100%}.net .ui-pager__links>*{flex:1;min-height:44px}}
+
+/* ---- KPI tile with no figure yet */
+.net .ui-kpi__value--empty{font-family:var(--font-sans);font-size:15px!important;font-weight:600;letter-spacing:0;line-height:1.3;color:var(--ink-3);white-space:normal;padding:8px 0 4px;display:flex;align-items:center;gap:8px}
+.net .ui-kpi__value--empty::before{content:"";flex:none;width:10px;height:10px;border-radius:50%;border:1.5px dotted currentColor}
+
+/* ---- disabled buttons: readable, clearly inert (was lilac at 50% opacity) */
+.net .btn:disabled,.net .btn[disabled]{opacity:1;background:var(--ivory-2);border-color:var(--line-3);border-style:dashed;color:var(--ink-3);box-shadow:none}
+
+/* ---- Pill on a night surface (Pill onDark) */
+.net .ui-pill.ui-pill--on-dark{background:rgba(244,239,227,.12);color:var(--ui-on-night);box-shadow:inset 0 0 0 1px var(--ui-night-line)}
+.net .ui-pill--on-dark.good{background:rgba(244,239,227,.16);color:#fff;box-shadow:none}
+.net .ui-pill--on-dark.ok{background:transparent;color:#fff;box-shadow:inset 0 0 0 1px rgba(244,239,227,.55)}
+.net .ui-pill--on-dark.low{background:transparent;color:var(--ui-on-night-2);box-shadow:inset 0 0 0 1px rgba(244,239,227,.32)}
+.net .ui-pill--on-dark.plum,.net .ui-pill--on-dark.mine{background:var(--ui-on-night);color:var(--p900);box-shadow:none}
+.net .ui-pill.ui-pill--gold.ui-pill--on-dark{background:rgba(214,162,86,.2);color:var(--gold-2);box-shadow:inset 0 0 0 1px rgba(214,162,86,.4)}
+.net .ui-pill.ui-pill--quiet.ui-pill--on-dark{background:rgba(244,239,227,.1);color:var(--ui-on-night-2)}
+/* ---- tables beside an aside on small desktops (1025–1279px): the main column is narrow, so scroll inside the
+   card with a shadow cue on the clipped edge instead of spilling onto the aside. Wide (scroll) tables get the cue too. */
+.net .ui-table-wrap--scroll{background:linear-gradient(90deg,var(--paper) 30%,transparent),linear-gradient(270deg,var(--paper) 30%,transparent) 100% 0,radial-gradient(farthest-side at 0 50%,rgba(27,19,66,.16),transparent),radial-gradient(farthest-side at 100% 50%,rgba(27,19,66,.16),transparent) 100% 0;background-color:var(--paper);background-repeat:no-repeat;background-size:40px 100%,40px 100%,14px 100%,14px 100%;background-attachment:local,local,scroll,scroll}
+@media (min-width:1025px) and (max-width:1279px){
+  .net .ui-grid--aside .ui-table-wrap.scroll-x:not(.ui-table-wrap--empty){overflow-x:auto;background:linear-gradient(90deg,var(--paper) 30%,transparent),linear-gradient(270deg,var(--paper) 30%,transparent) 100% 0,radial-gradient(farthest-side at 0 50%,rgba(27,19,66,.16),transparent),radial-gradient(farthest-side at 100% 50%,rgba(27,19,66,.16),transparent) 100% 0;background-color:var(--paper);background-repeat:no-repeat;background-size:40px 100%,40px 100%,14px 100%,14px 100%;background-attachment:local,local,scroll,scroll}
+  .net .ui-grid--aside .ui-table thead th{position:static}
+}
 /* end ui kit */
 
 /* === v2: brand and public pages === */
@@ -1594,6 +1623,25 @@ html:has(.net){scroll-padding-top:80px}
 .net .v2b-path .btn{margin-top:auto;align-self:flex-start}
 .net .v2b-help{margin:24px 0 0;max-width:70ch}
 .net :is(.v2b-acts,.v2b-cc__btns,.v2b-auth-links,.v2b-row-acts,.v2b-draft__acts,.v2b-note) .btn{box-sizing:border-box}
+/* r2 brand start */
+/* Round 2: brand settings as an account dashboard (status strip, then compact cards in two columns) */
+.net .v2b>.cr-stiles{margin-bottom:28px}
+.net .v2b-setcols{display:grid;grid-template-columns:minmax(0,1fr);gap:28px;align-items:start}
+.net .v2b-setcol{display:grid;gap:28px;min-width:0;align-content:start}
+.net .v2b-setcol>.ui-sec+.ui-sec{margin-top:0}
+@media(min-width:900px){.net .v2b-setcols{grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:24px}}
+/* reset: what happens next, under the form */
+.net .v2b-next{list-style:none;counter-reset:nx;margin:20px 0 0;padding:0;display:grid;gap:10px}
+.net .v2b-next li{counter-increment:nx;position:relative;display:grid;gap:2px;padding:12px 14px 12px 48px;border-radius:var(--ui-r);background:var(--paper);border:1px solid var(--line);font-size:13.5px;color:var(--ink-3)}
+.net .v2b-next li::before{content:counter(nx);position:absolute;left:14px;top:12px;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;background:var(--p100);color:var(--p700)}
+.net .v2b-next b{color:var(--head);font-size:14px}
+/* not-found: live counts above the three ways in */
+.net .v2b-nf-live{margin-bottom:24px}
+.net .v2b-nf-live .v2b-path__eb{margin-bottom:10px}
+/* brief: network strip and steps above the form */
+.net .pg-brief>.ui-kpis{margin-bottom:24px}
+.net .v2b-stack{display:grid;gap:16px;align-content:start}
+/* r2 brand end */
 /* end v2 brand */
 
 /* === v2: creator pages === */
@@ -1750,6 +1798,85 @@ html:has(.net){scroll-padding-top:80px}
   .net .cr-tier--gold{background:rgba(214,162,86,.16);color:var(--gold-2)}
   .net .cr-tierbar__track i{background:linear-gradient(90deg,var(--p300),var(--p200))}
 }
+/* r2 creator start */
+/* Round 2: deal room, timeline, hero bands on every creator page, profile/settings dashboards, join panel */
+.net .cr-dispute{border-color:var(--line-strong);box-shadow:inset 4px 0 0 var(--p700),var(--sh-1)}
+.net .cr-take{margin:0;display:grid;gap:0}
+.net .cr-take div{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid var(--line-2);font-size:14px}
+.net .cr-take div:first-child{border-top:0}
+.net .cr-take dt{color:var(--ink-3)}
+.net .cr-take dd{margin:0;font-variant-numeric:tabular-nums;color:var(--ink)}
+.net .cr-take__net dt,.net .cr-take__net dd{font-weight:700;color:var(--head)}
+.net .cr-tl{list-style:none;margin:0;padding:6px 20px;border-radius:var(--ui-r-lg);background:var(--paper);border:1px solid var(--line);box-shadow:var(--sh-1)}
+.net .cr-tl li{position:relative;padding:12px 0 12px 22px;border-top:1px solid var(--line-2)}
+.net .cr-tl li:first-child{border-top:0}
+.net .cr-tl__dot{position:absolute;left:0;top:18px;width:9px;height:9px;border-radius:50%;background:var(--p500);box-shadow:0 0 0 3px var(--p100)}
+.net .cr-tl li:first-child .cr-tl__dot{background:var(--gold-2)}
+.net .cr-tl__row{display:flex;justify-content:space-between;gap:12px;font-size:14px}
+.net .cr-tl__empty{margin:0;padding:16px 20px;border:1px dashed var(--line-strong);border-radius:var(--ui-r-lg)}
+.net .cr-deal .ui-grid__main{display:grid;gap:24px;align-content:start}
+.net .cr-deal .ui-grid__main>.ui-sec+.ui-sec{margin-top:0}
+.net .cr-page .fld>label.row input[type=checkbox]{width:auto;flex:none;min-height:0;margin-top:3px}
+/* account status strip (settings) */
+.net .cr-stiles{list-style:none;margin:0;padding:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+@media(min-width:900px){.net .cr-stiles{grid-template-columns:repeat(4,minmax(0,1fr));gap:16px}}
+.net .cr-stile>a,.net .cr-stile>div{display:flex;flex-direction:column;gap:8px;height:100%;min-height:44px;box-sizing:border-box;padding:16px 18px;border-radius:var(--ui-r-lg);background:var(--paper);border:1px solid var(--line);box-shadow:var(--sh-1);color:inherit;text-decoration:none}
+.net .cr-stile>a:hover{border-color:var(--line-strong)}
+.net .cr-stile__l{font-size:10.5px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-4)}
+.net .cr-stile__v{display:flex;align-items:center;gap:8px;font-family:var(--font-display);font-size:clamp(18px,4.6vw,22px);font-weight:400;letter-spacing:-.015em;line-height:1.15;color:var(--head)}
+.net .cr-stile__v i{flex:none;width:10px;height:10px;border-radius:50%;background:var(--ink-5)}
+.net .cr-stile__v--ok i{background:var(--p700);box-shadow:0 0 0 3px var(--p100)}
+.net .cr-stile__v--todo i{background:transparent;box-shadow:inset 0 0 0 2px var(--gold)}
+.net .cr-stile__n{font-size:12.5px;line-height:1.45;color:var(--ink-3);overflow-wrap:anywhere}
+.net .cr-stile>a .cr-stile__n::after{content:" →";color:var(--ui-accent)}
+/* settings: compact cards in two columns */
+.net .cr-setgrid{display:grid;grid-template-columns:minmax(0,1fr);gap:16px;align-items:start}
+.net .cr-setgrid>*{min-width:0;margin:0}
+.net .cr-setgrid>[id]{scroll-margin-top:84px}
+@media(min-width:900px){
+  .net .cr-setgrid{grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;grid-template-areas:"email pw" "out pw" "else pw" "ship ship"}
+  .net .cr-set-email{grid-area:email}.net .cr-set-pw{grid-area:pw}.net .cr-set-out{grid-area:out}.net .cr-set-else{grid-area:else}.net .cr-set-ship{grid-area:ship}
+}
+/* profile: one section at a time (CSS :target tabs, no JS), sticky media-kit preview */
+.net .cr-tabs{display:grid;gap:16px;min-width:0}
+.net .cr-tabs>[id]{scroll-margin-top:84px}
+.net .cr-tabnav a{gap:8px}
+.net .cr-tabnav__ok{font-style:normal;font-size:11px;font-weight:700;width:18px;height:18px;border-radius:50%;display:grid;place-items:center;background:var(--p100);color:var(--p700)}
+.net .cr-tabnav__todo{width:8px;height:8px;border-radius:50%;box-shadow:inset 0 0 0 2px var(--gold)}
+@supports selector(:has(a)){
+  .net .cr-tabs>.cr-tab{display:none}
+  .net .cr-tabs>.cr-tab:target,.net .cr-tabs:not(:has(>.cr-tab:target))>.cr-tab--first{display:block}
+  .net .cr-tabs:not(:has(>.cr-tab:target)) .cr-tabnav a[data-tab=basics],
+  .net .cr-tabs:has(>#basics:target) .cr-tabnav a[data-tab=basics],
+  .net .cr-tabs:has(>#payout:target) .cr-tabnav a[data-tab=payout],
+  .net .cr-tabs:has(>#media:target) .cr-tabnav a[data-tab=media],
+  .net .cr-tabs:has(>#audience:target) .cr-tabnav a[data-tab=audience],
+  .net .cr-tabs:has(>#platforms:target) .cr-tabnav a[data-tab=platforms]{background:var(--p700);border-color:var(--p700);color:#fff}
+}
+@media(min-width:1081px){
+  .net .cr-profile .ui-grid--aside{align-items:start}
+  .net .cr-profile .ui-grid__aside{position:sticky;top:84px}
+  .net .cr-profile .ui-grid__aside .ui-summary{position:static}
+}
+.net .cr-own{box-shadow:inset 4px 0 0 var(--gold),var(--sh-1)}
+/* join: a long form beside the night panel. The panel stays in view (top-aligned, sticky) so no viewport is half empty. */
+@media(min-width:900px){
+  .net .cr-join-auth{align-items:start}
+  .net .cr-join-auth .ui-auth__panel{position:sticky;top:64px;height:calc(100vh - 64px);height:calc(100dvh - 64px);min-height:560px;box-sizing:border-box}
+  .net .cr-join-auth .ui-auth__pbody{justify-content:flex-start;flex:0 1 auto}
+  .net .cr-join-auth .ui-auth__pfoot{margin-top:auto}
+}
+@media(min-width:900px) and (max-height:700px){.net .cr-join-auth .ui-auth__panel{position:relative;top:0;height:auto}}
+/* pitch: requests by idea, a ranked bar list */
+.net .cr-hbars{list-style:none;margin:0;padding:0;display:grid;gap:12px}
+.net .cr-hbars li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;font-size:13px;color:var(--ink-2)}
+.net .cr-hbars__l{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.net .cr-hbars b{font-variant-numeric:tabular-nums;color:var(--ink)}
+.net .cr-hbars i{grid-column:1/-1;display:block;height:6px;border-radius:3px;background:var(--p700)}
+.net .cr-hbars i.cr-hbars--off{background:var(--p200)}
+.net .pg-pitch .ui-grid__main{display:grid;gap:28px;align-content:start}
+.net .pg-pitch .ui-grid__main>.ui-sec+*{margin-top:0}
+/* r2 creator end */
 /* end v2 creator */
 
 /* === v2: team records === */
@@ -1762,7 +1889,8 @@ html:has(.net){scroll-padding-top:80px}
 .net .tr-grow{flex:1 1 220px;width:auto}
 .net .tr-w-amt{flex:0 1 150px;width:150px}
 .net .tr-w-sel{flex:0 1 220px;width:auto}
-.net .tr-move .note{margin:0}
+.net .tr-move .note{margin:0;overflow-wrap:anywhere;min-width:0}
+.net .tr-move .note a{overflow-wrap:anywhere;word-break:break-all}
 .net .tr-cancel summary{cursor:pointer;min-height:32px;display:flex;align-items:center}
 .net .tr-copy{display:flex;gap:8px;align-items:center;flex-wrap:wrap;min-width:0}
 .net .tr-copy code{overflow-wrap:anywhere;min-width:0;flex:1 1 160px}
@@ -1912,6 +2040,60 @@ html:has(.net){scroll-padding-top:80px}
 .net .tr-dispute__detail{white-space:pre-line;margin:8px 0 0;color:var(--ink-2);overflow-wrap:anywhere}
 .net .tr-dispute{border-left:3px solid var(--ui-accent)}
 @media (max-width:640px){.net .tr-acts{justify-content:flex-start}}
+/* brands table: brand + contact + email in one cell; actions stack in their cell (never spill onto the aside) */
+.net .tr-brandsub{display:flex;flex-direction:column;gap:3px;min-width:0}
+.net .tr-brandsub>*{overflow-wrap:anywhere;word-break:normal}
+.net .tr-brandtbl .ui-table{width:100%}
+.net .tr-brandtbl .ui-table th:first-child{min-width:0}
+.net .tr-actcol{width:1%}
+.net .tr-acts--stack{display:flex;flex-direction:column;align-items:stretch;gap:6px;min-width:0}
+.net .tr-acts--stack form{display:flex}
+.net .tr-acts--stack .btn{width:100%;white-space:nowrap}
+.net .tr-quietbtn{color:var(--ink-3);text-decoration:underline;text-underline-offset:3px;text-decoration-color:var(--line-3)}
+@media (max-width:640px){.net .tr-acts--stack{flex-direction:row;flex-wrap:wrap}.net .tr-acts--stack .btn{width:auto;min-height:44px}}
+/* a short "needs you" list in an aside card */
+.net .tr-queue{list-style:none;margin:0;padding:0}
+.net .tr-queue li+li{border-top:1px solid var(--line-2)}
+.net .tr-queue a{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:10px 0;min-height:44px;color:inherit}
+.net .tr-queue a:hover b{color:var(--ui-accent)}
+.net .tr-queue__t{display:flex;flex-direction:column;gap:2px;min-width:0}
+.net .tr-queue__t b{font-size:14px;overflow-wrap:anywhere}
+.net .tr-queue__age{flex:none;font-variant-numeric:tabular-nums;font-size:12px;font-weight:600;color:var(--ink-3);padding:2px 8px;border-radius:99px;background:var(--ivory-2)}
+/* CRM: stage index (also the sideways-scroll cue), columns only as tall as their cards, a fade on the clipped edge */
+.net .tr-board{align-items:start;grid-auto-columns:minmax(200px,1fr)}
+.net .tr-board .tr-col{min-height:0}
+.net .tr-boardwrap{position:relative;min-width:0}
+.net .tr-boardwrap::after{content:"";position:absolute;top:14px;right:0;bottom:12px;width:36px;pointer-events:none;background:linear-gradient(270deg,var(--bg,var(--ivory)) 10%,transparent);border-radius:0 var(--r-md) var(--r-md) 0}
+.net .tr-stages{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-top:14px}
+.net .tr-stages__lbl{font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--ink-4);margin-right:4px}
+.net .tr-stages a{display:inline-flex;align-items:center;gap:6px;min-height:32px;padding:0 10px;border-radius:99px;background:var(--paper);box-shadow:inset 0 0 0 1px var(--line);font-size:13px;color:var(--ink-2)}
+.net .tr-stages a:hover{box-shadow:inset 0 0 0 1px var(--line-3);color:var(--ink)}
+.net .tr-stages a b{font-variant-numeric:tabular-nums;color:var(--ink)}
+.net .tr-stages a.tr-stages__0{color:var(--ink-4)}
+.net .tr-col{scroll-margin-left:8px}
+.net .tr-col .who{min-width:0}
+.net .tr-col .who>div:last-child{min-width:0}
+.net .tr-col .who b{overflow-wrap:anywhere}
+@media (min-width:1840px){.net .tr-boardwrap::after{display:none}.net .tr-stages__cue{display:none}}
+@media (max-width:640px){.net .tr-boardwrap::after,.net .tr-stages__cue{display:none}.net .tr-stages a{min-height:44px}}
+/* deal room: open dispute band at the top, money trail */
+.net .tr-disputebar{margin:0 0 16px;border-left:3px solid var(--gold)}
+.net .tr-disputebar__in{position:relative;display:flex;flex-direction:column;gap:14px;align-items:flex-start}
+.net .tr-disputebar .ui-aside__eb{color:var(--gold-2);margin:0 0 6px}
+.net .tr-disputebar__h{margin:0;font-size:18px;font-weight:600;color:#fff;line-height:1.35;overflow-wrap:anywhere}
+.net .tr-disputebar__h span{display:block;font-size:13px;font-weight:400;color:var(--ui-on-night-2);margin-top:2px}
+.net .tr-disputebar__one+.tr-disputebar__one{margin-top:12px;padding-top:12px;border-top:1px solid var(--ui-night-line)}
+.net .tr-disputebar__d{margin:8px 0 0;color:var(--ui-on-night);white-space:pre-line;overflow-wrap:anywhere;max-width:70ch}
+.net .tr-disputebar__rule{margin:12px 0 0;font-size:13px;color:var(--ui-on-night-2)}
+.net .tr-disputebar__go{background:var(--ui-on-night);color:var(--p900);border-color:transparent;flex:none}
+.net .tr-disputebar__go:hover{background:#fff;color:var(--p900)}
+@media (min-width:768px){.net .tr-disputebar__in{flex-direction:row;justify-content:space-between;align-items:center;gap:24px}}
+.net .tr-trail dt{flex:none;white-space:nowrap}
+.net .tr-trail dd{white-space:normal;text-align:right}
+.net .tr-trail__gap{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--ui-gold-ink)}
+.net .tr-trail__gap::before{content:"";width:7px;height:7px;transform:rotate(45deg);border:1.5px solid currentColor;flex:none}
+.net .tr-trail__fix{margin:10px 0 0;padding:10px 12px;border-radius:var(--r-md);background:var(--ui-gold-wash);font-size:13px;color:var(--ink-2)}
+.net .tr-trail__lbl{margin:16px 0 8px}
 /* end v2 team records */
 
 /* === v2: team money and admin === */
@@ -2043,4 +2225,66 @@ html:has(.net){scroll-padding-top:80px}
 .net .adm-lock .em{width:30px;height:30px}.net .adm-lock .wm{height:15px;width:76px;color:currentColor}
 .net .adm-lock small{font-size:9.5px;letter-spacing:.2em;text-transform:uppercase;color:var(--eyebrow);border-left:1px solid var(--line-3);padding-left:10px}
 .net .ui-auth.adm-auth{min-height:100vh;min-height:100dvh}
+/* phones and small tablets: the Colatch lockup leads the page, above the night band (QA #30) */
+@media (max-width:899px){
+  .net .ui-auth.adm-auth{align-content:start}
+  .net .adm-auth .ui-auth__col{display:contents}
+  .net .adm-auth .ui-auth__top{order:-1;justify-content:flex-start;padding:10px max(16px,env(safe-area-inset-left,0px));background:var(--bg);border-bottom:1px solid var(--line-2)}
+  .net .adm-auth .ui-auth__form{padding:24px max(16px,env(safe-area-inset-left,0px)) 40px;max-width:452px}
+}
+/* pager (ledger, outbox, audit) */
+.net .adm-pager{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:10px 16px;margin:14px 0 0;font-size:13px;color:var(--ink-3)}
+.net .adm-pager--all{justify-content:flex-start;color:var(--ink-4);font-size:12.5px}
+.net .adm-pager__count{margin:0}.net .adm-pager__count b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+.net .adm-pager__links{display:flex;align-items:center;gap:8px}
+.net .adm-pager__links .btn{min-height:40px}
+.net .adm-pager__links [aria-disabled="true"]{opacity:.45;pointer-events:none}
+.net .adm-pager__of{font-size:12.5px;color:var(--ink-4);white-space:nowrap;font-variant-numeric:tabular-nums}
+@media (max-width:640px){.net .adm-pager{flex-direction:column;align-items:stretch}.net .adm-pager__links{justify-content:space-between}.net .adm-pager__links .btn{min-height:44px;flex:1;justify-content:center}}
+/* audit entries in words */
+.net .adm-au__rec{display:block;font-size:12.5px;color:var(--ink-3)}
+.net .adm-au__lines{list-style:none;margin:6px 0 0;padding:0;display:flex;flex-wrap:wrap;gap:6px}
+.net .adm-au__lines li{font-size:12.5px;color:var(--ink-2);background:var(--ivory-2);border:1px solid var(--line-2);border-radius:8px;padding:3px 9px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.net .adm-au__raw{margin-top:4px;font-size:12px}
+.net .adm-au__raw summary{cursor:pointer;color:var(--ink-4);display:inline-flex;align-items:center;min-height:26px;list-style:revert}
+.net .adm-au__raw pre{margin:6px 0 0;padding:10px 12px;max-height:240px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:12px/1.5 ui-monospace,Menlo,monospace;background:var(--ivory-2);border-radius:8px;color:var(--ink-2)}
+.net .adm-au__meta{display:inline-flex;flex-direction:column;align-items:flex-end;gap:6px}
+.net .adm-au__meta code{font:11.5px ui-monospace,Menlo,monospace;color:var(--ink-4);overflow-wrap:anywhere}
+@media (max-width:767px){.net .adm-au__meta{flex-direction:row;align-items:center;flex-wrap:wrap;margin-top:6px}}
+@media (max-width:640px){.net .adm-au__raw summary,.net .adm-au__rec a{min-height:44px;display:inline-flex;align-items:center}}
+.net .adm-au__q{list-style:none;margin:0;padding:0;display:grid}
+.net .adm-au__q li{display:grid;gap:2px;padding:10px 0;border-top:1px solid var(--line-2);min-width:0}
+.net .adm-au__q li:first-child{border-top:0;padding-top:0}
+.net .adm-au__q b{font-size:13px;font-weight:600;color:var(--ink)}
+.net .adm-au__q span{font-size:12px;color:var(--ink-3);overflow-wrap:anywhere}
+.net .adm-au__q .adm-au__q1{color:var(--ink-2);font-variant-numeric:tabular-nums}
+.net .adm-feed--tight .adm-feed__item{padding:11px 18px}
+.net .adm-nstat{display:grid;gap:4px;justify-items:start}
+.net .adm-nstat__err{font-size:12px;color:var(--ink-2);max-width:42ch;overflow-wrap:anywhere}
+.net .adm-nstat--row{display:flex;flex-wrap:wrap;align-items:center;gap:4px 10px}
+.net .adm-nstat--row .adm-nstat__err{flex-basis:100%}
+.net .adm-nowrap{white-space:nowrap}
+@media (max-width:640px){.net .adm-nstat{justify-items:end;text-align:right}.net .adm-nstat--row{justify-content:flex-end}.net .adm-nowrap{white-space:normal}}
+.net .adm-signout{display:grid;gap:12px;margin-top:18px;padding-top:16px;border-top:1px solid var(--line-2)}
+.net .adm-signout .btn{justify-self:start;min-height:44px}
+/* action queue (members) */
+.net .adm-queue{list-style:none;margin:0;padding:4px 18px;display:grid;background:var(--paper);border:1px solid var(--line);border-radius:var(--ui-r,14px)}
+.net .adm-queue li{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:4px 12px;align-items:center;padding:12px 0;border-top:1px solid var(--line-2)}
+.net .adm-queue li:first-child{border-top:0}
+.net .adm-queue b{display:block;font-size:13.5px;font-weight:600;color:var(--ink);overflow-wrap:anywhere}
+.net .adm-queue span{display:block;font-size:12.5px;color:var(--ink-3);margin-top:2px;overflow-wrap:anywhere}
+@media (max-width:640px){.net .adm-queue{padding:4px 16px}.net .adm-queue li{grid-template-columns:20px minmax(0,1fr)}.net .adm-queue .btn{grid-column:2;justify-self:start;min-height:44px}}
+.net .adm-mstat{display:grid;gap:4px;justify-items:start}
+.net .adm-acts--wrap{flex-wrap:wrap;justify-content:flex-start}
+@media (max-width:640px){.net .tbl.stack td.cell-stack .adm-acts{width:100%}.net .tbl.stack td.cell-stack .adm-acts form{flex:1 1 auto}.net .tbl.stack td.cell-stack .adm-acts form .btn{width:100%;justify-content:center}.net .tbl.stack td.cell-stack form.adm-acts{flex-wrap:nowrap}.net .tbl.stack td.cell-stack form.adm-acts select{flex:1 1 auto;max-width:none!important}}
+/* next decision card (reports) */
+.net .adm-next{display:grid;gap:16px;align-items:center}
+@media (min-width:768px){.net .adm-next{grid-template-columns:minmax(0,1fr) auto}}
+.net .adm-next__eb{margin:0;font-size:11px;font-weight:600;letter-spacing:.16em;text-transform:uppercase;color:var(--ui-gold-ink,var(--gold-deep))}
+.net .adm-next__t{margin:8px 0 0;font-family:var(--font-display);font-weight:400;font-size:22px;line-height:1.2;color:var(--ink);overflow-wrap:anywhere}
+.net .adm-next__t .adm-dim{font-size:16px;font-family:inherit}
+.net .adm-next__q{margin:10px 0 10px;font-size:14px;line-height:1.55;color:var(--ink-2);max-width:60ch}
+.net .adm-next__acts .btn{min-height:44px}
+@media (max-width:640px){.net .adm-next__acts form{flex:1}.net .adm-next__acts .btn{width:100%;justify-content:center}}
+@media (max-width:640px){.net .adm-share__legend{gap:0}.net .adm-share__legend a,.net .adm-next .link,.net .adm-funnel__name a,.net .adm-dealcell a{min-height:44px;display:inline-flex;align-items:center}}
 /* end v2 team admin */

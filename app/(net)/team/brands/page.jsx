@@ -7,7 +7,8 @@ import { audit, can } from "@/lib/net/security";
 import { requireTeam } from "../_guard";
 import { linkCampaignsByEmail } from "../../brand/_lib";
 import { day } from "@/components/team/labels";
-import { PageHeader, KpiStrip, FilterBar, FilterChips, DataTable, Grid, Section, AsideCard, Pill, Split, Cell } from "@/components/ui";
+import { weekSeries, parseWhen } from "@/lib/net/dashboard";
+import { PageHeader, KpiStrip, FilterBar, FilterChips, DataTable, Grid, Section, AsideCard, Pill, Split, Cell, Avatar, Pager, paginate, pageHref } from "@/components/ui";
 
 export const metadata = { title: "Brand accounts", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -75,21 +76,36 @@ export default async function Page({ searchParams }) {
   const unconfirmed = rows.filter((b) => !b.email_verified_at && !b.disabled_at).length;
   const linked = rows.reduce((t, b) => t + Number(b.campaigns || 0), 0);
   const shown = tab === "waiting" ? rows.filter(isWaiting) : tab === "verified" ? rows.filter(isVerified) : tab === "disabled" ? rows.filter((b) => b.disabled_at) : rows;
+  // Paged at 25, like team home: filters stay in the links.
+  const pg = paginate(shown, searchParams?.page, 25);
+  const now = Date.now();
+  const tOf = (v) => parseWhen(v)?.t ?? null;
+  const ageDays = (v) => { const t = tOf(v); return t == null ? null : Math.max(0, Math.floor((now - t) / 864e5)); };
+  const joined12 = weekSeries(rows.map((b) => b.created_at), now, 12);
+  const joinedN = joined12.reduce((a, b) => a + b, 0);
+  // The queue: active accounts not verified yet, oldest first. "Confirm email" comes before "Verify".
+  const queue = rows.filter(isWaiting).sort((a, b) => (tOf(a.created_at) ?? 0) - (tOf(b.created_at) ?? 0));
+  const readyToVerify = queue.filter((b) => b.email_verified_at).length;
+  // Brand · contact · email in one cell, so the table fits beside the aside at every desktop width.
   const columns = [
     { key: "brand", label: "Brand", render: (b) => (
-      <Cell title={b.company || "—"} sub={<>{[b.name, b.phone, b.gstin ? `GSTIN ${b.gstin}` : null].filter(Boolean).join(" · ")}{b.website && <><br /><a className="link" href={b.website} target="_blank" rel="noopener noreferrer nofollow">{b.website}</a></>}</>} />
+      <span className="tr-person"><Avatar name={b.company || b.email} size={36} />
+        <Cell title={b.company || "—"} sub={<span className="tr-brandsub">
+          <span className="tr-wrap">{b.email} · <span className="ui-dim">{b.email_verified_at ? `confirmed ${day(b.email_verified_at)}` : "email not confirmed"}</span></span>
+          {[b.name, b.phone, b.gstin ? `GSTIN ${b.gstin}` : null].filter(Boolean).length > 0 && <span className="tr-wrap">{[b.name, b.phone, b.gstin ? `GSTIN ${b.gstin}` : null].filter(Boolean).join(" · ")}</span>}
+          {b.website && <a className="link tr-wrap" href={b.website} target="_blank" rel="noopener noreferrer nofollow">{b.website}</a>}
+        </span>} /></span>
     ) },
-    { key: "email", label: "Email", className: "tr-col-email", render: (b) => <span className="tr-wrap">{b.email}<div className="hint">{b.email_verified_at ? `Confirmed ${day(b.email_verified_at)}` : "Email not confirmed"}</div></span> },
-    { key: "campaigns", label: "Campaigns", num: true, render: (b) => Number(b.campaigns || 0) },
+    { key: "campaigns", label: "Briefs", num: true, render: (b) => Number(b.campaigns || 0) },
     { key: "status", label: "Status", primary: true, render: (b) => (<>
       {b.disabled_at ? <Pill tone="off">Disabled</Pill> : b.verified_by ? <Pill tone="done">Verified</Pill> : <Pill tone="wait">Not verified</Pill>}
       <div className="hint">{b.verified_by ? `by ${b.verifier || b.verified_by}` : `Joined ${day(b.created_at)}`}{b.last_login_at ? ` · last login ${day(b.last_login_at)}` : ""}</div>
     </>) },
-    ...(canAct ? [{ key: "actions", label: "Actions", labelHidden: true, primary: true, align: "right", render: (b) => (
-      <div className="row tr-acts">
+    ...(canAct ? [{ key: "actions", label: "Actions", labelHidden: true, primary: true, align: "right", className: "tr-actcol", render: (b) => (
+      <div className="tr-acts tr-acts--stack">
         {!b.email_verified_at && <form action={confirmEmail}><input type="hidden" name="id" value={b.id} /><button className="btn sm" aria-label={`Confirm email for ${b.email}`}>Confirm email</button></form>}
         {!b.verified_by && b.email_verified_at && !b.disabled_at && <form action={markVerified}><input type="hidden" name="id" value={b.id} /><button className="btn sm plum" aria-label={`Mark ${b.company || b.email} verified`}>Mark brand verified</button></form>}
-        <form action={setDisabled}><input type="hidden" name="id" value={b.id} /><input type="hidden" name="disable" value={b.disabled_at ? "0" : "1"} /><button className="btn sm" aria-label={`${b.disabled_at ? "Enable" : "Disable"} ${b.email}`}>{b.disabled_at ? "Enable" : "Disable"}</button></form>
+        <form action={setDisabled}><input type="hidden" name="id" value={b.id} /><input type="hidden" name="disable" value={b.disabled_at ? "0" : "1"} /><button className="btn sm ghost tr-quietbtn" aria-label={`${b.disabled_at ? "Enable" : "Disable"} ${b.email}`}>{b.disabled_at ? "Enable" : "Disable"}</button></form>
       </div>
     ) }] : []),
   ];
@@ -107,8 +123,8 @@ export default async function Page({ searchParams }) {
       {!canAct && <div className="note info" style={{ marginBottom: 14 }}>You can view brand accounts. Verifying or disabling needs the team permission.</div>}
 
       <KpiStrip label="Brand accounts at a glance" items={[
-        { label: "Brand accounts", value: n.all, foot: rows.length === 500 ? "showing the newest 500" : "newest first" },
-        { featured: true, label: "Waiting for a check", value: n.waiting, foot: unconfirmed ? `${unconfirmed} still to confirm their email` : "all emails confirmed", href: "?tab=waiting" },
+        { label: "Brand accounts", value: n.all, spark: joined12, sparkLabel: "Brand accounts created per week, last 12 weeks", foot: rows.length === 500 ? "showing the newest 500" : `${joinedN} joined in 12 weeks` },
+        { featured: true, label: "Waiting for a check", value: n.waiting, foot: n.waiting ? `${readyToVerify} ready to verify · ${unconfirmed} to confirm email` : "every active brand is verified", href: "?tab=waiting" },
         { label: "Verified", value: n.verified, foot: "show the verified mark to creators", href: "?tab=verified" },
         { label: "Briefs linked", value: linked, foot: `${n.disabled} ${n.disabled === 1 ? "account" : "accounts"} disabled` },
       ]} />
@@ -122,6 +138,15 @@ export default async function Page({ searchParams }) {
           ]} />
           <p className="small">{n.waiting ? <><b>{n.waiting}</b> {n.waiting === 1 ? "brand is" : "brands are"} waiting for a check. Look at the website and GSTIN, or call, then mark it verified.</> : "Every active brand is verified."}</p>
         </AsideCard>
+        <AsideCard eyebrow="Needs you" title={queue.length ? `Oldest <b>${Math.min(queue.length, 5)}</b> to check` : "Nothing to check"}
+          foot={queue.length > 5 ? <a href="?tab=waiting">All {queue.length} waiting</a> : null}>
+          {queue.length ? <ol className="tr-queue">{queue.slice(0, 5).map((b) => { const a = ageDays(b.created_at); return (
+            <li key={b.id}><a href="?tab=waiting">
+              <span className="tr-queue__t"><b>{b.company || b.email}</b><span className="hint">{b.email_verified_at ? "Email confirmed: check the business, then verify" : "Confirm the email first"}</span></span>
+              <span className="tr-queue__age">{a == null ? "" : a === 0 ? "today" : `${a}d`}</span>
+            </a></li>); })}</ol>
+            : <p className="small">Every active brand is verified. New sign-ups land here.</p>}
+        </AsideCard>
         <AsideCard tone="night" eyebrow="How verifying works" title="A check, then the mark.">
           <p className="small">Confirming an email links the brand's earlier briefs. Verifying shows the verified mark on its campaigns. Disabling signs the brand out at once.</p>
         </AsideCard>
@@ -130,8 +155,9 @@ export default async function Page({ searchParams }) {
           <FilterBar label="Filter brand accounts">
             <FilterChips name="tab" label="Filter by status" current={tab} hrefFor={(v) => `?tab=${v}`} options={TABS.map(([value, label]) => ({ value, label, count: n[value] }))} />
           </FilterBar>
-          <DataTable caption="Brand accounts" columns={columns} rows={shown}
+          <DataTable caption="Brand accounts" columns={columns} rows={pg.rows} className="tr-brandtbl"
             empty={{ title: rows.length ? "No accounts with this status." : "No brand accounts yet.", body: rows.length ? "Pick another filter." : "Brands get an account when they sign up from the brand login page or send a brief.", action: rows.length ? <a className="btn sm" href="?tab=all">See every account</a> : <a className="btn sm" href="/team/campaigns">Open campaigns</a> }} />
+          <Pager p={pg} noun={["account", "accounts"]} label="Brand account pages" hrefFor={(n) => pageHref(searchParams, n, { path: "/team/brands" })} />
         </Section>
       </Grid>
     </TeamShell>

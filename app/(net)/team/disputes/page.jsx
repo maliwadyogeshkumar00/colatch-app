@@ -5,7 +5,8 @@ import { requireTeam } from "../_guard";
 import { env } from "@/lib/net/env";
 import { can, logError } from "@/lib/net/security";
 import { REASONS, resolveDispute, DisputeError } from "@/lib/net/disputes";
-import { PageHeader, KpiStrip, DataTable, Grid, Section, Card, AsideCard, Pill, Split, Cell, EmptyState } from "@/components/ui";
+import { PageHeader, KpiStrip, DataTable, Grid, Section, Card, AsideCard, Pill, Split, Cell, EmptyState, ChartCard, Bars } from "@/components/ui";
+import { monthSeries, inrShort } from "@/lib/net/dashboard";
 
 export const metadata = { title: "Disputes", robots: { index: false, follow: false } };
 
@@ -35,7 +36,7 @@ export default async function Page({ searchParams }) {
   const me = await requireTeam();
   const canResolve = can(me.role, "shortlist");
   const rows = (await env.DB.prepare(
-    `SELECT x.*, d.brand, d.deliverable, d.pay_status, c.name AS creator_name, c.handle, k.title
+    `SELECT x.*, d.brand, d.deliverable, d.pay_status, d.fee AS deal_fee, c.name AS creator_name, c.handle, k.title
      FROM disputes x
      LEFT JOIN creator_deals d ON d.id = x.deal_id
      LEFT JOIN creators c ON c.id = d.creator_id
@@ -51,6 +52,9 @@ export default async function Page({ searchParams }) {
   const ageDays = (t) => { const d = toD(t); return d ? Math.max(0, Math.floor((Date.now() - d.getTime()) / 864e5)) : null; };
   const oldest = open.reduce((m, r) => { const a = ageDays(r.created_at); return a != null && (m == null || a > m) ? a : m; }, null);
   const byReason = Object.entries(rows.reduce((acc, r) => { const k = REASONS[r.reason] || r.reason || "Other"; acc[k] = (acc[k] || 0) + 1; return acc; }, {})).sort((a, b) => b[1] - a[1]);
+  const raised = monthSeries(rows.map((r) => ({ at: r.created_at, amount: 1 })), Date.now(), 6);
+  const atStake = open.reduce((t, r) => t + Number(r.deal_fee || 0), 0);
+  const heldOpen = open.filter((r) => ["funded", "released"].includes(r.pay_status)).length;
   const title = (x) => `${x.creator_name || x.handle || "Creator"} × ${x.brand || x.title || "Brand"}`;
   const closedCols = [
     { key: "deal", label: "Deal", render: (x) => <Cell eyebrow={SIDE[x.raised_by_kind]} title={title(x)} sub={REASONS[x.reason] || x.reason} /> },
@@ -70,8 +74,9 @@ export default async function Page({ searchParams }) {
       {!canResolve && <div className="note info" style={{ marginBottom: 16 }}>Your role ({me.role}) can read disputes but not resolve them. Ask an owner, admin or shortlister.</div>}
 
       <KpiStrip label="Disputes at a glance" items={[
-        { featured: open.length > 0, label: "Open", value: open.length, foot: open.length ? "need a decision" : "nothing waiting", href: "#open" },
-        { label: "Oldest open", value: oldest != null ? `${oldest} ${oldest === 1 ? "day" : "days"}` : "—", foot: oldest != null ? "since it was raised" : "no open disputes" },
+        { featured: open.length > 0, label: "Open", value: open.length, foot: open.length ? `need a decision${oldest != null ? ` · oldest ${oldest} ${oldest === 1 ? "day" : "days"}` : ""}` : "nothing waiting", href: "#open" },
+        open.length ? { label: "Creator fees on disputed deals", value: inrShort(atStake), title: `₹${atStake.toLocaleString("en-IN")}`, foot: heldOpen ? `${heldOpen} with the brand's money held by Colatch` : "no brand money held on these deals" }
+          : { label: "Oldest open", empty: "Nothing open", foot: "no open disputes" },
         { label: "Resolved", value: resolvedN, foot: "closed in someone's favour", href: "#closed" },
         { label: "Rejected", value: rejectedN, foot: "closed with no change", href: "#closed" },
       ]} />
@@ -81,6 +86,9 @@ export default async function Page({ searchParams }) {
           {byReason.length ? <Split label="Disputes by reason" parts={byReason.slice(0, 5).map(([label, count]) => ({ label, n: count }))} /> : <p className="small">No disputes yet.</p>}
           <p className="small">{rows.length ? `${rows.length} in all, newest 200 shown.` : "When a creator or brand raises one from their deal, it lands here and the team inbox gets an email."}</p>
         </AsideCard>
+        <ChartCard title="Raised per month" period="Last 6 months" figure={String(raised.total)} foot={raised.total ? "Every dispute raised, open or closed." : "None raised in the last 6 months."}>
+          <Bars months={raised.months} label="Disputes raised per month, last 6 months" />
+        </ChartCard>
         <AsideCard tone="night" eyebrow="Money rule" title="A dispute never moves money.">
           <p className="small">If money has to move, use Cancel or Refund in the deal room so it goes through the ledger. Then resolve the dispute and say what happened.</p>
         </AsideCard>

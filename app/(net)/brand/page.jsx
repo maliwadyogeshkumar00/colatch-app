@@ -14,6 +14,9 @@ import { inrShort, monthSeries } from "@/lib/net/dashboard";
 import { inrFull, day } from "@/components/team/labels";
 import { PageHeader, KpiStrip, ChartCard, Bars, Split, Grid, Section, AsideCard, DataTable, Cell, Figure, Pill } from "@/components/ui";
 import { Facts } from "@/components/brand/Facts";
+import { feePct } from "@/lib/net/deal";
+import { priceDeal } from "@/lib/net/pricing";
+import { dealValue, sumValue } from "@/lib/net/value";
 
 export const metadata = { title: "My campaigns", robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -42,13 +45,13 @@ export default async function Page({ searchParams }) {
 
   // Only this account's campaigns. Nothing here is looked up by email or by brand name.
   const campaigns = (await env.DB.prepare(
-    "SELECT id, title, brand, status, share_token, deadline, created_at FROM campaigns WHERE brand_account_id=? ORDER BY created_at DESC LIMIT 200"
+    "SELECT id, title, brand, status, share_token, deadline, created_at, client_email, rush FROM campaigns WHERE brand_account_id=? ORDER BY created_at DESC LIMIT 200"
   ).bind(me.id).all()).results ?? [];
   const ids = campaigns.map((k) => k.id);
   const byId = Object.fromEntries(campaigns.map((k) => [k.id, k]));
   const marks = ids.map(() => "?").join(",");
 
-  let apps = [], deals = [], ledger = [];
+  let apps = [], deals = [], ledger = [], entered = new Set();
   if (ids.length) {
     deals = (await env.DB.prepare(
       `SELECT d.*, c.name AS cname, c.handle AS chandle FROM creator_deals d LEFT JOIN creators c ON c.id=d.creator_id
@@ -64,6 +67,12 @@ export default async function Page({ searchParams }) {
       `SELECT at, kind, campaign_id, amount_paise, utr FROM finance_ledger
        WHERE campaign_id IN (${marks}) AND kind IN ('brand_payment_received','brand_refund_sent') ORDER BY at DESC LIMIT 50`
     ).bind(...ids).all()).results ?? [];
+    // Read-only: which deals already have a payment entered by Colatch finance, so deal status and ledger never read as a contradiction.
+    // A campaign-level payment (no deal attached) covers that campaign's deals.
+    const got = ((await env.DB.prepare(
+      `SELECT DISTINCT deal_id, campaign_id FROM finance_ledger WHERE campaign_id IN (${marks}) AND kind='brand_payment_received'`
+    ).bind(...ids).all().catch(() => ({ results: [] }))).results) ?? [];
+    entered = new Set(got.map((r) => (r.deal_id ? r.deal_id : `k:${r.campaign_id}`)));
   }
 
   // Your move: creators to approve (one row per campaign) and anything the deal machine says is the brand's step.
@@ -77,12 +86,18 @@ export default async function Page({ searchParams }) {
   // KPI row, from the rows already loaded: only deals the brand has paid for count as booked or committed,
   // the same rule as the campaign receipt. Saved = each creator's market rate minus the fee agreed, never below zero.
   const paidFor = deals.filter((d) => ["funded", "released", "paid"].includes(d.pay_status));
+  // Savings use the same rule as each campaign's value receipt (market rate + agency markup, at the fee this brand pays).
+  const listPct = feePct(env);
+  const prices = await Promise.all(paidFor.map((d) => priceDeal(env, d, byId[d.campaign_id] || {}).catch(() => null)));
+  const value = sumValue(paidFor.map((d, i) => dealValue(env, d, prices[i]?.pct ?? listPct)));
+  const notEntered = paidFor.filter((d) => !entered.has(d.id) && !entered.has(`k:${d.campaign_id}`));
   const kpi = {
     live: campaigns.filter((k) => ["open", "shortlisting", "live"].includes(k.status)).length,
     booked: new Set(paidFor.map((d) => d.creator_id)).size,
     spend: paidFor.reduce((a, d) => a + (Number(d.fee) || 0), 0),
-    saved: paidFor.reduce((a, d) => a + Math.max(0, (Number(d.market_rate) || 0) - (Number(d.fee) || 0)), 0),
+    saved: value.saved,
   };
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
   // Read-only: payments recorded per month for this account's campaigns (12 IST months). A failure only hides the chart.
   const now = Date.now();
@@ -146,15 +161,18 @@ export default async function Page({ searchParams }) {
 
         <KpiStrip label="Your numbers" items={[
           { label: "Campaigns live", value: kpi.live, foot: `${campaigns.length} in all`, href: "#h-campaigns" },
-          { label: "Creators booked", value: kpi.booked, foot: `${paidFor.length} paid ${paidFor.length === 1 ? "deal" : "deals"}` },
-          { label: "Spend committed", value: inrShort(kpi.spend), title: inrFull(kpi.spend), foot: "Creator fees on deals you've paid for" },
-          { featured: true, label: "Money saved", value: inrShort(kpi.saved), title: inrFull(kpi.saved), foot: "Vs each creator's market rate" },
+          { label: "Creators booked", value: kpi.booked, foot: paidFor.length ? `on ${plural(paidFor.length, "paid deal", "paid deals")}` : "none paid for yet" },
+          { label: "Paid deals", value: inrShort(kpi.spend), title: inrFull(kpi.spend),
+            foot: notEntered.length ? `creator fees · ${plural(notEntered.length, "payment", "payments")} not yet entered by Colatch finance` : "creator fees on deals marked paid" },
+          { featured: true, label: "Kept in your pocket", value: inrShort(kpi.saved), title: inrFull(kpi.saved), foot: "vs market rates and agency markup, as on your receipts" },
         ]} />
 
         {campaigns.length > 0 && (
           <Grid cols={2}>
-            <ChartCard title="Payments recorded" period="12 months" figure={inrShort(pay.total)} figureTitle={inrFull(pay.total)} level={2}
-              foot={pay.total > 0 ? "Confirmed by the Colatch finance team, by month (IST)" : "Shows once the Colatch finance team confirms your first payment"}>
+            <ChartCard title="Payments entered by Colatch finance" period="12 months" figure={inrShort(pay.total)} figureTitle={inrFull(pay.total)} level={2}
+              foot={notEntered.length
+                ? `${plural(notEntered.length, "paid deal is", "paid deals are")} not entered here yet; the Colatch finance team adds each payment once it's matched to your bank transfer`
+                : pay.total > 0 ? "Confirmed by the Colatch finance team, by month (IST)" : "Shows once the Colatch finance team confirms your first payment"}>
               <Bars months={pay.months} label="Payments recorded per month" fmt={inrFull} />
             </ChartCard>
             <ChartCard title="Your campaigns" period={`${campaigns.length} in all`} figure={String(kpi.live)} level={2} foot="live now · by status">
@@ -191,9 +209,13 @@ export default async function Page({ searchParams }) {
                 : { title: "No campaigns here yet.", body: `Campaigns you sent from ${me.email} appear here once your email is confirmed.`, action: <a className="btn sm" href="/brief">Post a new brief</a> }} />
           </Section>
 
-          <Section id="h-money" title="Money recorded" sub={ledger.length ? "Payments and refunds confirmed by the Colatch finance team." : undefined}>
+          <Section id="h-money" title="Money recorded" sub={ledger.length
+            ? `Payments and refunds confirmed by the Colatch finance team.${notEntered.length ? ` ${plural(notEntered.length, "paid deal isn't", "paid deals aren't")} entered yet.` : ""}`
+            : notEntered.length ? `${plural(notEntered.length, "deal is", "deals are")} marked paid; the Colatch finance team hasn't entered ${notEntered.length === 1 ? "that payment" : "those payments"} here yet.` : undefined}>
             <DataTable caption="Money recorded" rows={ledger} columns={ledgerColumns} rowKey={(r, i) => i}
-              empty={{ title: "No payments recorded yet.", body: "A payment shows here once the Colatch finance team confirms it arrived.", action: <a className="btn sm" href="/faq">How payments work</a> }} />
+              empty={notEntered.length
+                ? { title: "Payment not entered yet.", body: `Your ${plural(notEntered.length, "paid deal", "paid deals")} (${inrFull(kpi.spend)} in creator fees) will show here once Colatch finance matches the bank transfer.`, action: <a className="btn sm" href="/faq">How payments work</a> }
+                : { title: "No payments recorded yet.", body: "A payment shows here once the Colatch finance team confirms it arrived.", action: <a className="btn sm" href="/faq">How payments work</a> }} />
           </Section>
         </Grid>
       </div>

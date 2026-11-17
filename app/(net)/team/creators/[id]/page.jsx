@@ -156,10 +156,10 @@ export default async function Page({ params, searchParams }) {
               <h1 className="ui-title tr-hero__name">{display}{c.verified ? <b> ✓</b> : null}</h1>
               <p className="tr-hero__sub">@{c.handle}{c.language ? ` · ${c.language}` : ""} · added {day(c.created_at) || "—"} from {c.source || "—"}</p>
               <div className="ui-pills tr-hero__pills">
-                <Pill tone={c.status === "blacklisted" ? "off" : "gold"}>{creatorStatusLabel(c.status)}</Pill>
-                {ownerOk ? <Pill tone="done">Owner verified</Pill> : <Pill tone="wait">Owner not verified</Pill>}
-                {hasAccount ? <Pill tone="done">Portal login</Pill> : <Pill tone="quiet">No portal login yet</Pill>}
-                {claims.length > 0 && <Pill tone="mine">Pending claim</Pill>}
+                <Pill onDark tone={c.status === "blacklisted" ? "off" : "gold"}>{creatorStatusLabel(c.status)}</Pill>
+                {ownerOk ? <Pill onDark tone="done">Owner verified</Pill> : <Pill onDark tone="wait">Owner not verified</Pill>}
+                {hasAccount ? <Pill onDark tone="done">Portal login</Pill> : <Pill onDark tone="quiet">No portal login yet</Pill>}
+                {claims.length > 0 && <Pill onDark tone="mine">Pending claim</Pill>}
               </div>
             </div>
           </div>

@@ -6,7 +6,8 @@ import { currentCreator } from "@/lib/net/creatorAuth";
 import { inr } from "@/lib/net/creators";
 import { REJECT_REASONS } from "@/lib/net/campaign";
 import { dealState, dayText, APP_LABEL } from "../../_ui/dealState";
-import { PageHeader, KpiStrip, Grid, Section, Card, AsideCard, Split, FilterBar, FilterChips, DataTable, Cell, Figure } from "@/components/ui";
+import { StatusSplit, APP_COLORS } from "@/components/creator/Parts";
+import { PageHeader, KpiStrip, Grid, Section, Card, AsideCard, FilterBar, FilterChips, DataTable, Cell, Figure } from "@/components/ui";
 import { inrShort } from "@/lib/net/dashboard";
 
 export const metadata = { title: "My deals", robots: { index: false } };
@@ -33,11 +34,14 @@ export default async function Page({ searchParams }) {
   const paidDeals = deals.filter((d) => d.pay_status === "paid");
   const toDo = openDeals.filter((d) => ["Accept terms", "Send draft", "Changes asked", "Post it"].includes(dealState(d)[0])).length;
   const decided = count("accepted") + count("rejected");
+  const hero = (
+    <PageHeader variant="hero" crumbs={[{ label: "Home", href: "/creator" }, "My deals"]} eyebrow="My deals" title={`${apps.length} ${apps.length === 1 ? "application" : "applications"}, <b>${deals.length} ${deals.length === 1 ? "deal" : "deals"}.</b>`}
+      sub="The team aims to decide within 3 days and gives a reason if it's a no. You can withdraw from the brief page until you're selected."
+      meta={[{ label: "Waiting on you", value: toDo, gold: toDo > 0 }, { label: "Under review", value: count("new") }]} />
+  );
   return (
-    <PublicShell creatorName={c.name || c.handle} path="/creator/applications">
+    <PublicShell creatorName={c.name || c.handle} path="/creator/applications" hero={hero}>
       <div className="cr-page">
-        <PageHeader crumbs={[{ label: "Home", href: "/creator" }, "My deals"]} eyebrow="My deals" title={`${apps.length} ${apps.length === 1 ? "application" : "applications"}, <b>${deals.length} ${deals.length === 1 ? "deal" : "deals"}.</b>`}
-          sub="The team aims to decide within 3 days and gives a reason if it's a no. You can withdraw from the brief page until you're selected." />
         <KpiStrip label="Deals and applications" items={[
           { label: "Applied", value: apps.length, foot: `${count("new")} under review`, href: "?status=all#apps" },
           { label: "Selected", value: count("accepted"), foot: decided ? `${Math.round((count("accepted") / decided) * 100)}% of decided` : "No decisions yet", href: "?status=accepted#apps" },
@@ -52,7 +56,7 @@ export default async function Page({ searchParams }) {
             <a className="btn-foil" href="/creator/pitch">Pitch an idea</a>
           </Card>
           {apps.length > 0 && <AsideCard eyebrow="Insight" title="Where your applications stand">
-            <Split label="Applications by status" parts={STATUSES.map((st) => ({ label: label[st][0], n: count(st), href: `?status=${st}#apps` }))} />
+            <StatusSplit label="Applications by status" parts={STATUSES.map((st) => ({ label: label[st][0], n: count(st), href: `?status=${st}#apps`, color: APP_COLORS[st] }))} />
           </AsideCard>}
         </>}>
           <Section id="deals" title="Deals" sub={deals.length ? "Newest activity first. Open one to see your next step." : null}>

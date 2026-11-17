@@ -9,7 +9,8 @@ import { AGE_BANDS, audienceSummary } from "@/lib/net/audience";
 import { findSimilar } from "@/lib/net/lookalike";
 import { SKILLS, LANGUAGES, CITIES } from "@/lib/net/match";
 import { creatorStatusLabel, nicheLabel, inrFull } from "@/components/team/labels";
-import { PageHeader, KpiStrip, FilterBar, FilterChips, DataTable, Grid, Section, Card, AsideCard, InlineState, Pill, Split, Cell, Avatar } from "@/components/ui";
+import { weekSeries } from "@/lib/net/dashboard";
+import { PageHeader, KpiStrip, FilterBar, FilterChips, DataTable, Grid, Section, Card, AsideCard, InlineState, Pill, Split, Cell, Avatar, Pager, paginate, pageHref } from "@/components/ui";
 
 export const metadata = { title: "Influencer finder", robots: { index: false, follow: false } };
 
@@ -161,6 +162,15 @@ export default async function Page({ searchParams }) {
      FROM creators WHERE COALESCE(status, '') <> 'blacklisted'`
   ).first().catch(() => null);
   const kn = (v) => (kpi ? Number(v || 0) : "—");
+  // Sign-ups per week for the Creators tile (read-only; created_at is stored as UTC text).
+  const joinedAt = await env.DB.prepare("SELECT created_at FROM creators WHERE created_at >= ? AND COALESCE(status, '') <> 'blacklisted'")
+    .bind(new Date(Date.now() - 84 * 864e5).toISOString().replace("T", " ").slice(0, 19)).all().then((r) => (r.results ?? []).map((x) => x.created_at)).catch(() => []);
+  const joined = weekSeries(joinedAt, Date.now(), 12);
+  const joinedN = joined.reduce((a, b) => a + b, 0);
+  // Review queue: newest creators with no quality score yet (read-only).
+  const toReview = await env.DB.prepare("SELECT id, name, handle, followers, city, created_at, COUNT(*) OVER () total FROM creators WHERE quality_score IS NULL AND COALESCE(status, '') <> 'blacklisted' ORDER BY created_at DESC LIMIT 5")
+    .all().then((r) => r.results ?? []).catch(() => []);
+  const toReviewN = Number(toReview[0]?.total || 0);
   const avgEr = kpi?.er != null ? `${Number(kpi.er).toFixed(1)}%` : "—";
   // Sort chips keep every other filter in the link.
   const sortHref = (v) => {
@@ -172,7 +182,20 @@ export default async function Page({ searchParams }) {
   };
   const SORTS = [["followers", "Biggest first"], ["er", "Best engagement"], ["quality", "Best quality score"], ["new", "Newest"]];
   const TIERS = ["Nano", "Micro", "Mid", "Macro", "Mega"];
-  const tierParts = TIERS.map((t) => ({ label: t, n: rows.filter((r) => (r.tier || tierFor(r.followers)) === t).length })).filter((x) => x.n > 0);
+  // The size bar covers every creator it describes: the whole database (read-only roll-up) when nothing is
+  // filtered, otherwise every row in this list. Creators without a follower count get their own "Size not known" part.
+  const tierOf = (r) => { const t = r.tier || tierFor(r.followers); return TIERS.includes(t) ? t : "Size not known"; };
+  const dbTiers = filtered ? null : await env.DB.prepare(
+    `SELECT COALESCE(NULLIF(tier, ''), CASE WHEN followers IS NULL THEN NULL WHEN followers < 10000 THEN 'Nano' WHEN followers < 100000 THEN 'Micro'
+       WHEN followers < 500000 THEN 'Mid' WHEN followers < 1000000 THEN 'Macro' ELSE 'Mega' END) t, COUNT(*) n
+     FROM creators WHERE COALESCE(status, '') <> 'blacklisted' GROUP BY 1`
+  ).all().then((r) => r.results ?? []).catch(() => null);
+  const tierCount = {};
+  if (dbTiers) for (const r of dbTiers) { const t = TIERS.includes(r.t) ? r.t : "Size not known"; tierCount[t] = (tierCount[t] || 0) + Number(r.n || 0); }
+  else for (const r of rows) tierCount[tierOf(r)] = (tierCount[tierOf(r)] || 0) + 1;
+  const tierParts = [...TIERS, "Size not known"].map((t) => ({ label: t, n: tierCount[t] || 0 })).filter((x) => x.n > 0);
+  const tierTotal = tierParts.reduce((a, x) => a + x.n, 0);
+  const pg = paginate(rows, u.page, 25);
   const columns = [
     { key: "creator", label: "Creator", render: (c) => (
       <span className="tr-person"><Avatar name={c.name || c.handle} src={c.profile_pic || undefined} size={40} />
@@ -205,7 +228,7 @@ export default async function Page({ searchParams }) {
       {flash && <div className={`note ${u.err ? "bad" : "good"}`} style={{ marginBottom: 16 }}>{flash}</div>}
 
       <KpiStrip label="Creator database at a glance" items={[
-        { label: "Creators", value: kn(kpi?.n), foot: "in the database, blacklist excluded" },
+        { label: "Creators", value: kn(kpi?.n), spark: joined, sparkLabel: "Creators added per week, last 12 weeks", foot: `+${joinedN} in 12 weeks · blacklist excluded` },
         { label: "Verified", value: kn(kpi?.v), foot: "numbers checked on Instagram" },
         { label: "With a portal login", value: kn(kpi?.logins), foot: "can apply and accept deals" },
         { featured: true, label: "Average engagement", value: avgEr, foot: "across creators with an engagement figure" },
@@ -214,8 +237,8 @@ export default async function Page({ searchParams }) {
       <Grid aside={
         <AsideCard eyebrow="Insight" title={seed ? `Creators like <b>@${seed.handle}</b>` : filtered ? "This search by size" : "The database by size"}
           foot={filtered ? <a href="/team/creators">Clear the search</a> : <a href="#add">Import a sheet</a>}>
-          {tierParts.length ? <Split label="Creators in this list by tier" parts={tierParts} /> : <p className="small">No creators in this list yet.</p>}
-          <p className="small">{rows.length === 200 ? "Showing the first 200 by the current sort." : `${rows.length.toLocaleString("en-IN")} in this list.`} Tiers follow followers: Nano under 10K, Micro to 1L, Mid to 5L, Macro to 10L, Mega above.</p>
+          {tierParts.length ? <Split label={dbTiers ? "Every creator in the database by tier" : "Creators in this list by tier"} parts={tierParts} /> : <p className="small">No creators in this list yet.</p>}
+          <p className="small">{dbTiers ? `All ${tierTotal.toLocaleString("en-IN")} creators in the database.` : rows.length === 200 ? "The first 200 by the current sort." : `All ${rows.length.toLocaleString("en-IN")} in this list.`} Tiers follow followers: Nano under 10K, Micro to 1L, Mid to 5L, Macro to 10L, Mega above.</p>
         </AsideCard>
       }>
         <Section id="lookup" title="Look up on Instagram" actions={ig ? <Pill tone="done">Instagram connected</Pill> : <Pill tone="wait">Instagram not connected</Pill>}>
@@ -243,6 +266,14 @@ export default async function Page({ searchParams }) {
               </div>
             )}
           </Card>
+        </Section>
+        <Section id="review" title={toReviewN ? `To review <b>${toReviewN.toLocaleString("en-IN")}</b>` : "To review"} sub={toReviewN ? "Newest creators without a quality score. Open one to check the profile and score it." : null}>
+          {toReview.length ? <Card><ol className="tr-queue">{toReview.map((c) => (
+            <li key={c.id}><a href={`/team/creators/${c.id}`}>
+              <span className="tr-person"><Avatar name={c.name || c.handle} size={32} /><span className="tr-queue__t"><b>{c.name || c.handle}</b><span className="hint">@{c.handle}{c.city ? ` · ${c.city}` : ""}{c.followers != null ? ` · ${compact(c.followers)} followers` : " · followers not known"}</span></span></span>
+              <span className="tr-queue__age">Review →</span>
+            </a></li>))}</ol></Card>
+            : <Card><p className="small" style={{ margin: 0 }}><b>Every creator has a quality score.</b> New sign-ups and imports land here.</p></Card>}
         </Section>
       </Grid>
 
@@ -278,8 +309,9 @@ export default async function Page({ searchParams }) {
         {!seed && <div className="tr-gap"><FilterBar label="Sort creators">
           <FilterChips name="sort" label="Sort by" current={sort} hrefFor={sortHref} options={SORTS.map(([value, label]) => ({ value, label }))} />
         </FilterBar></div>}
-        <DataTable caption="Creators" columns={columns} rows={rows} rowHref={(c) => `/team/creators/${c.id}`} scroll
+        <DataTable caption="Creators" columns={columns} rows={pg.rows} rowHref={(c) => `/team/creators/${c.id}`} scroll
           empty={{ title: filtered ? "No creator matches these filters." : "No creators yet.", body: filtered ? "Loosen a filter, or look the creator up on Instagram above." : "Import your existing sheet below, add creators by hand, or share the creator sign-up page so they join themselves.", action: filtered ? <a className="btn sm" href="/team/creators">Clear the filters</a> : <a className="btn sm" href="#add">Add creators</a> }} />
+        <Pager p={pg} noun={["creator", "creators"]} label="Creator pages" hrefFor={(n) => pageHref(u, n, { path: "/team/creators", hash: "#finder", drop: ["ok", "err", "lerr", "lookup"] })} />
       </Section>
 
       <Section id="add" title="Add creators" sub="One by hand, or a whole sheet at once. Existing handles are updated, never duplicated.">

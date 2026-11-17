@@ -9,8 +9,9 @@ import { checkLogin, setPassword, overLimit, mailBase, clientIp, TOO_MANY } from
 import { notify } from "@/lib/net/notify";
 import { claimStatus, ClaimNote } from "../../join/_claim";
 import { addressFromForm } from "@/lib/net/creators";
-import { PageHeader, Grid, AsideCard } from "@/components/ui";
-import { Facts } from "@/components/creator/Parts";
+import { PageHeader, AsideCard } from "@/components/ui";
+import { StatusTiles, istDay } from "@/components/creator/Parts";
+import { profileGaps } from "@/lib/net/match";
 
 export const metadata = { title: "Account settings", robots: { index: false } };
 const BACK = "/creator/settings";
@@ -93,34 +94,46 @@ export default async function Page({ searchParams }) {
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/settings");
   const status = await claimStatus(me.accountId);
-  const verified = !!(await env.DB.prepare("SELECT email_verified_at FROM creator_accounts WHERE id=?").bind(me.accountId).first())?.email_verified_at;
+  const acct = await env.DB.prepare("SELECT email_verified_at, last_login_at, created_at FROM creator_accounts WHERE id=?").bind(me.accountId).first();
+  const verified = !!acct?.email_verified_at;
   const own = status === "own" && !me.claimPending && me.creator?.id;
   const addr = own ? await env.DB.prepare("SELECT name, line1, line2, city, state, pincode, phone FROM creator_addresses WHERE creator_id = ?").bind(me.creator.id).first() : null;
+  // Read-only, for the status strip: the last security change on this account. A failure only hides the date.
+  const sec = await env.DB.prepare("SELECT action, at FROM audit_log WHERE actor_kind='creator' AND actor_id=? AND action IN ('creator.password_changed','creator.signed_out_everywhere') ORDER BY at DESC LIMIT 1").bind(me.accountId).first().catch(() => null);
+  const c = own ? me.creator : null;
+  const done = c ? Math.round(((8 - profileGaps(c).length) / 8) * 100) : null;
+  const tiles = [
+    { label: "Email", value: verified ? "Confirmed" : "Not confirmed", tone: verified ? "ok" : "todo", note: verified ? me.email : "Confirm it below", href: verified ? undefined : "#email" },
+    own
+      ? { label: "Account ownership", value: c.owner_verified ? "Proven" : "Not proven yet", tone: c.owner_verified ? "ok" : "todo", note: c.owner_verified ? `You proved you own @${c.handle}` : "Add a code to your Instagram bio", href: c.owner_verified ? undefined : "/creator/profile#own" }
+      : { label: "Profile link", value: status === "rejected" ? "Not linked" : "Being checked", tone: "todo", note: status === "rejected" ? "This profile wasn't linked to you" : "Usually within one working day" },
+    own
+      ? { label: "Payout details", value: c.upi_id ? "UPI added" : "UPI missing", tone: c.upi_id ? "ok" : "todo", note: c.upi_id ? (c.pan_last4 ? "PAN on file" : "Add PAN to pay 10% TDS, not 20%") : "Needed before your first payout", href: "/creator/profile#payout" }
+      : { label: "Payout details", value: "After linking", tone: "info", note: "Added on your profile once linked" },
+    { label: "Security", value: sec ? (sec.action === "creator.password_changed" ? "Password changed" : "Signed out everywhere") : "Password set", tone: "info",
+      note: sec ? istDay(sec.at) : acct?.last_login_at ? `Last sign-in ${istDay(acct.last_login_at)}` : acct?.created_at ? `Account since ${istDay(acct.created_at)}` : null, href: "#security" },
+  ];
+  const hero = (
+    <PageHeader variant="hero" crumbs={[{ label: "Home", href: "/creator" }, "Settings"]} eyebrow="Account" title="Account <b>settings</b>"
+      sub={`Signed in as ${me.email}. Your login, shipping address and devices.`}
+      meta={[
+        ...(done != null ? [{ label: "Profile complete", value: `${done}%`, gold: done === 100 }] : []),
+        ...(own ? [{ label: "Shipping", value: addr ? "Saved" : "Not added" }] : [{ label: "Profile link", value: status === "rejected" ? "Not linked" : "Checking" }]),
+      ]} />
+  );
   return (
-    <PublicShell path="/creator/settings" creatorName={status === "own" ? me.creator?.name : null}>
+    <PublicShell path="/creator/settings" creatorName={status === "own" ? me.creator?.name : null} hero={hero}>
       <div className="cr-page">
-        <PageHeader crumbs={[{ label: "Home", href: "/creator" }, "Settings"]} eyebrow="Account" title="Account <b>settings</b>" sub={`Signed in as ${me.email}. Your login, shipping address and devices.`} />
         {searchParams?.at !== "shipping" && <Flash sp={searchParams} />}
         {status !== "own" && <ClaimNote status={status} />}
-        <Grid aside={<>
-          <AsideCard eyebrow="At a glance" title="Your account">
-            <Facts rows={[
-              { label: "Email", value: <span className="row" style={{ gap: 8 }}><span style={{ overflowWrap: "anywhere" }}>{me.email}</span>{verified ? <span className="pill good">Confirmed</span> : <span className="pill ok">Not confirmed</span>}</span> },
-              { label: "Profile", value: status === "own" ? <span className="pill good">Verified yours</span> : status === "rejected" ? <span className="pill low">Not linked</span> : <span className="pill">Being verified</span> },
-              ...(own ? [{ label: "Shipping", value: addr ? <span className="pill good">Saved</span> : <a className="link" href="#shipping">Not added</a> }] : []),
-            ]} />
-          </AsideCard>
-          <AsideCard eyebrow="Elsewhere" title="Profile and payouts" foot={<a className="link" href="/creator/profile#payout">Payout details →</a>}>
-            <p className="small muted" style={{ margin: 0 }}>Your UPI, PAN and GSTIN live on your profile page, next to your media kit.</p>
-          </AsideCard>
-        </>}>
-        <div className="stack cr-forms">
-        <form className="panel pad" action={resendVerify}>
+        <StatusTiles label="Your account at a glance" items={tiles} />
+        <div className="cr-setgrid">
+        <form className="panel pad cr-set-email" action={resendVerify} id="email">
           <div className="spread"><h2 style={{ margin: 0 }}>Email</h2>{verified ? <span className="pill good">Confirmed</span> : <span className="pill ok">Not confirmed</span>}</div>
           <p className="muted" style={{ margin: "10px 0 0" }}>{me.email}</p>
           {!verified && <><p className="hint" style={{ margin: "8px 0 14px" }}>Confirm your email so brands and the Colatch team can reach you about deals and payments.</p><button className="btn">Send confirmation link</button></>}
         </form>
-        <form className="panel pad" action={changePassword}>
+        <form className="panel pad cr-set-pw" action={changePassword} id="security">
           <h2>Change password</h2>
           <p className="muted" style={{ margin: "-4px 0 18px" }}>Signed in as {me.email}.</p>
           <div className="stack">
@@ -130,7 +143,7 @@ export default async function Page({ searchParams }) {
           </div>
           <button className="btn-foil" style={{ marginTop: 20 }}>Change password</button>
         </form>
-        {own && <form className="panel pad ship-form" action={saveAddress} id="shipping" aria-labelledby="shipping-h">
+        {own && <form className="panel pad ship-form cr-set-ship" action={saveAddress} id="shipping" aria-labelledby="shipping-h">
           <div className="spread"><h2 id="shipping-h" style={{ margin: 0 }}>Shipping address for product seeding</h2>{addr ? <span className="pill good">Saved</span> : <span className="pill ok">Not added</span>}</div>
           {searchParams?.at === "shipping" && <div style={{ marginTop: 12 }}><Flash sp={searchParams} /></div>}
           <p className="note info ship-private" style={{ margin: "12px 0 16px" }}><b>Only the Colatch team sees this. Brands never do.</b> We use it to send you products for gifting and seeding deals you accept.</p>
@@ -148,14 +161,16 @@ export default async function Page({ searchParams }) {
             {addr && <button className="btn ghost" formAction={deleteAddress} formNoValidate>Delete address</button>}
           </div>
         </form>}
-        <form className="panel pad" action={signOutEverywhere}>
+        <AsideCard className="cr-set-else" eyebrow="Elsewhere" title="Profile and payouts" foot={<a className="link" href="/creator/profile#payout">Payout details →</a>}>
+          <p className="small muted" style={{ margin: 0 }}>Your UPI, PAN and GSTIN live on your profile page, next to your media kit. Account ownership is proven there too, with a code in your Instagram bio.</p>
+        </AsideCard>
+        <form className="panel pad cr-set-out" action={signOutEverywhere}>
           <h2>Sign out everywhere</h2>
           <p className="muted" style={{ margin: "-4px 0 14px" }}>Lost a phone, or logged in on someone else's laptop? This signs your account out on every device, including this one.</p>
           <button className="btn">Sign out on all devices</button>
         </form>
-        <p className="hint" style={{ margin: 0 }}><a className="link" href="/creator">Back to my briefs</a> · <a className="link" href="/creator/logout">Log out</a></p>
         </div>
-        </Grid>
+        <p className="hint" style={{ margin: 0 }}><a className="link" href="/creator">Back to my briefs</a> · <a className="link" href="/creator/logout">Log out</a></p>
       </div>
     </PublicShell>
   );

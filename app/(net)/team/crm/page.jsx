@@ -59,6 +59,8 @@ export default async function Page({ searchParams }) {
   const by = Object.fromEntries(DEAL_STAGES.map((s) => [s, []]));
   for (const d of deals) (by[d.stage] ??= []).push(d);
   const active = deals.filter((d) => !["dropped", "cancelled"].includes(d.stage));
+  // "Open deals" means the same as on Network overview: not cancelled or dropped, and the creator not paid (or refunded) yet.
+  const openDeals = active.filter((d) => !["paid", "refunded"].includes(d.pay_status));
   const committed = deals.filter((d) => ["funded", "released", "paid"].includes(d.pay_status) && fundedIds.has(d.id));
   const spend = committed.reduce((s, d) => s + (d.fee || 0), 0);
   const views = committed.reduce((s, d) => s + (d.actual_views || d.expected_views || 0), 0);
@@ -85,7 +87,7 @@ export default async function Page({ searchParams }) {
       {flashErr && <div className="note bad" style={{ marginBottom: 16 }}>{flashErr}</div>}
 
       <KpiStrip label="Pipeline at a glance" items={[
-        { label: "Open deals", value: active.length, foot: `across ${brands.length} ${brands.length === 1 ? "brand" : "brands"}` },
+        { label: "Open deals", value: openDeals.length, title: "Not cancelled or dropped, creator not paid yet: the same count as Network overview", foot: `not paid out yet · ${active.length - openDeals.length} paid of ${active.length} active` },
         { featured: true, label: "Committed spend", value: spend ? inrShort(spend) : "₹0", title: inrFull(spend), foot: `creator fees on ${committed.length} ${committed.length === 1 ? "deal" : "deals"} with a brand payment in the ledger` },
         { label: "Planned views", value: views ? compact(views) : "—", foot: spend && views ? `₹${(spend / views).toFixed(2)} planned CPV` : "on funded deals" },
         { label: "Actual CPV", value: realCpv != null ? `₹${realCpv.toFixed(2)}` : "—", foot: `${doneViews.length} ${doneViews.length === 1 ? "deal" : "deals"} with real views` },
@@ -100,9 +102,13 @@ export default async function Page({ searchParams }) {
           <p className="small tr-boardhint">Pick a stage on a card to move it. Funded deals move with the deal steps.</p>
         </FilterBar>
 
-        {deals.length ? <div className="board tr-board scroll-x" role="list" aria-label="Deals by stage">
+        {deals.length > 0 && <nav className="tr-stages" aria-label="Jump to a stage">
+          <span className="tr-stages__lbl">{cols.length} stages<span className="tr-stages__cue" aria-hidden="true"> · scroll sideways →</span></span>
+          {cols.map((s) => <a key={s} href={`#stage-${s}`} className={by[s].length ? "" : "tr-stages__0"}>{STAGE_LABEL[s]} <b>{by[s].length}</b></a>)}
+        </nav>}
+        {deals.length ? <div className="tr-boardwrap"><div className="board tr-board scroll-x" role="list" aria-label="Deals by stage">
           {cols.map((s) => (
-            <div key={s} role="listitem" className={`col tr-col${OFF.includes(s) ? " tr-col--off" : ""}`}>
+            <div key={s} id={`stage-${s}`} role="listitem" className={`col tr-col${OFF.includes(s) ? " tr-col--off" : ""}${by[s].length ? "" : " tr-col--empty"}`}>
               <h4><span>{STAGE_LABEL[s]}</span><span>{by[s].length}</span></h4>
               <p className="tr-col__sum">{colFee(s) ? <b title={inrFull(colFee(s))}>{inrShort(colFee(s))}</b> : <span>₹0</span>}<span> in fees</span></p>
               {by[s].length === 0 && <p className="tr-col__empty">No deals here.</p>}
@@ -123,7 +129,7 @@ export default async function Page({ searchParams }) {
                 </div>); })}
             </div>
           ))}
-        </div>
+        </div></div>
           : <EmptyState title={brand ? `No deals for ${brand}.` : "No deals yet."} body={'Open a creator in the finder and use "Add to CRM", or accept an applicant on an open campaign.'}
               action={brand ? <a className="btn sm" href="/team/crm">See every brand</a> : <a className="btn sm" href="/team/campaigns">Open campaigns</a>} />}
       </Section>

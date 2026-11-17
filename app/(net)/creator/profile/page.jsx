@@ -202,14 +202,16 @@ export default async function Page({ searchParams }) {
   const pic = safeUrl(c.profile_pic);
   const reels = String(c.portfolio_links || "").split(/\s+/).filter(Boolean).length;
   const SECS = [["basics", "What you make"], ["payout", "Payout"], ["media", "Work samples"], ["audience", "Audience"], ["platforms", "Platforms"]];
+  const filled = { basics: done === 100, payout: !!c.upi_id, media: media.length > 0, audience: hasAudience, platforms: platforms.length > 0 };
+  const hero = (
+    <PageHeader variant="hero" crumbs={[{ label: "Home", href: "/creator" }, "Profile"]} eyebrow="Profile · media kit" title={`@${c.handle}`}
+      sub="What you fill in here decides which briefs you see, and builds the media kit brands open before they book you."
+      meta={[{ label: "Complete", value: `${done}%`, gold: done === 100 }, { label: "Work samples", value: `${media.length}/${UPLOAD_MAX_FILES}` }, { label: "Platforms", value: 1 + platforms.length }]} />
+  );
   return (
-    <PublicShell creatorName={c.name || c.handle} path="/creator/profile">
-      <div className="cr-page">
-        <PageHeader crumbs={[{ label: "Home", href: "/creator" }, "Profile"]} eyebrow="Profile · media kit" title={`@${c.handle}`}
-          sub="What you fill in here decides which briefs you see, and builds the media kit brands open before they book you."
-          meta={[{ label: "Complete", value: `${done}%`, gold: done === 100 }, { label: "Work samples", value: `${media.length}/${UPLOAD_MAX_FILES}` }, { label: "Platforms", value: 1 + platforms.length }]} />
+    <PublicShell creatorName={c.name || c.handle} path="/creator/profile" hero={hero}>
+      <div className="cr-page cr-profile">
         {flash && !at && <div className={`note ${tone}`}>{flash} {tone === "good" && <a className="link" href="/creator">See matches →</a>}</div>}
-        <nav className="cr-secnav" aria-label="Profile sections">{SECS.map(([id, l]) => <a key={id} href={`#${id}`}>{l}</a>)}</nav>
 
         <Grid aside={<>
           <section className="cr-kitmini" aria-labelledby="kitmini-h">
@@ -243,19 +245,21 @@ export default async function Page({ searchParams }) {
         </>}>
           <div className="stack cr-forms">
         {c.verified ? <div className="note info">✓ Your follower count ({compact(c.followers)}) comes from Instagram and updates automatically.</div> : null}
-        {!c.owner_verified && <form className="panel pad" action={verifyBio}>
-          <h2>Prove this is your account</h2>
-          <p style={{ margin: "0 0 12px", color: "var(--ink-2)" }}>Add <code className="k" style={{ fontSize: 14 }}>{c.verify_code}</code> anywhere in your Instagram bio, then tap check. Verified creators get a ✓ that brands see, and rank higher in matches.</p>
+        {!c.owner_verified && <form className="panel pad cr-own" action={verifyBio} id="own">
+          <h2>Account ownership: prove you own @{c.handle}</h2>
+          <p style={{ margin: "0 0 12px", color: "var(--ink-2)" }}>Add <code className="k" style={{ fontSize: 14 }}>{c.verify_code}</code> anywhere in your Instagram bio, then tap check. Creators with proven account ownership get a ✓ that brands see, and rank higher in matches.</p>
           <button className="btn plum">Check my bio</button>
         </form>}
-        {c.owner_verified ? <div className="note good">✓ Account ownership verified.</div> : null}
-        <form className="panel pad" action={saveMain} id="basics">
+        {c.owner_verified ? <div className="note good" id="own">✓ Account ownership proven for @{c.handle}.</div> : null}
+        <div className="cr-tabs">
+        <nav className="cr-secnav cr-tabnav" aria-label="Profile sections">{SECS.map(([id, l]) => <a key={id} href={`#${id}`} data-tab={id}><span>{l}</span>{filled[id] ? <i className="cr-tabnav__ok" aria-label="filled in">✓</i> : <i className="cr-tabnav__todo" aria-label="to fill in" />}</a>)}</nav>
+        <form className="panel pad cr-tab cr-tab--first" action={saveMain} id="basics">
           <h2>What you make</h2>
           <div className="fld" style={{ marginBottom: 18 }}><label htmlFor="f-creator-profile-name-5">Name</label><input id="f-creator-profile-name-5" name="name" defaultValue={c.name ?? ""} /></div>
           <CreatorProfileFields v={c} />
           <button className="btn-foil" style={{ marginTop: 22 }}>Save profile</button>
         </form>
-        <form className="panel pad" action={savePayout} id="payout">
+        <form className="panel pad cr-tab" action={savePayout} id="payout">
           <h2>Payout details</h2>
           <div className="form-grid">
             <div className="fld"><label htmlFor="f-creator-profile-upi-id-1">UPI ID</label><input id="f-creator-profile-upi-id-1" name="upi_id" defaultValue={c.upi_id ?? ""} placeholder="yourname@okhdfcbank" /></div>
@@ -266,7 +270,7 @@ export default async function Page({ searchParams }) {
           <p className="hint" style={{ margin: "12px 0 0" }}>Without a PAN, TDS is deducted at 20% instead of 10%.</p>
           <button className="btn plum" style={{ marginTop: 14 }}>Save payout details</button>
         </form>
-        <section className="panel pad" id="media" aria-labelledby="media-h">
+        <section className="panel pad cr-tab" id="media" aria-labelledby="media-h">
           <h2 id="media-h">Work samples</h2>
           <p style={{ margin: "0 0 12px", color: "var(--ink-2)" }}>Up to {UPLOAD_MAX_FILES} images on your media kit: JPEG, PNG or WebP, 4 MB each. Show finished work, not your contact details.</p>
           {media.length > 0 && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 12, marginBottom: 14 }}>
@@ -286,7 +290,7 @@ export default async function Page({ searchParams }) {
                 <div><button className="btn plum" style={{ minHeight: 44 }}>Upload image</button></div>
               </form>}
         </section>
-        <form className="panel pad aud-form" action={saveAudience} id="audience" aria-labelledby="audience-h">
+        <form className="panel pad aud-form cr-tab" action={saveAudience} id="audience" aria-labelledby="audience-h">
           <div className="spread"><h2 id="audience-h" style={{ margin: 0 }}>Your audience</h2>{hasAudience && <span className={`pill ${c.audience_source === "team_checked" ? "good" : "ok"}`}>{c.audience_source === "team_checked" ? "Checked by Colatch" : "Self-reported"}</span>}</div>
           <p style={{ margin: "10px 0 4px", color: "var(--ink-2)" }}>Brands ask who watches you. Open Instagram → Professional dashboard → Total followers, and copy the numbers here. Fill in any part you have; each part should add up to about 100%.</p>
           {hasAudience && <p className="hint" style={{ margin: "0 0 4px" }}>{audienceSourceLabel(c)}</p>}
@@ -317,7 +321,7 @@ export default async function Page({ searchParams }) {
             {hasAudience && <button className="btn ghost" formAction={clearAudience} formNoValidate>Remove audience numbers</button>}
           </div>
         </form>
-        <section className="panel pad" id="platforms" aria-labelledby="platforms-h">
+        <section className="panel pad cr-tab" id="platforms" aria-labelledby="platforms-h">
           <h2 id="platforms-h">Other platforms</h2>
           <p style={{ margin: "0 0 12px", color: "var(--ink-2)" }}>Add where else you post. Brands booking YouTube, Moj or ShareChat find you by this.</p>
           {here("platforms")}
@@ -342,6 +346,7 @@ export default async function Page({ searchParams }) {
             <div className="full"><button className="btn plum">{pfEdit ? `Update ${PLATFORM_LABEL[pfEdit.platform]}` : "Save platform"}</button>{pfEdit && <a className="btn ghost" href="/creator/profile#platforms" style={{ marginLeft: 8 }}>Cancel</a>}</div>
           </form>
         </section>
+        </div>
           </div>
         </Grid>
       </div>

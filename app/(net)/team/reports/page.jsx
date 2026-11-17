@@ -7,8 +7,8 @@ import { env } from "@/lib/net/env";
 import { logEvent } from "@/lib/net/deal";
 import { audit } from "@/lib/net/security";
 import { parseWhen, weekSeries } from "@/lib/net/dashboard";
-import { PageHeader, KpiStrip, FilterBar, FilterChips, DataTable, Grid, Section, AsideCard, Pill, Cell } from "@/components/ui";
-import { ShareBar } from "@/components/admin/Charts";
+import { PageHeader, KpiStrip, FilterBar, FilterChips, DataTable, Grid, Section, Card, AsideCard, Pill, Cell } from "@/components/ui";
+import { ShareBar, HBars } from "@/components/admin/Charts";
 
 export const metadata = { title: "Off-platform reports", robots: { index: false, follow: false } };
 
@@ -68,6 +68,15 @@ export default async function Page({ searchParams }) {
   const bounties = rows.filter((r) => r.status === "confirmed" && r.reporter_side === "creator").length;
   const TONE = { open: "mine", confirmed: "done", dismissed: "off" };
   const weekly = weekSeries(rows.map((r) => r.created_at), now, 8);
+  // The next decision: the oldest open report (the one closest to, or past, the 72-hour promise).
+  const next = [...open].sort((a, b) => age(b) - age(a))[0] || null;
+  const hrs = (h) => (h < 48 ? `${Math.max(1, Math.round(h))} ${Math.round(h) === 1 ? "hour" : "hours"}` : `${Math.round(h / 24)} days`);
+  const latest = rows.length ? Math.min(...rows.map(age)) : null;
+  // Brands named most, from the rows already loaded (repeat names are worth a call).
+  const named = new Map();
+  for (const r of rows) { const b = String(r.brand || r.client_company || "").trim(); if (b) named.set(b, (named.get(b) || 0) + 1); }
+  const topBrands = [...named.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const bySide = ["creator", "brand"].map((side) => ({ label: side === "creator" ? "Reported by creators" : "Reported by brands", n: rows.filter((r) => r.reporter_side === side).length }));
 
   return (
     <TeamShell active="reports" email={me.email} role={me.role}>
@@ -93,9 +102,34 @@ export default async function Page({ searchParams }) {
         </AsideCard>
         {rows.length > 0 && <AsideCard eyebrow="Insight" title="Where reports end up">
           <ShareBar label="Reports by status" parts={[{ label: "Open", n: open.length, href: "?status=open" }, { label: "Confirmed", n: by("confirmed"), href: "?status=confirmed" }, { label: "Dismissed", n: by("dismissed"), href: "?status=dismissed" }]} />
+          <div style={{ marginTop: 16 }}><ShareBar label="Reports by who raised them" parts={bySide} /></div>
+        </AsideCard>}
+        {topBrands.length > 0 && <AsideCard eyebrow="Pattern" title="Brands named most" foot={<span className="small">A brand named in more than one report is worth a call from the account owner.</span>}>
+          <HBars label="Reports per brand" aLabel="Reports" rows={topBrands.map(([b, n]) => ({ label: b, a: n }))} />
         </AsideCard>}
       </>}>
-        <Section title="Reports" sub={`${shown.length} ${shown.length === 1 ? "report" : "reports"}. Open first, newest first.`}>
+        <Section id="next" title="Decide next" sub={next ? "The oldest open report. Read the deal room and call the brand first." : "Nothing open to decide."}>
+          {next ? (
+            <Card tone="gold" pad="lg" label="Oldest open report">
+              <div className="adm-next">
+                <div className="adm-next__body">
+                  <p className="adm-next__eb">{age(next) > 72 ? `Past the 72-hour promise · open ${hrs(age(next))}` : `Open ${hrs(age(next))} · ${hrs(72 - age(next))} left of the 72-hour promise`}</p>
+                  <h3 className="adm-next__t">{next.creator_name || (next.handle ? "@" + next.handle : sentence(next.reporter_side))} <span className="adm-dim">reported {next.brand || next.client_company || next.campaign_title || "a brand"}</span></h3>
+                  {next.note && <p className="adm-next__q">“{next.note}”</p>}
+                  {next.deal_id && <a className="link" href={`/team/deals/${next.deal_id}`}>Open the deal room{next.deliverable ? ` · ${next.deliverable}` : ""}</a>}
+                </div>
+                <div className="adm-acts adm-next__acts">
+                  <form action={confirm}><input type="hidden" name="id" value={next.id} /><button className="btn plum">Confirm</button></form>
+                  <form action={dismiss}><input type="hidden" name="id" value={next.id} /><button className="btn">Dismiss</button></form>
+                </div>
+              </div>
+            </Card>
+          ) : (
+            <Card><p className="small" style={{ margin: 0 }}>{latest == null ? "No reports yet. When a creator reports an off-platform request from their deal room, it shows up here." : `All reports are decided. The latest came in ${hrs(latest)} ago.`}</p></Card>
+          )}
+        </Section>
+
+        <Section id="all" title="Reports" sub={`${shown.length} ${shown.length === 1 ? "report" : "reports"}. Open first, newest first.`}>
           <FilterBar label="Filter reports">
             <FilterChips name="status" label="Filter by status" current={status} hrefFor={(v) => (v === "all" ? "?" : `?status=${v}`)}
               options={[{ value: "all", label: "All", count: rows.length }, { value: "open", label: "Open", count: open.length }, { value: "confirmed", label: "Confirmed", count: by("confirmed") }, { value: "dismissed", label: "Dismissed", count: by("dismissed") }]} />
@@ -103,13 +137,13 @@ export default async function Page({ searchParams }) {
           <DataTable caption="Off-platform reports" rows={shown} columns={[
             { key: "who", label: "Reported", render: (r) => <Cell eyebrow={`${dayTime(r.created_at)} · by ${r.reporter_side}`} title={r.creator_name || (r.handle ? "@" + r.handle : r.reporter_side)} sub={<span className="adm-pre">{r.note}</span>} /> },
             { key: "status", label: "Status", primary: true, render: (r) => <span className="ui-pills"><Pill tone={TONE[r.status] || "quiet"}>{sentence(r.status)}</Pill>{r.status === "open" && age(r) > 72 && <Pill tone="gold">Past 72h</Pill>}</span> },
-            { key: "deal", label: "Deal", render: (r) => <span>{r.deal_id ? <a className="link" href={`/team/deals/${r.deal_id}`}>{r.brand || r.client_company || "Deal"}</a> : r.campaign_title || "—"}{(r.deliverable || r.campaign_title) && <span className="adm-dim" style={{ display: "block" }}>{r.deliverable || r.campaign_title}</span>}</span> },
+            { key: "deal", label: "Deal", render: (r) => <span className="adm-dealcell">{r.deal_id ? <a className="link" href={`/team/deals/${r.deal_id}`}>{r.brand || r.client_company || "Deal"}</a> : r.campaign_title || "—"}{(r.deliverable || r.campaign_title) && <span className="adm-dim" style={{ display: "block" }}>{r.deliverable || r.campaign_title}</span>}</span> },
             { key: "act", label: "Decision", labelHidden: true, primary: true, num: true, render: (r) => (r.status === "open" ? (
               <div className="adm-acts">
                 <form action={confirm}><input type="hidden" name="id" value={r.id} /><button className="btn sm plum">Confirm</button></form>
                 <form action={dismiss}><input type="hidden" name="id" value={r.id} /><button className="btn sm">Dismiss</button></form>
               </div>
-            ) : null) },
+            ) : "") },
           ]} empty={status === "all"
             ? { title: "No reports yet.", body: "When a creator reports an off-platform request from their deal room, it shows up here." }
             : { title: "Nothing with this status.", body: "Try another filter.", action: <a className="btn sm" href="?">See all reports</a> }} />

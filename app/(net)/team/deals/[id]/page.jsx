@@ -23,6 +23,7 @@ import { listMessages, unreadCount, markRead, postMessage, notifyMessage, Messag
 import { listShipments, addShipment, moveShipment, nextStatuses, creatorAddress, addressLines, SHIP_LABEL, ShipError } from "@/lib/net/shipments";
 import { saveUsage, syncUsageStart, prefillFromText, toDate, USAGE_CHANNELS, MAX_USAGE_MONTHS, UsageError } from "@/lib/net/usage";
 import { audit } from "@/lib/net/security";
+import { REASONS } from "@/lib/net/disputes";
 
 export const metadata = { title: "Deal", robots: { index: false, follow: false } };
 
@@ -179,6 +180,8 @@ export default async function Page({ params, searchParams }) {
   const trackUrl = `${origin}/go/${d.track_code}`;
   const draftLabel = ({ none: "Not yet", submitted: "In review", changes: "Changes asked", approved: "Approved" })[d.draft_status] ?? d.draft_status;
   const extraRound = d.revisions_used >= d.revisions_included;
+  // Open disputes on this deal, from any side (read-only). Shown at the top: a dispute changes what the team should do next.
+  const disputesOpen = (await env.DB.prepare("SELECT id, raised_by_kind, reason, detail, created_at FROM disputes WHERE deal_id=? AND status='open' ORDER BY created_at").bind(d.id).all().catch(() => null))?.results ?? [];
   const openReports = Number((await env.DB.prepare("SELECT COUNT(*) n FROM bypass_reports WHERE deal_id=? AND status='open'").bind(d.id).first().catch(() => null))?.n ?? 0);
   const kindLabel = { cancelled: "Cancelled", refunded: "Refunded", live_link: "Live link shared", signoff: "Brand signed off", funded: "Brand paid", sow: "Terms accepted", draft: "Draft submitted", changes: "Changes requested", approved: "Draft approved", live: "Went live", released: "Payout approved", paid: "Creator paid", note: "Note", results: "Results updated" };
   // Deal room. Each part is optional: a problem here must not take the deal page down.
@@ -199,6 +202,12 @@ export default async function Page({ params, searchParams }) {
 
   const ledgerLabel = { brand_payment_received: "Brand paid Colatch", creator_payout_sent: "Paid to creator", brand_refund_sent: "Refunded to brand", referral_payout_sent: "Referral payout", adjustment: "Adjustment" };
   const money0 = (n) => (n ? inrShort(n) : "—");
+  // Money trail: the deal's own status and the ledger are two sources. Say which one each line comes from,
+  // so "the brand has paid" (deal status) and "nothing in the ledger" never read as a contradiction.
+  const sumKind = (kind) => ledger.filter((l) => l.kind === kind).reduce((t, l) => t + Number(l.amount_paise || 0), 0);
+  const brandIn = sumKind("brand_payment_received"), payoutOut = sumKind("creator_payout_sent"), refundOut = sumKind("brand_refund_sent");
+  const brandMarked = ["funded", "released", "paid"].includes(d.pay_status) || (d.pay_status === "refunded" && d.brand_paid_paise != null);
+  const SIDE = { creator: "the creator", brand: "the brand", team: "the Colatch team" };
 
   return (
     <TeamShell active="crm" email={me.email} role={me.role}>
@@ -219,19 +228,37 @@ export default async function Page({ params, searchParams }) {
           {priority && <Pill tone="gold">{tier} creator</Pill>}
           {unread > 0 && <a className="tr-pilllink" href="#messages"><Pill tone="mine">{unread} new {unread === 1 ? "message" : "messages"}</Pill></a>}
           {openReports > 0 && <Pill tone="mine">{openReports} open {openReports === 1 ? "report" : "reports"}</Pill>}
+          {disputesOpen.length > 0 && <a className="tr-pilllink" href="#dispute"><Pill tone="mine">Dispute open</Pill></a>}
         </div>
       </PageHeader>
 
       {flash && <div className={`note ${tone}`} style={{ marginBottom: 16 }}>{flash}</div>}
       {priority && !closed && d.pay_status !== "paid" && <div className="note info" style={{ marginBottom: 16 }}><b>{tier} creator: priority payout.</b> Pay this creator as soon as the post is verified.</div>}
+      {disputesOpen.length > 0 && <section id="dispute" className="ui-card ui-card--night ui-card--pad tr-disputebar" aria-labelledby="dispute-h">
+        <div className="tr-disputebar__in">
+          <div className="tr-disputebar__text">
+            <p className="ui-aside__eb">{disputesOpen.length === 1 ? "Dispute open" : `${disputesOpen.length} disputes open`} · needs a decision</p>
+            {disputesOpen.map((x) => (
+              <div key={x.id} className="tr-disputebar__one">
+                <h2 id={x === disputesOpen[0] ? "dispute-h" : undefined} className="tr-disputebar__h">{REASONS[x.reason] || x.reason} <span>raised by {SIDE[x.raised_by_kind] || x.raised_by_kind} · {dayTime(x.created_at)}</span></h2>
+                {x.detail && <p className="tr-disputebar__d">{x.detail}</p>}
+              </div>
+            ))}
+            <p className="tr-disputebar__rule">A dispute never moves money. If money has to move, cancel or refund below, then resolve the dispute.</p>
+          </div>
+          <a className="btn tr-disputebar__go" href="/team/disputes#open">Resolve in Disputes →</a>
+        </div>
+      </section>}
       <DealRail d={d} side="team" role={me.role} />
 
       <div className="tr-gap">
         <KpiStrip label="Deal money and results" items={[
           { label: "Creator fee", value: money0(d.fee), title: d.fee ? inr(d.fee) : undefined, foot: th ? `Takes home about ${inr(th.net)}${th.tds ? ` after TDS` : ""}` : "Set the fee in Terms" },
           { featured: true, label: "Brand pays", value: q ? inrShort(q.total) : "—", title: q ? inr(q.total) : undefined, foot: q ? `all-in, with Colatch fee and GST${q.frozen ? " · locked at payment" : ""}` : "Set the fee to price the deal" },
-          { label: "Views · CPV", value: views ? compact(views) : "—", foot: cpvLine },
-          { label: "Clicks · orders", value: `${d.clicks ?? 0} · ${d.orders ?? "—"}`, foot: `Code ${d.track_code}` },
+          views ? { label: "Views · CPV", value: compact(views), unit: d.actual_views ? "views" : "expected", foot: cpvLine }
+            : { label: "Views · CPV", empty: "No views yet", foot: d.live_at ? "Add real views under Results" : "Set expected views in Terms; real views come after the post is live" },
+          Number(d.clicks || 0) || d.orders != null ? { label: "Clicks · orders", value: `${Number(d.clicks || 0).toLocaleString("en-IN")} · ${d.orders ?? 0}`, foot: `Tracked with code ${d.track_code}` }
+            : { label: "Clicks · orders", empty: "No clicks yet", foot: `Counted from the tracked link · code ${d.track_code}` },
         ]} />
       </div>
 
@@ -247,12 +274,20 @@ export default async function Page({ params, searchParams }) {
           </dl>
         </AsideCard>}
 
-        {money && <AsideCard eyebrow="Ledger" title="Money recorded" foot={<span className="hint">Entries can't be edited or deleted. A mistake is fixed with an adjustment.</span>}>
-          {ledger.length ? <ol className="tr-ledger">{ledger.map((l, i) => <li key={i}>
+        {money && <AsideCard eyebrow="Money trail" title="Deal status and ledger" foot={<span className="hint">Ledger entries can't be edited or deleted. A mistake is fixed with an adjustment in <a className="link" href="/team/finance">Money and ledger</a>.</span>}>
+          <dl className="tr-lines tr-trail">
+            <div><dt>Brand payment</dt><dd>{brandIn ? <>{formatPaise(brandIn)} <span className="hint">in the ledger</span></>
+              : brandMarked ? <span className="tr-trail__gap">Marked paid · not in the ledger</span> : <span className="hint">Not paid yet</span>}</dd></div>
+            <div><dt>Paid to creator</dt><dd>{payoutOut ? <>{formatPaise(payoutOut)} <span className="hint">in the ledger</span></>
+              : d.pay_status === "paid" ? <span className="tr-trail__gap">Marked paid · not in the ledger</span> : <span className="hint">{d.pay_status === "released" ? "Approved, not sent" : "Not sent yet"}</span>}</dd></div>
+            {refundOut > 0 && <div><dt>Refunded to brand</dt><dd>{formatPaise(refundOut)}</dd></div>}
+          </dl>
+          {brandMarked && !brandIn && <p className="tr-trail__fix"><b>Brand marked paid · no ledger entry yet</b> — record it in <a className="link" href="/team/finance">Money and ledger</a> so reconciliation and the brand's receipt match.</p>}
+          {ledger.length ? <><div className="lbl tr-trail__lbl">Ledger entries</div><ol className="tr-ledger">{ledger.map((l, i) => <li key={i}>
             <div className="tr-ledger__t"><b>{ledgerLabel[l.kind] || l.kind}</b><span className="hint">{l.utr} · {l.actor_id} · {dayTime(l.created_at)}</span></div>
             <div className="tr-ledger__v">{formatPaise(Number(l.amount_paise))}{Number(l.tds_paise) ? <span className="hint">TDS {formatPaise(Number(l.tds_paise))}</span> : null}</div>
-          </li>)}</ol>
-            : <p className="hint">No money recorded on this deal yet.</p>}
+          </li>)}</ol></>
+            : <p className="hint">No ledger entries on this deal yet.</p>}
         </AsideCard>}
 
         <AsideCard eyebrow="Tracking" title="Tracked link and code">
@@ -316,7 +351,7 @@ export default async function Page({ params, searchParams }) {
           </Card>
         </Section>
 
-        {progress && <Section id="terms" title="Terms" sub={d.pay_status !== "unfunded" ? "Locked: the brand has paid against these terms. To change them, cancel and refund, or add a note." : "Brand, deliverable, fee and dates the creator accepts."}>
+        {progress && <Section id="terms" title="Terms" sub={d.pay_status !== "unfunded" ? `Locked: the deal is marked brand-paid${brandIn ? "" : " (no ledger entry yet)"}. To change the terms, cancel and refund, or add a note.` : "Brand, deliverable, fee and dates the creator accepts."}>
           <Card><form action={act}>
             {hidden("terms")}
             <fieldset disabled={d.pay_status !== "unfunded"} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>

@@ -87,13 +87,21 @@ export default async function Page({ searchParams }) {
 
   const paidOut = rows.filter((r) => r.status === "paid").reduce((s, r) => s + r.amount, 0);
   const approvedN = rows.filter((r) => r.status === "approved").length;
-  const earners = new Set(rows.filter((r) => r.status !== "void").map((r) => r.owner_type + ":" + r.owner_id)).size;
+  // Codes on the leaderboard that have at least one earning that isn't void (same population as the leaderboard).
+  const topCodes = new Set(top.map((t) => t.code));
+  const earningCodes = new Set(rows.filter((r) => r.status !== "void" && r.code && topCodes.has(r.code)).map((r) => r.code)).size;
   const st = ["pending", "approved", "paid", "void"].includes(searchParams?.status) ? String(searchParams.status) : "all";
   const shown = st === "all" ? rows : rows.filter((r) => r.status === st);
   const count = (x) => rows.filter((r) => r.status === x).length;
   const now = Date.now();
   // Earnings booked per month (not void), from the rows already loaded.
   const booked = monthSeries(rows.filter((r) => r.status !== "void").map((r) => ({ at: r.created_at, amount: Number(r.amount) || 0 })), now, 6);
+  // Read-only: what was actually paid out per month (cash sent and credit applied), from the audit row that
+  // Record payout writes in the same transaction. This feeds the "Paid out" sparkline, so it follows paid
+  // money and not bookings.
+  const paidLog = (await env.DB.prepare("SELECT at, detail FROM audit_log WHERE action='referral_earning.paid' AND at > now() - interval '7 months'").all().catch(() => ({ results: [] }))).results ?? [];
+  const paidAmt = (d) => { try { return Number((typeof d === "string" ? JSON.parse(d) : d)?.amount) || 0; } catch { return 0; } };
+  const paidSeries = monthSeries(paidLog.map((r) => ({ at: r.at, amount: paidAmt(r.detail) })), now, 6);
   const TONE = { pending: "wait", approved: "mine", paid: "done", void: "off" };
   const flash = { ok: searchParams?.ok, err: searchParams?.err };
 
@@ -109,10 +117,10 @@ export default async function Page({ searchParams }) {
       {flash.err && <div className="note bad" style={{ marginBottom: 16 }}>{flash.err}</div>}
 
       <KpiStrip label="Referral earnings at a glance" items={[
-        { label: "Earners", value: earners, foot: `${top.length} ${top.length === 1 ? "code has" : "codes have"} referred someone` },
+        { label: "Referrers", value: top.length, foot: top.length ? `${earningCodes} of them ${earningCodes === 1 ? "has" : "have"} earnings booked${top.length > 8 ? " · top 8 listed" : ""}` : "nobody has referred anyone yet" },
         { label: "Waiting for review", value: pendingN, foot: "check before approving", href: "?status=pending" },
         { featured: owed > 0, label: "Cash owed to creators", value: inrShort(owed), title: inr(owed), foot: `${approvedN} approved, not yet paid${credit ? ` · ${inr(credit)} brand credit outstanding` : ""}`, href: "?status=approved" },
-        { label: "Paid out", value: inrShort(paidOut), title: inr(paidOut), foot: "cash sent and credit applied", href: "?status=paid", spark: booked.months.map((m) => m.total), sparkLabel: "Referral earnings booked per month, last 6 months" },
+        { label: "Paid out", value: inrShort(paidOut), title: inr(paidOut), foot: "cash sent and credit applied", href: "?status=paid", spark: paidSeries.months.map((m) => m.total), sparkLabel: "Referral payouts recorded per month (cash and credit), last 6 months" },
       ]} />
 
       <Grid aside={<>

@@ -11,7 +11,8 @@ export { Grid, Section, Card, AsideCard } from "./Layout";
 export { default as EmptyState, InlineState } from "./EmptyState";
 export { default as SplitAuth } from "./SplitAuth";
 export { FormSteps, SummaryRail } from "./FormSteps";
-export { Pill, Tag, Tags, Avatar } from "./Bits";
+export { Pill, Tag, Tags, Avatar, initialsOf } from "./Bits";
+export { default as Pager, paginate, pageHref } from "./Pager";
 export { rich, plain } from "./rich";
 // The dashboard charts, re-exported so pages import everything from one place.
 export { Bars, Donut, Spark, Split, ringColor } from "@/components/dash/Charts";

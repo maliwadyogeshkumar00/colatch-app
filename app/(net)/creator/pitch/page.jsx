@@ -1,7 +1,8 @@
 import { redirect } from "next/navigation";
 import { ClaimNote } from "@/app/(net)/join/_claim.js";
 import PublicShell from "../../_ui/PublicShell";
-import { PageHeader, Grid, Section, AsideCard, EmptyState } from "@/components/ui";
+import { PageHeader, Grid, Section, AsideCard, EmptyState, KpiStrip } from "@/components/ui";
+import { inrShort } from "@/lib/net/dashboard";
 import Flash, { flashUrl } from "../../_ui/flash";
 import { env } from "@/lib/net/env";
 import { currentCreator } from "@/lib/net/creatorAuth";
@@ -87,31 +88,15 @@ export default async function Page({ searchParams }) {
   const mine = (await env.DB.prepare("SELECT * FROM creator_pitches WHERE creator_id=? AND status <> 'deleted' ORDER BY created_at DESC").bind(c.id).all()).results ?? [];
   const liveN = mine.filter((p) => p.status === "live").length;
   const requests = mine.reduce((a, p) => a + (p.requests || 0), 0);
+  // From the rows already loaded: the most-requested idea and the average asking price.
+  const top = [...mine].sort((x, y) => (y.requests || 0) - (x.requests || 0))[0] || null;
+  const maxReq = Math.max(0, ...mine.map((p) => p.requests || 0));
+  const priced = mine.filter((p) => Number(p.price) > 0);
+  const avg = priced.length ? Math.round(priced.reduce((a, p) => a + Number(p.price), 0) / priced.length) : 0;
 
-  const hero = (
-    <PageHeader variant="hero" eyebrow="Creator idea board" title="Don't wait for a brief. <b>Pitch one.</b>"
-      sub="Post the content idea you're dying to make, name your price, and brands book it straight from the Colatch idea board. Your handle and contact stay hidden until a brand books, so nobody can take the idea off-platform."
-      meta={[{ label: "Ideas live", value: `${liveN}/${MAX_LIVE_PITCHES}` }, { label: "Booking requests", value: requests, gold: requests > 0 }]} />
-  );
-
-  return (
-    <PublicShell creatorName={c.name || c.handle} path="/creator/pitch" hero={hero}>
-      <div className="pg-pitch cr-page">
-        <style dangerouslySetInnerHTML={{ __html: CSS }} />
-        <Flash sp={searchParams} />
-        <Grid aside={<>
-          <AsideCard eyebrow="Tips" title="What gets booked" foot={<a className="link" href="/pitches">See the idea board →</a>}>
-            <ul className="tip">
-              <li><b>A moment, not just a product.</b> Ideas tied to Diwali, weddings, IPL or exam season get booked first.</li>
-              <li><b>Say who watches you.</b> "70% women in Delhi NCR" beats "big audience".</li>
-              <li><b>Price it like you mean it.</b> Brands see your rating and past Colatch work next to the price.</li>
-              <li><b>No contact details.</b> They're hidden automatically, and your payment is only protected on Colatch.</li>
-            </ul>
-            <p className="small muted" style={{ margin: "14px 0 0" }}>{requests} {requests === 1 ? "brand has" : "brands have"} asked to book your ideas so far.</p>
-          </AsideCard>
-        </>}>
+  const newIdea = (
           <form className="panel pad" action={createPitch} id="new-idea">
-            <h2>New idea</h2>
+            <h2>{mine.length ? "Pitch another idea" : "New idea"}</h2>
             <div className="stack">
               <div className="fld"><label htmlFor="f-creator-pitch-title-1">Title</label><input id="f-creator-pitch-title-1" name="title" required maxLength={90} placeholder="e.g. Diwali GRWM in Hinglish" /></div>
               <div className="fld"><label htmlFor="f-creator-pitch-idea-2">The idea <span className="opt">what you'd shoot, the hook, why your audience will love it</span></label><textarea id="f-creator-pitch-idea-2" name="idea" required rows={6} maxLength={700} placeholder={"Open on the diya, mirror shot, 3 steps of my festive routine with your product as the glow step. Ends on the family photo. My audience is 70% women 18–30 in Delhi NCR."} /></div>
@@ -125,9 +110,10 @@ export default async function Page({ searchParams }) {
             <button className="btn-foil" style={{ marginTop: 18 }}>Put it on the idea board</button>
             <p className="hint" style={{ margin: "12px 0 0" }}>{liveN} of {MAX_LIVE_PITCHES} ideas live. Colatch's fee is added on the brand's side, your price is what you take home before TDS.</p>
           </form>
-        </Grid>
-        <Section id="ideas" title="Your ideas" sub={mine.length ? `${liveN} live · ${mine.length - liveN} paused` : null}>
-          {mine.length === 0 ? <EmptyState title="No ideas yet." body="Your first one takes two minutes. Fill in the form above and it goes live on the idea board." action={<a className="btn sm" href="#new-idea">Write an idea</a>} /> : (
+  );
+  const ideasSec = (
+          <Section id="ideas" title="Your ideas" sub={mine.length ? `${liveN} live · ${mine.length - liveN} paused` : null}>
+          {mine.length === 0 ? <EmptyState title="No ideas yet." body="Your first one takes two minutes. Fill in the form and it goes live on the idea board." action={<a className="btn sm" href="#new-idea">Write an idea</a>} /> : (
             <div className="mine">{mine.map((p) => (
               <div key={p.id} className="card-p">
                 <div className="spread"><h3>{p.title}</h3><span className={`pill ${p.status === "live" ? "good" : ""}`}>{p.status === "live" ? "Live" : "Paused"}</span></div>
@@ -141,6 +127,45 @@ export default async function Page({ searchParams }) {
             ))}</div>
           )}
         </Section>
+  );
+  const hero = (
+    <PageHeader variant="hero" eyebrow="Creator idea board" title="Don't wait for a brief. <b>Pitch one.</b>"
+      sub="Post the content idea you're dying to make, name your price, and brands book it straight from the Colatch idea board. Your handle and contact stay hidden until a brand books, so nobody can take the idea off-platform."
+      meta={[{ label: "Ideas live", value: `${liveN}/${MAX_LIVE_PITCHES}` }, { label: "Booking requests", value: requests, gold: requests > 0 }]} />
+  );
+
+  return (
+    <PublicShell creatorName={c.name || c.handle} path="/creator/pitch" hero={hero}>
+      <div className="pg-pitch cr-page">
+        <style dangerouslySetInnerHTML={{ __html: CSS }} />
+        <Flash sp={searchParams} />
+        <KpiStrip label="Your ideas at a glance" items={[
+          { label: "Ideas live", value: `${liveN} / ${MAX_LIVE_PITCHES}`, foot: liveN < MAX_LIVE_PITCHES ? `room for ${MAX_LIVE_PITCHES - liveN} more` : "the most at once; pause one to add another", href: "#ideas" },
+          { featured: requests > 0, label: "Booking requests", value: requests, foot: requests ? "from brands on the idea board" : "brands ask to book from the board" },
+          { label: "Most wanted", value: top && top.requests ? top.requests : "—", foot: top && top.requests ? top.title : "your most-requested idea shows here" },
+          { label: "Your asking price", value: avg ? inrShort(avg) : "—", title: avg ? inr(avg) : undefined, foot: mine.length ? `average across ${mine.length} ${mine.length === 1 ? "idea" : "ideas"}` : "set per idea" },
+        ]} />
+        <Grid aside={<>
+          {mine.length > 0 && <AsideCard eyebrow="Insight" title="Requests by idea">
+            <ul className="cr-hbars" role="img" aria-label={"Booking requests by idea: " + mine.map((p) => `${p.title} ${p.requests || 0}`).join(", ")}>
+              {[...mine].sort((x, y) => (y.requests || 0) - (x.requests || 0)).slice(0, 5).map((p) => (
+                <li key={p.id}><span className="cr-hbars__l">{p.title}</span><b>{p.requests || 0}</b><i style={{ width: `${maxReq ? Math.max(4, ((p.requests || 0) / maxReq) * 100) : 4}%` }} className={p.status === "live" ? "" : "cr-hbars--off"} /></li>
+              ))}
+            </ul>
+            <p className="hint" style={{ margin: "10px 0 0" }}>Paused ideas are shown lighter. Brands only see live ones.</p>
+          </AsideCard>}
+          <AsideCard eyebrow="Tips" title="What gets booked" foot={<a className="link" href="/pitches">See the idea board →</a>}>
+            <ul className="tip">
+              <li><b>A moment, not just a product.</b> Ideas tied to Diwali, weddings, IPL or exam season get booked first.</li>
+              <li><b>Say who watches you.</b> "70% women in Delhi NCR" beats "big audience".</li>
+              <li><b>Price it like you mean it.</b> Brands see your rating and past Colatch work next to the price.</li>
+              <li><b>No contact details.</b> They're hidden automatically, and your payment is only protected on Colatch.</li>
+            </ul>
+            <p className="small muted" style={{ margin: "14px 0 0" }}>{requests} {requests === 1 ? "brand has" : "brands have"} asked to book your ideas so far.</p>
+          </AsideCard>
+        </>}>
+          {mine.length > 0 ? <>{ideasSec}{newIdea}</> : <>{newIdea}{ideasSec}</>}
+        </Grid>
       </div>
     </PublicShell>
   );

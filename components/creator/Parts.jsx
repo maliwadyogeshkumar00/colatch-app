@@ -8,7 +8,8 @@ import { rich } from "@/components/ui";
 /** "17 Nov 2026" in Indian time for a stored timestamp or a YYYY-MM-DD date. */
 export function istDay(v) {
   if (v == null || v === "") return null;
-  const s = String(v);
+  // Postgres text timestamps end in a bare "+00" offset; make it "+00:00" so Date.parse reads them.
+  const s = String(v).replace(/(:\d\d(?:\.\d+)?[+-]\d\d)$/, "$1:00");
   const dateOnly = /^\d{4}-\d\d-\d\d$/.test(s);
   const t = v instanceof Date ? v.getTime() : Date.parse(s.replace(" ", "T") + (dateOnly || /[zZ]$|[+-]\d\d:?\d\d$/.test(s) ? "" : "Z"));
   if (!Number.isFinite(t)) return s.slice(0, 10);
@@ -100,4 +101,46 @@ export function Facts({ rows, className = "" }) {
   const list = rows.filter((r) => r && r.value != null && r.value !== "");
   if (!list.length) return null;
   return <dl className={`cr-facts ${className}`}>{list.map((r) => <div key={r.label}><dt>{r.label}</dt><dd>{r.value}</dd></div>)}</dl>;
+}
+
+/**
+ * A thin split bar with its own legend, where every part has a colour no other part uses
+ * (the shared Split cycles a 5-colour ring, so gold and soft gold can sit side by side).
+ * parts: [{ label, n, href?, color }] — color is a token, e.g. "var(--p700)".
+ */
+export function StatusSplit({ parts, label }) {
+  const total = parts.reduce((a, p) => a + p.n, 0);
+  const desc = `${label}: ` + parts.map((p) => `${p.label} ${p.n}`).join(", ");
+  return (
+    <div>
+      <div className="dsh-split" role="img" aria-label={desc}>
+        {total > 0 && parts.map((p) => (p.n ? <i key={p.label} style={{ width: `${(p.n / total) * 100}%`, background: p.color }} title={`${p.label}: ${p.n}`} /> : null))}
+      </div>
+      <ul className="dsh-legend">
+        {parts.map((p) => <li key={p.label}><i style={{ background: p.color }} />{p.href ? <a href={p.href}>{p.label}</a> : p.label} <b>{p.n}</b></li>)}
+      </ul>
+    </div>
+  );
+}
+
+/** One colour per application status, used by My deals so the legend never repeats a colour. */
+export const APP_COLORS = { new: "var(--gold-2)", shortlisted: "var(--p400)", accepted: "var(--p700)", rejected: "var(--p200)", withdrawn: "var(--ink-4)" };
+
+/**
+ * The account dashboard strip for settings pages: 3–4 status tiles, each a short state word and a line.
+ * items: [{ label, value, note, tone: "ok" | "todo" | "info", href? }]
+ */
+export function StatusTiles({ items, label = "Account status" }) {
+  return (
+    <ul className="cr-stiles" aria-label={label}>
+      {items.map((t) => {
+        const body = (<>
+          <span className="cr-stile__l">{t.label}</span>
+          <span className={`cr-stile__v cr-stile__v--${t.tone || "info"}`}><i aria-hidden="true" />{t.value}</span>
+          {t.note && <span className="cr-stile__n">{t.note}</span>}
+        </>);
+        return <li key={t.label} className="cr-stile">{t.href ? <a href={t.href}>{body}</a> : <div>{body}</div>}</li>;
+      })}
+    </ul>
+  );
 }
