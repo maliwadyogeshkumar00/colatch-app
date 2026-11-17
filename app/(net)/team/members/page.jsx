@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import TeamShell from "../../_ui/TeamShell";
+import { dayTime } from "@/components/team/labels";
 import Flash, { flashUrl } from "../../_ui/flash";
 import { env } from "@/lib/net/env";
 import { revokeSessions } from "@/lib/net/creatorAuth";
@@ -146,23 +147,23 @@ export default async function Page({ searchParams }) {
         </div>
       )}
       <div className="panel scroll-x" style={{ marginBottom: 18 }}>
-        <table className="tbl">
+        <table className="tbl stack">
           <thead><tr><th>Member</th><th>Role</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {team.map((t) => (
               <tr key={t.id}>
                 <td><b>{t.name || t.email}</b><div className="hint">{t.email}{t.id === me.id ? " · you" : ""}</div></td>
-                <td>
+                <td data-label="Role">
                   {t.id === me.id ? (ROLE_LABEL[t.role] || t.role) : (
                     <form action={changeRole} className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
                       <input type="hidden" name="id" value={t.id} />
-                      <select name="role" defaultValue={t.role} aria-label={`Role for ${t.email}`}>{ROLES.filter((r) => roles.includes(r) || r === t.role).map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select>
+                      <select className="in" name="role" defaultValue={t.role} aria-label={`Role for ${t.email}`} style={{ width: "auto", minWidth: 0, maxWidth: "100%", padding: "6px 8px", fontSize: 13 }}>{ROLES.filter((r) => roles.includes(r) || r === t.role).map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select>
                       <button className="btn sm">Save</button>
                     </form>
                   )}
                 </td>
-                <td>{t.disabled_at ? <span className="pill bad">Disabled</span> : Number(t.invited) || t.invited === true ? <span className="pill">Invited, no password yet</span> : <span className="pill ok">Active</span>}<div className="hint">{t.last_login_at ? `Last login ${t.last_login_at} UTC` : "Never logged in"}</div></td>
-                <td className="num">
+                <td data-label="Status" className="key">{t.disabled_at ? <span className="pill bad">Disabled</span> : Number(t.invited) || t.invited === true ? <span className="pill">Invited, no password yet</span> : <span className="pill good">Active</span>}<div className="hint">{t.last_login_at ? `Last login ${dayTime(t.last_login_at)}` : "Never logged in"}</div></td>
+                <td className="num key">
                   <div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
                     {!t.disabled_at && <form action={issueReset}><input type="hidden" name="id" value={t.id} /><button className="btn sm">{Number(t.invited) || t.invited === true ? "New invite link" : "Reset link"}</button></form>}
                     {t.id !== me.id && <form action={setDisabled}><input type="hidden" name="id" value={t.id} /><input type="hidden" name="disable" value={t.disabled_at ? "0" : "1"} /><button className="btn sm">{t.disabled_at ? "Enable" : "Disable"}</button></form>}
@@ -189,7 +190,7 @@ export default async function Page({ searchParams }) {
         {claims.length === 0 ? <p className="hint">No claims waiting.</p> : (
           <table className="tbl"><tbody>{claims.map((c) => (
             <tr key={c.id}>
-              <td><b>@{c.handle}</b> {c.name ? `· ${c.name}` : ""}<div className="hint">Joined as {c.email} · email on file: {c.file_email || "none"} · {c.created_at} UTC</div></td>
+              <td><b>@{c.handle}</b> {c.name ? `· ${c.name}` : ""}<div className="hint">Joined as {c.email} · email on file: {c.file_email || "none"} · {dayTime(c.created_at)}</div></td>
               <td className="num"><div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
                 <form action={decideClaim}><input type="hidden" name="id" value={c.id} /><input type="hidden" name="decision" value="verify" /><button className="btn sm">Verify</button></form>
                 <form action={decideClaim}><input type="hidden" name="id" value={c.id} /><input type="hidden" name="decision" value="reject" /><button className="btn sm">Reject</button></form>

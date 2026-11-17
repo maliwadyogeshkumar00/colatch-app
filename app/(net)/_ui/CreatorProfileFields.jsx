@@ -1,6 +1,6 @@
 // Creator profile fields shared by /join and /creator/profile (ported from CreatorProfileFields.astro).
 import { SKILLS, LANGUAGES, CITIES, list } from "@/lib/net/match";
-import { NICHES } from "@/lib/net/creators";
+import { NICHES, PLATFORM_LABEL, platformInfo, compact, safeHref } from "@/lib/net/creators";
 
 export default function CreatorProfileFields({ v = {} }) {
   const has = (k, x) => list(v[k]).map((s) => s.toLowerCase()).includes(x.toLowerCase());
@@ -34,12 +34,46 @@ export default function CreatorProfileFields({ v = {} }) {
         <div className="fld"><label htmlFor="f-ui-rate-reel-5">Your rate for 1 reel ₹</label><input id="f-ui-rate-reel-5" name="rate_reel" inputMode="numeric" defaultValue={v.rate_reel ?? ""} placeholder="e.g. 15000" /></div>
         <div className="fld"><label htmlFor="f-ui-rate-story-6">Your rate for 1 story ₹ <span className="opt">— optional</span></label><input id="f-ui-rate-story-6" name="rate_story" inputMode="numeric" defaultValue={v.rate_story ?? ""} /></div>
         {part(3, "Show your work", "")}
-        <div className="fld full"><label htmlFor="f-ui-bio-pitch-7">One line about your work</label><input id="f-ui-bio-pitch-7" name="bio_pitch" maxLength={200} defaultValue={v.bio_pitch ?? ""} placeholder="Delhi Bhangra dancer, 6 years, wedding + festive reels that go viral" /></div>
+        <div className="fld full"><label htmlFor="f-ui-bio-pitch-7">One line about your work</label><input id="f-ui-bio-pitch-7" name="bio_pitch" maxLength={200} defaultValue={v.bio_pitch ?? ""} placeholder="e.g. Delhi Bhangra dancer, festive reels" /></div>
         <div className="fld full"><label htmlFor="f-ui-portfolio-links-8">Links to your 2–3 best reels <span className="opt">— one per line</span></label><textarea id="f-ui-portfolio-links-8" name="portfolio_links" rows={3} defaultValue={v.portfolio_links ?? ""} /></div>
         <div className="fld"><label htmlFor="f-ui-phone-9">WhatsApp number</label><input id="f-ui-phone-9" name="phone" type="tel" inputMode="tel" autoComplete="tel-national" required defaultValue={v.phone ?? ""} placeholder="98XXXXXXXX" /></div>
         <div className="fld"><label className="chip" style={{ marginTop: 22 }}><input type="checkbox" name="open_to_barter" value="1" defaultChecked={Boolean(Number(v.open_to_barter) || v.open_to_barter === "1")} /><span>Also show me product, ticket, giveaway and commission deals</span></label></div>
       </div>
       <datalist id="pcities">{CITIES.map((c) => <option key={c} value={c} />)}</datalist>
     </>
+  );
+}
+
+/** Audience split as labelled bars (share of followers). Shared by the media kit and the team record. `aud` comes from formatAudience() in lib/net/audience.ts. */
+export function AudienceBars({ aud }) {
+  const group = (title, rows) => rows.length > 0 && (
+    <div className="aud-g">
+      <h3>{title}</h3>
+      <ul className="bars">{rows.map((r) => (
+        <li key={r.label}><span className="bl">{r.label}</span><span className="bt" aria-hidden="true"><i style={{ width: `${Math.max(0, Math.min(100, r.pct))}%` }} /></span><span className="bv">{Math.round(r.pct * 10) / 10}%</span></li>
+      ))}</ul>
+    </div>
+  );
+  return <>{group("Top cities", aud.cities)}{group("Gender", aud.gender)}{group("Age", aud.age)}</>;
+}
+
+/**
+ * Other platforms as a list: mark, name, followers and average views. With `links`, the handle is shown and
+ * linked (team view only; the public media kit leaves handles and links out, like other contact details).
+ */
+export function PlatformList({ platforms, links = false }) {
+  return (
+    <ul className="pf-list">{platforms.map((p) => {
+      const href = links ? safeHref(p.url) : null;
+      return (
+        <li key={p.platform}>
+          <span className="pf-mark" aria-hidden="true">{platformInfo(p.platform)?.mark}</span>
+          <div className="pf-txt">
+            <b>{PLATFORM_LABEL[p.platform] || p.platform}</b>
+            <span>{links && <>{href ? <a className="link" href={href} target="_blank" rel="noopener noreferrer nofollow">@{p.handle} ↗</a> : `@${p.handle}`} · </>}{p.followers != null ? `${compact(p.followers)} followers` : "Followers not added"}{p.avg_views != null ? ` · ${compact(p.avg_views)} avg views` : ""}</span>
+          </div>
+        </li>
+      );
+    })}</ul>
   );
 }

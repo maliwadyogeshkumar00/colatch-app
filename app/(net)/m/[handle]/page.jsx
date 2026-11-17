@@ -1,11 +1,13 @@
 import { notFound } from "next/navigation";
 import PublicShell from "../../_ui/PublicShell";
 import { env } from "@/lib/net/env";
-import { compact, inr, erBand } from "@/lib/net/creators";
+import { compact, inr, erBand, creatorPlatforms } from "@/lib/net/creators";
+import { formatAudience, audienceSourceLabel } from "@/lib/net/audience";
 import { list } from "@/lib/net/match";
 import { safeUrl } from "@/lib/net/guard";
 import { colatchScore } from "@/lib/net/score";
 import { TierBadge } from "../../_ui/Score";
+import { AudienceBars, PlatformList } from "../../_ui/CreatorProfileFields";
 
 // Public media kit, auto-built from the creator's Colatch profile. Only creators with a portal login get one.
 const getCreator = (raw) => {
@@ -33,6 +35,9 @@ export default async function Page({ params }) {
   const media = ((await env.DB.prepare("SELECT id, url, caption FROM creator_media WHERE creator_id=? ORDER BY created_at LIMIT 6").bind(c.id).all().catch(() => ({ results: [] }))).results ?? [])
     .map((m) => ({ ...m, url: safeUrl(m.url) })).filter((m) => m.url);
   const sc = await colatchScore(env, c.id);
+  const aud = formatAudience(c.audience);
+  // Other platforms: name and numbers only. Links and handles stay with the Colatch team, like contact details.
+  const platforms = await creatorPlatforms(env, c.id);
   const hero = (
     <section className="hero"><div className="hero-in">
       <div className="eb">Colatch media kit{c.verified ? " · Instagram verified ✓" : ""}</div>
@@ -41,7 +46,7 @@ export default async function Page({ params }) {
         <div><h1 style={{ margin: 0 }}>{name}</h1><p style={{ margin: "8px 0 0" }}>@{c.handle}{c.city ? ` · ${c.city}` : ""}{c.language ? ` · ${c.language}` : ""}</p></div>
       </div>
       {c.bio_pitch && <p style={{ fontSize: 18, marginTop: 20 }}>{c.bio_pitch}</p>}
-      <div className="row" style={{ marginTop: 16, gap: 8 }}>{[...list(c.skills), ...list(c.niche)].map((t, i) => <span key={t + i} className="tag" style={{ background: "rgba(255,255,255,.1)", color: "#F4EFE3" }}>{t}</span>)}</div>
+      <div className="row" style={{ marginTop: 16, gap: 8 }}>{tagList([...list(c.skills), ...list(c.niche)]).map((t, i) => <span key={t + i} className="tag" style={{ background: "rgba(255,255,255,.1)", color: "#F4EFE3" }}>{t}</span>)}</div>
     </div></section>
   );
   return (
@@ -73,6 +78,19 @@ export default async function Page({ params }) {
         </div>
       </div>
 
+      {(aud || platforms.length > 0) && <div className="grid2 sec" style={{ alignItems: "start" }}>
+        {aud && <section className="panel pad aud-card" aria-labelledby="aud-h">
+          <h2 id="aud-h">Audience</h2>
+          <p className="aud-src">{audienceSourceLabel(c)}</p>
+          <AudienceBars aud={aud} />
+        </section>}
+        {platforms.length > 0 && <section className="panel pad" aria-labelledby="pf-h">
+          <h2 id="pf-h">Also on</h2>
+          <PlatformList platforms={platforms} />
+          <p className="hint" style={{ margin: "12px 0 0" }}>Self-reported by the creator. Book any platform through Colatch.</p>
+        </section>}
+      </div>}
+
       {media.length > 0 && <div className="sec"><div className="h2">Work samples</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(200px,1fr))", gap: 14 }}>{media.map((m) => (
           <figure key={m.id} className="panel" style={{ margin: 0, overflow: "hidden" }}>
@@ -91,4 +109,11 @@ export default async function Page({ params }) {
       </div>
     </PublicShell>
   );
+}
+
+/** Sentence case, no repeats, and no generic "Creator" tag once a specific type is set. */
+function tagList(raw) {
+  const seen = new Set();
+  const out = raw.map((t) => t.charAt(0).toUpperCase() + t.slice(1)).filter((t) => !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase()));
+  return out.length > 1 ? out.filter((t) => t.toLowerCase() !== "creator") : out;
 }

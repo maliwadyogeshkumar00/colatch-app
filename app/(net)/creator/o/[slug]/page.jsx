@@ -28,7 +28,8 @@ const CSS = `
 .pg-brief .deal li::before{content:"✓";position:absolute;left:0;top:0;color:var(--good);font-weight:700}
 `;
 
-const getCampaign = (slug) => env.DB.prepare("SELECT * FROM campaigns WHERE slug=? AND status IN ('open','closed')").bind(slug).first();
+// published_at: when the team last published the brief (campaigns has no column for it, so it comes from the audit log).
+const getCampaign = (slug) => env.DB.prepare("SELECT k.*, (SELECT MAX(a.at) FROM audit_log a WHERE a.entity='campaign' AND a.entity_id=k.id AND a.action IN ('campaign.approve','campaign.publish','campaign.reopen')) AS published_at FROM campaigns k WHERE k.slug=? AND k.status IN ('open','closed')").bind(slug).first();
 const isOpen = (k) => k.status === "open" && Number(k.is_open) === 1 && (!k.deadline || k.deadline >= new Date().toISOString().slice(0, 10));
 const myApplication = (k, c) => env.DB.prepare("SELECT * FROM campaign_applications WHERE campaign_id=? AND (creator_id=? OR handle=?) ORDER BY created_at DESC LIMIT 1").bind(k.id, c.id, c.handle).first();
 /** Private campaigns (a brand booked one creator's idea) are visible only to creators already on them. */
@@ -39,7 +40,10 @@ async function canSee(k, c) {
   return Boolean(await env.DB.prepare("SELECT id FROM creator_deals WHERE campaign_id=? AND creator_id=?").bind(k.id, c.id).first());
 }
 const EARLY_HOURS = 24;
-const isFresh = (k) => { const t = Date.parse(String(k.created_at || "").replace(" ", "T") + "Z"); return Number.isFinite(t) && Date.now() - t < EARLY_HOURS * 36e5; };
+// Icon early access runs for 24 hours from when the brief was published, not from when it was written: every
+// brief is created 'pending' and published by the team later. Without a recorded publish time the window can't be
+// placed, so the brief is open to everyone rather than held back from a stale or wrong start.
+const isFresh = (k) => { const t = k.published_at ? new Date(k.published_at).getTime() : NaN; return Number.isFinite(t) && Date.now() - t < EARLY_HOURS * 36e5; };
 
 export async function generateMetadata({ params }) {
   const k = await getCampaign(params.slug).catch(() => null);

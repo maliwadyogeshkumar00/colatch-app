@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import TeamShell from "../../_ui/TeamShell";
+import { dayTime } from "@/components/team/labels";
 import Flash, { flashUrl } from "../../_ui/flash";
 import { env } from "@/lib/net/env";
 import { audit, can } from "@/lib/net/security";
@@ -11,7 +12,7 @@ export const metadata = { title: "Notifications", robots: { index: false, follow
 const BACK = "/team/notifications";
 const NO_RETRY = new Set(["password_reset", "team_invite"]);
 const TONE = { sent: "ok", failed: "bad", not_configured: "", queued: "", skipped: "" };
-const LABEL = { sent: "Sent", failed: "Failed", not_configured: "Not sent: not set up", queued: "Queued", skipped: "Skipped (no address)" };
+const LABEL = { sent: "Sent", failed: "Failed", not_configured: "Not sent (email not set up)", queued: "Queued", skipped: "Skipped (no address)" };
 
 async function retry(fd) {
   "use server";
@@ -20,7 +21,7 @@ async function retry(fd) {
   if (!Number.isInteger(id) || id <= 0) redirect(flashUrl(BACK, "err", "Unknown notification."));
   const status = await attempt(id);
   await audit({ kind: "team", id: me.id }, "notification.retry", "notification", String(id), { status });
-  redirect(flashUrl(BACK, status === "sent" ? "ok" : "err", status === "sent" ? "Sent." : `Still not sent (${LABEL[status] || status}). See the error column.`));
+  redirect(flashUrl(BACK, status === "sent" ? "ok" : "err", status === "sent" ? "Sent." : `Still not sent. Status: ${LABEL[status] || status}. See the error column.`));
 }
 
 async function retryAll() {
@@ -42,7 +43,7 @@ export default async function Page({ searchParams }) {
   const counts = Object.fromEntries((((await env.DB.prepare("SELECT status, COUNT(*) n FROM notifications GROUP BY status").all()).results) || []).map((r) => [r.status, Number(r.n)]));
   const mail = emailConfig();
   const mayRetry = can(me.role, "team");
-  const when = (v) => (v ? new Date(v).toISOString().replace("T", " ").slice(0, 16) + " UTC" : "");
+  const when = dayTime;
   return (
     <TeamShell active="notifications" title="Email <b>outbox</b>" email={me.email} role={me.role}
       actions={mayRetry && mail.ready ? <form action={retryAll}><button className="btn">Retry unsent (last 7 days)</button></form> : null}>
@@ -51,13 +52,13 @@ export default async function Page({ searchParams }) {
         <div className="note good" style={{ marginBottom: 14 }}>Email is set up. Messages go out through Resend as things happen.</div>
       ) : (
         <div className="note warn" role="status" style={{ marginBottom: 14 }}>
-          <b>Email is not set up, so nothing is being emailed.</b> Missing in Vercel: {mail.missing.join(", ")}. Every message is still recorded below as "Not sent: not set up". Once the keys are added, use "Retry unsent".
+          <b>Email is not set up, so nothing is being emailed.</b> Missing in Vercel: {mail.missing.join(", ")}. Every message is still recorded below as "Not sent (email not set up)". Once the keys are added, use "Retry unsent".
         </div>
       )}
       <div className="note" style={{ marginBottom: 14 }}>WhatsApp messages are not sent yet: an approved WhatsApp Business provider and message templates are needed first.</div>
       <div className="row" style={{ gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
-        <a className={`btn sm${!where ? " on" : ""}`} href={BACK}>All</a>
-        {Object.keys(LABEL).map((s) => <a key={s} className={`btn sm${status === s ? " on" : ""}`} href={`${BACK}?status=${s}`}>{LABEL[s]} ({counts[s] || 0})</a>)}
+        <a className={`btn sm${!where ? " plum" : ""}`} aria-current={!where ? "page" : undefined} href={BACK}>All</a>
+        {Object.keys(LABEL).map((s) => <a key={s} className={`btn sm${status === s ? " plum" : ""}`} aria-current={status === s ? "page" : undefined} href={`${BACK}?status=${s}`}>{LABEL[s]} ({counts[s] || 0})</a>)}
       </div>
       <div className="panel scroll-x">
         {rows.length === 0 ? <p className="pad hint">Nothing here yet.</p> : (
@@ -73,6 +74,7 @@ export default async function Page({ searchParams }) {
                 <td className="num">
                   {mayRetry && n.status !== "sent" && n.status !== "skipped" && (NO_RETRY.has(n.template)
                     ? <span className="hint">Make a new link</span>
+                    : n.status === "not_configured" && !mail.ready ? <span className="hint">Set up email first</span>
                     : <form action={retry}><input type="hidden" name="id" value={n.id} /><button className="btn sm">Retry</button></form>)}
                 </td>
               </tr>))}</tbody>

@@ -10,6 +10,12 @@ import { audit } from "@/lib/net/security";
 import { inr } from "@/lib/net/creators";
 import { formatIST } from "@/lib/net/brief";
 import { DEMO_INSERTS, DEMO_DELETES } from "./demo";
+import { inrKpi, inrFull } from "@/components/team/labels";
+import { loadDashboard, monthSeries, weekSeries, stageGroups, buildEvents, buildNeeds, moneyMoving, dealOfDay, greeting, longDay, shortDay, parseWhen, inrShort, istDayStart } from "@/lib/net/dashboard";
+import { reminderCfg } from "@/lib/net/jobs";
+import { TopBar, BigFigure, DealCard, Stat, MoneyStrip, NeedsTable, WeekList } from "@/components/dash/Parts";
+import { Bars, Donut, Spark, Split, ringColor } from "@/components/dash/Charts";
+import Clock from "@/components/dash/Clock";
 
 export const metadata = { title: "Network overview", robots: { index: false, follow: false } };
 
@@ -37,7 +43,9 @@ export default async function Page({ searchParams }) {
   const me = await requireTeam();
   const one = async (sql, ...b) => (await env.DB.prepare(sql).bind(...b).first().catch(() => null)) ?? {};
   const many = async (sql, ...b) => (await env.DB.prepare(sql).bind(...b).all().catch(() => ({ results: [] }))).results ?? [];
-  const monthStart = new Date().toISOString().slice(0, 8) + "01";
+  // Start of this calendar month in Indian time, as a UTC instant (1 Nov 00:00 IST = 31 Oct 18:30 UTC).
+  const ist = new Date(Date.now() + 5.5 * 36e5);
+  const monthStart = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), 1) - 5.5 * 36e5).toISOString();
 
   const k = await one(`SELECT
       (SELECT COUNT(*) FROM campaigns WHERE status='open') open_n,
@@ -46,7 +54,7 @@ export default async function Page({ searchParams }) {
       (SELECT COUNT(*) FROM creator_deals WHERE stage='live') live_n,
       (SELECT COUNT(*) FROM creators WHERE status <> 'blacklisted') creators_n,
       (SELECT COUNT(*) FROM creator_accounts) accounts_n,
-      (SELECT COALESCE(SUM(fee),0) FROM creator_deals WHERE pay_status='paid' AND paid_at >= ?) paid_month,
+      (SELECT COALESCE(SUM(amount_paise),0) FROM finance_ledger WHERE kind='creator_payout_sent' AND at >= ?::timestamptz) paid_month_paise,
       (SELECT COUNT(*) FROM creators WHERE id LIKE 'demo-%') demo_n,
       (SELECT COUNT(*) FROM bypass_reports WHERE status='open') reports_n`, monthStart);
 
@@ -57,7 +65,7 @@ export default async function Page({ searchParams }) {
   const owed = waiting.filter((w) => !w.sl);
   const now = Date.now();
 
-  const newApps = await many(`SELECT k.id, k.title, COUNT(*) n FROM campaign_applications a JOIN campaigns k ON k.id=a.campaign_id
+  const newApps = await many(`SELECT k.id, k.title, COUNT(*) n, MIN(a.created_at) oldest FROM campaign_applications a JOIN campaigns k ON k.id=a.campaign_id
     WHERE a.status='new' GROUP BY k.id, k.title ORDER BY COUNT(*) DESC LIMIT 10`);
   // Deal lists come from the deal state machine (lib/net/moves.ts): each open deal sits under its next step.
   const openDeals = await many(`SELECT d.*, c.name, c.handle FROM creator_deals d JOIN creators c ON c.id=d.creator_id
@@ -73,72 +81,133 @@ export default async function Page({ searchParams }) {
 
   const h = headers();
   const origin = `${h.get("x-forwarded-proto") || "https"}://${h.get("host")}`;
-  const nameOf = (r) => r.name || "@" + r.handle;
-  const nothing = !pitchReqs.length && !owed.length && !newApps.length && !drafts.length && !toPay.length && !unfunded.length && !toVerify.length;
+
+  // Dashboard aggregates (read-only) and the pure shapes built from them.
+  const dash = await loadDashboard(env.DB, now);
+  const fees = monthSeries(dash.booked, now, 12);
+  const feeChange = fees.priorTotal > 0 ? ((fees.total - fees.priorTotal) / fees.priorTotal) * 100 : null;
+  const moves = openDeals.map((d) => nextMove(d));
+  const groups = stageGroups(moves);
+  const signups = weekSeries(dash.signups.map((r) => r.created_at), now, 12);
+  const signups12 = signups.reduce((a, b) => a + b, 0);
+  const appsWaiting = newApps.reduce((a, x) => a + Number(x.n || 0), 0);
+  const dayStart = istDayStart(now);
+  const week = buildEvents({ openDeals, toPay, drafts, owed, shoots: dash.shoots, from: dayStart, to: dayStart + 7 * 864e5, now, draftDueDays: reminderCfg().draftDueDays });
+  const today = week.filter((e) => e.t < dayStart + 864e5);
+  const needs = buildNeeds({ toPay, toVerify, unfunded, drafts, newApps, owed, pitchReqs, now, fmt: formatIST });
+  const money = moneyMoving({ toPay, openDeals, now });
+  const deal = dealOfDay(openDeals, now);
+  const dealMove = deal ? nextMove(deal) : null;
+  const dealLive = deal ? parseWhen(deal.go_live_date) : null;
+  const first = String(me.name || "").trim().split(/\s+/)[0] || String(me.email || "").split(/[@._-]/)[0].replace(/^./, (c) => c.toUpperCase()) || "there";
+  const paidMonth = Number(k.paid_month_paise ?? 0) / 100;
+
+  const nPay = toPay.length, nDraft = drafts.length, nChase = unfunded.length;
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
   return (
-    <TeamShell active="home" title="Your creator <b>network</b>, at a glance." email={me.email}
-      actions={<a className="btn-foil" href="/team/campaigns#new">+ New opportunity</a>}>
-      <p className="lead">What needs the team comes first: money, then drafts and applicants, then shortlists owed. Numbers for the network are below.</p>
-      <div style={{ marginBottom: 16 }}><Flash sp={searchParams} /></div>
+    <TeamShell active="home" title="Network <b>overview</b>" email={me.email} role={me.role}>
+      <div className="dsh">
+        <TopBar crumb="Network overview" day={longDay(now)} action={<a className="dsh-new" href="/team/campaigns#new"><span aria-hidden="true">+</span> New opportunity</a>} />
+        <div className="dsh-flash"><Flash sp={searchParams} /></div>
+        {Number(k.reports_n) > 0 && (
+          <div className="note bad dsh-flash">
+            <b>{k.reports_n} open off-platform {Number(k.reports_n) === 1 ? "report" : "reports"}.</b> Someone says they were asked to deal outside Colatch. <a className="link" href="/team/reports">Review reports →</a>
+          </div>
+        )}
 
-      {Number(k.reports_n) > 0 && (
-        <div className="note bad" style={{ marginBottom: 16 }}>
-          <b>{k.reports_n} open off-platform {Number(k.reports_n) === 1 ? "report" : "reports"}.</b> Someone says they were asked to deal outside Colatch. <a className="link" href="/team/reports">Review reports →</a>
+        <div className="dsh-hero">
+          <div className="dsh-greet">
+            <p className="dsh-eye"><i aria-hidden="true" />{shortDay(now)}<span className="sep" aria-hidden="true" /><span className="ist">{greeting(now) === "Good morning" ? "Morning" : greeting(now) === "Good afternoon" ? "Afternoon" : "Evening"} desk · Indian time</span></p>
+            <h1 className="dsh-greet__h">{greeting(now)}, <span className="nm">{first}</span>.</h1>
+            {money.span === "none" ? (
+              <div className="dsh-figure"><span className="dsh-figure__lead">Today is looking like a quiet day.</span></div>
+            ) : (
+              <div className="dsh-figure">
+                <span className="dsh-figure__lead">{money.span === "day" ? "Today" : "This week"} is looking like a</span>
+                <BigFigure value={money.total} />
+                <span className="dsh-figure__lead">{money.span}.</span>
+              </div>
+            )}
+            <p className="dsh-figure__note">
+              {money.span === "day" && <>Creator fees on {plural(money.payN, "payout", "payouts")} ready to send or approve{money.liveN ? <> and {plural(money.liveN, "post", "posts")} going live today</> : null}.</>}
+              {money.span === "week" && <>Nothing moves today. Creator fees on {plural(money.liveN, "post", "posts")} going live in the next 7 days.</>}
+              {money.span === "none" && <>No payouts are ready and no posts go live in the next 7 days.</>}
+            </p>
+            <p className="dsh-greet__sub">
+              {nPay + nDraft + nChase === 0 ? <>Nothing urgent: no payouts, drafts or unpaid brands. </> : <>
+                <a className="hl" href="/team?need=money#needs">{plural(nPay, "payout", "payouts")}</a> to send, <a className="hl" href="/team?need=drafts#needs">{plural(nDraft, "draft", "drafts")}</a> waiting, <a className="hl" href="/team?need=money#needs">{plural(nChase, "brand", "brands")}</a> to chase. </>}
+              {appsWaiting + owed.length > 0 && <><a className="hl" href="/team?need=briefs#needs">{appsWaiting ? plural(appsWaiting, "applicant", "applicants") + " to review" : plural(owed.length, "shortlist", "shortlists") + " owed"}</a>{appsWaiting && owed.length ? <> and {plural(owed.length, "shortlist", "shortlists")} owed</> : null}. </>}
+              Everything else can wait.
+            </p>
+            <div className="dsh-greet__cta">
+              <a className="btn-foil" href="/team/crm">Open the money queue <span aria-hidden="true">→</span></a>
+              <a className="dsh-ghost" href="/team/creators">See the network <span aria-hidden="true">→</span></a>
+            </div>
+          </div>
+          <DealCard deal={deal} move={dealMove} goLive={dealLive ? shortDay(dealLive.t) : null} />
         </div>
-      )}
-      <div className="sec">
-        <div className="h2">Needs you</div>
-        {nothing && <div className="panel empty"><b>Nothing waiting.</b>Share the brief link with brands and the join link with creators to get things moving.</div>}
-        <div className="grid2" style={{ alignItems: "start" }}>
-          {toPay.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Ready to pay out</h2></div>
-            <table className="tbl"><tbody>{toPay.slice(0, 5).map((d) => <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{nameOf(d)} × {d.brand}</a><div className="hint">{d.pay_status === "released" ? "Payout approved: send it, then record the UTR" : "Post verified: approve the payout"}</div></td><td className="num">{inr(d.fee)}</td></tr>)}</tbody></table>{toPay.length > 5 && <div className="pad" style={{ padding: "10px 16px" }}><a className="link small" href="/team/crm">See all payouts</a></div>}</div>}
-          {toVerify.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Live posts to verify</h2></div>
-            <table className="tbl"><tbody>{toVerify.slice(0, 5).map((d) => <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{nameOf(d)} × {d.brand}</a><div className="hint">Check the post against the brief, then verify</div></td><td className="num">{inr(d.fee)}</td></tr>)}</tbody></table>{toVerify.length > 5 && <div className="pad" style={{ padding: "10px 16px" }}><a className="link small" href="/team/crm">See all live posts</a></div>}</div>}
-          {unfunded.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Terms accepted, brand not paid yet</h2></div>
-            <table className="tbl"><tbody>{unfunded.slice(0, 5).map((d) => <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{nameOf(d)} × {d.brand}</a><div className="hint">Collect the brand payment before the creator shoots</div></td><td className="num">{inr(d.fee)}</td></tr>)}</tbody></table>{unfunded.length > 5 && <div className="pad" style={{ padding: "10px 16px" }}><a className="link small" href="/team/crm">See all unpaid deals</a></div>}</div>}
-          {drafts.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Drafts in review</h2></div>
-            <table className="tbl"><tbody>{drafts.slice(0, 5).map((d) => <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{nameOf(d)} × {d.brand}</a></td><td className="num hint">{d.auto_approve_at ? `auto-approves ${formatIST(d.auto_approve_at)}` : ""}</td></tr>)}</tbody></table>{drafts.length > 5 && <div className="pad" style={{ padding: "10px 16px" }}><a className="link small" href="/team/crm">See all drafts</a></div>}</div>}
-          {newApps.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>New applicants to review</h2></div>
-            <table className="tbl"><tbody>{newApps.slice(0, 5).map((a) => <tr key={a.id}><td><a className="link" href={`/team/campaigns/${a.id}`}>{a.title}</a></td><td className="num"><span className="pill ok">{a.n} new</span></td></tr>)}</tbody></table>{newApps.length > 5 && <div className="pad" style={{ padding: "10px 16px" }}><a className="link small" href="/team/campaigns">See all briefs with applicants</a></div>}</div>}
-          {owed.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Shortlists owed to clients</h2></div>
-            <table className="tbl"><tbody>{owed.slice(0, 5).map((w) => {
-              const late = w.shortlist_due && Date.parse(w.shortlist_due) < now;
-              return <tr key={w.id}><td><a className="link" href={`/team/campaigns/${w.id}`}>{w.title}</a><div className="hint">{w.client_company || w.brand || "Brand"} · {w.status === "pending" ? "needs approval" : "open"}</div></td>
-                <td className="num">{w.shortlist_due ? <span className={`pill ${late ? "low" : "ok"}`}>{late ? "Late · " : "Due "}{formatIST(w.shortlist_due)}</span> : <span className="hint">no promise</span>}</td></tr>;
-            })}</tbody></table>{owed.length > 5 && <div className="pad" style={{ padding: "10px 16px" }}><a className="link small" href="/team/campaigns">See all {owed.length} briefs owed a shortlist</a></div>}</div>}
-          {pitchReqs.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Pitch requests from the idea board</h2></div>
-            <table className="tbl"><tbody>{pitchReqs.slice(0, 5).map((r) => <tr key={r.id}><td><a className="link" href={`/team/campaigns/${r.id}`}>{r.title}</a><div className="hint">{r.client_company || "Brand"} wants this idea · confirm the creator's dates</div></td>
-              <td className="num">{r.budget_total ? inr(r.budget_total) : ""}{r.shortlist_due ? <div className="hint">Due {formatIST(r.shortlist_due)}</div> : null}</td></tr>)}</tbody></table>{pitchReqs.length > 5 && <div className="pad" style={{ padding: "10px 16px" }}><a className="link small" href="/team/campaigns">See all pitch requests</a></div>}</div>}
-        </div>
-      </div>
 
-      <div className="grid3 sec">
-        <div className="panel kpi"><div className="k">Open campaigns</div><div className="v">{k.open_n ?? 0}</div><div className="s">{k.pending_n ?? 0} waiting for approval</div></div>
-        <div className="panel kpi"><div className="k">Shortlists owed</div><div className="v">{owed.length}</div><div className="s">{owed[0]?.shortlist_due ? `Next due ${formatIST(owed[0].shortlist_due)}` : "No promise pending"}</div></div>
-        <div className="panel kpi"><div className="k">Applicants this week</div><div className="v">{k.apps_week ?? 0}</div><div className="s">across all briefs</div></div>
-        <div className="panel kpi"><div className="k">Live deals</div><div className="v">{k.live_n ?? 0}</div><div className="s">posts up, payout pending</div></div>
-        <div className="panel kpi"><div className="k">Creators</div><div className="v">{k.creators_n ?? 0}</div><div className="s">{k.accounts_n ?? 0} with a portal login</div></div>
-        <div className="panel kpi"><div className="k">Paid this month</div><div className="v">{inr(k.paid_month ?? 0)}</div><div className="s">creator fees cleared</div></div>
-      </div>
+        <Clock today={today} week={week} now={now} />
 
-      <div className="grid2 sec" style={{ alignItems: "start" }}>
-        <div className="panel pad">
-          <h2>Share links</h2>
-          <p className="small" style={{ margin: "0 0 8px" }}>Brands post a brief: <code className="k">{origin}/brief</code></p>
-          <p className="small" style={{ margin: 0 }}>Creators join free: <code className="k">{origin}/join</code></p>
-          {me.role === "owner" && <><div className="lbl" style={{ marginTop: 18 }}>Demo data</div>
-          <p className="hint" style={{ margin: "6px 0 10px" }}>One festive Bhangra campaign with four creators and three deals (paid, live, draft in review), so you can click through every screen. All rows are named DEMO and ids start with demo-.</p>
-          <div className="row">
-            <form action={loadDemo}><button className="btn sm">{k.demo_n ? "Reload demo data" : "Load demo data"}</button></form>
-            {k.demo_n > 0 && <form action={removeDemo}><button className="btn sm danger">Remove demo data</button></form>}
-            {k.demo_n > 0 && <a className="btn sm" href="/team/campaigns/demo-camp-1">Open demo campaign</a>}
-          </div></>}
+        <div className="dsh-stats">
+          <Stat featured label="Fees booked · last 12 months" period={fees.months[11].label + " ’" + String(fees.months[11].year).slice(2)}
+            foot={<span title={inrFull(paidMonth)}>{inrKpi(paidMonth)} paid to creators this month, from the ledger</span>}>
+            <div className="dsh-stat__row">
+              <div className="dsh-stat__value gold" title={inrFull(fees.total)}>{inrShort(fees.total)}</div>
+              {feeChange != null ? <span className="dsh-delta">{feeChange >= 0 ? "↑" : "↓"} {Math.abs(feeChange).toFixed(1)}%<small>vs prior 12 months</small></span> : <span className="dsh-delta quiet">First 12 months</span>}
+            </div>
+            <Bars months={fees.months} label="Creator fees booked per month, terms accepted" fmt={inrFull} />
+          </Stat>
+          <Stat label="Open deals" foot={<><span className="dsh-chip">{k.live_n ?? 0} live</span> posts up, payout pending</>}>
+            <div className="dsh-stat__split">
+              <div className="dsh-stat__value">{openDeals.length}</div>
+              <Donut parts={groups} label="Open deals by stage" />
+            </div>
+            <ul className="dsh-legend">{groups.map((g, i) => <li key={g.key}><i style={{ background: ringColor(i) }} />{g.label} <b>{g.n}</b></li>)}</ul>
+          </Stat>
+          <Stat label="Applicants this week" period={`${k.open_n ?? 0} open`}>
+            <div className="dsh-stat__value">{k.apps_week ?? 0}</div>
+            <Split label="Briefs and applicants" parts={[
+              { label: "New to review", n: appsWaiting, href: "/team/campaigns" },
+              { label: "Shortlists owed", n: owed.length, href: "/team/campaigns" },
+              { label: "Open briefs", n: Number(k.open_n ?? 0), href: "/team/campaigns" },
+              { label: "To approve", n: Number(k.pending_n ?? 0), href: "/team/campaigns" },
+            ]} />
+          </Stat>
+          <Stat label="Creators" period={`${k.accounts_n ?? 0} with login`} foot={<><span className="dsh-chip">+{signups12}</span> joined in 12 weeks</>}>
+            <div className="dsh-stat__value">{k.creators_n ?? 0}</div>
+            <Spark values={signups} label="Creators joined per week, last 12 weeks" />
+          </Stat>
         </div>
-        <div className="panel pad">
-          <h2>Team</h2>
-          <p className="small" style={{ margin: "0 0 10px" }}>{team.map((t) => t.name || t.email).join(", ")}</p>
-          <a className="btn sm" href="/team/members">Manage members and roles</a>
+
+        <MoneyStrip rows={dash.ledger} now={now} paidMonth={paidMonth} />
+
+        <div className="dsh-cols">
+          <NeedsTable needs={needs} now={now} filter={String(searchParams?.need ?? "")} links={[
+            ...(toPay.length + toVerify.length + unfunded.length + drafts.length > 0 ? [{ href: "/team/crm", label: "All deals in the CRM" }] : []),
+            ...(newApps.length + owed.length + pitchReqs.length > 0 ? [{ href: "/team/campaigns", label: "All briefs" }] : []),
+          ]} />
+          <div className="dsh-side">
+            <WeekList events={week} now={now} />
+            <section className="dsh-card" aria-labelledby="dsh-team-h">
+              <div className="dsh-card__head"><div><h2 id="dsh-team-h" className="dsh-card__title"><span className="dsh-dot" aria-hidden="true" />Team</h2><p className="dsh-card__sub">{plural(team.length, "member", "members")}</p></div><a className="dsh-more" href="/team/members">Manage</a></div>
+              <div className="dsh-team">
+                <ul className="dsh-team__list">{team.map((t) => <li key={t.email}><span className="dsh-av" aria-hidden="true">{String(t.name || t.email || "?").trim()[0]?.toUpperCase()}</span><span className="who"><b>{t.name || t.email}</b><span>{t.role}</span></span></li>)}</ul>
+                <a className="btn sm" href="/team/members">Manage members and roles</a>
+                <div className="lbl dsh-team__lbl">Share links</div>
+                <p className="small dsh-team__p">Brands post a brief: <code className="k">{origin}/brief</code></p>
+                <p className="small dsh-team__p">Creators join free: <code className="k">{origin}/join</code></p>
+                {me.role === "owner" && <><div className="lbl dsh-team__lbl">Demo data</div>
+                <p className="hint dsh-team__p">One festive Bhangra campaign with four creators and three deals (paid, live, draft in review), so you can click through every screen. All rows are named DEMO and ids start with demo-.</p>
+                <div className="row">
+                  <form action={loadDemo}><button className="btn sm">{k.demo_n ? "Reload demo data" : "Load demo data"}</button></form>
+                  {k.demo_n > 0 && <form action={removeDemo}><button className="btn sm danger">Remove demo data</button></form>}
+                  {k.demo_n > 0 && <a className="btn sm" href="/team/campaigns/demo-camp-1">Open demo campaign</a>}
+                </div></>}
+              </div>
+            </section>
+          </div>
         </div>
       </div>
     </TeamShell>
