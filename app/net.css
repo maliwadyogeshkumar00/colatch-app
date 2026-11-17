@@ -563,3 +563,12 @@ html:has(.net){scroll-padding-top:80px}
 .net .top{background:rgba(27,19,66,.97);border-bottom:1px solid rgba(214,162,86,.16)}
 @supports (backdrop-filter:blur(10px)){.net .top{background:rgba(27,19,66,.9)}}
 /* end Colatch design 669 */
+
+/* === parity: deal room (messages, shipments, usage rights) === */
+/* end parity deal room */
+
+/* === parity: creator data and discovery === */
+/* end parity creator data */
+
+/* === parity: platform (jobs, webhooks) === */
+/* end parity platform */
