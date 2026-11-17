@@ -39,7 +39,7 @@ export default async function Page() {
       <div className="grid4" style={{ marginBottom: 24 }}>
         <div className="panel kpi"><div className="k">Database schema</div><div className="v">{set.schema_version ? `v${set.schema_version}` : "—"}</div><div className="s">{settings === null ? "Couldn't read settings" : set.migration_warnings ? "Has migration warnings" : "No migration warnings"}</div></div>
         <div className="panel kpi"><div className="k">Errors logged</div><div className="v">{errors === null ? "—" : errors.length}</div><div className="s">{errors?.length === 100 ? "showing the latest 100" : "all shown below"}</div></div>
-        <div className="panel kpi"><div className="k">Emails waiting</div><div className="v">{(box.queued || 0) + (box.failed || 0)}</div><div className="s">{box.failed || 0} failed · {box.not_configured || 0} not configured</div></div>
+        <div className="panel kpi"><div className="k">Emails not sent</div><div className="v">{(box.queued || 0) + (box.failed || 0) + (box.not_configured || 0)}</div><div className="s">{box.queued || 0} queued · {box.failed || 0} failed · {box.not_configured || 0} email not set up</div></div>
         <div className="panel kpi"><div className="k">Settings</div><div className="v">{cfg.filter((c) => c.on).length}/{cfg.length}</div><div className="s">{missingRequired ? `${missingRequired} required missing` : "Required ones present"}</div></div>
       </div>
 

@@ -394,3 +394,80 @@ html:has(.net){scroll-padding-top:80px}
 }
 .net .hero h1,.net .bar h1{letter-spacing:-.03em}
 @supports selector(:has(a)){@media(max-width:767px){.net label:has(> input[type="checkbox"]){min-height:44px;display:inline-flex;align-items:center;gap:10px}}}
+
+/* === ui-polish: team desk fixes (QA 17 Nov) === */
+/* 1. CRM kanban cards: the old global `.meta span` pill (globals.css) leaked in and left the text at ~1.9:1.
+      Plain text on the card, in ink-3 (#5C5265 on white, about 7.6:1). */
+.net .card .meta span{background:none;-webkit-backdrop-filter:none;backdrop-filter:none;padding:0;border-radius:0;font-size:inherit;color:var(--ink-3)}
+.net .card .meta span.hint{color:var(--ink-4)}
+/* 8. KPI figures never break inside a number; long ones step the size down instead (crore values use ₹2.85 Cr). */
+.net .kpi .v{overflow-wrap:normal;word-break:normal;white-space:nowrap;font-size:clamp(18px,5vw,var(--t-fig));font-variant-numeric:tabular-nums}
+@media(max-width:640px){.net .kpi .v{font-size:clamp(18px,5.6vw,26px)}}
+/* 11. Phone tables: rows become cards. The first cell is the row's title; cells marked .key (amount, status,
+       actions) come straight after it, then the rest, each with its column name from data-label. Desktop unchanged. */
+@media(max-width:640px){
+  .net .tbl.stack,.net .tbl.stack tbody{display:block;width:100%}
+  .net .tbl.stack thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+  .net .tbl.stack tr{display:flex;flex-direction:column;padding:12px 16px;border-bottom:1px solid var(--line-2)}
+  .net .tbl.stack tr:last-child{border-bottom:0}
+  .net .tbl.stack td{order:2;display:block;width:100%;padding:4px 0;border:0;text-align:left;position:static;box-shadow:none;background:none;min-width:0;max-width:none!important}
+  .net .tbl.stack td:first-child{order:0;padding-top:0}
+  .net .tbl.stack td.first{order:-1;padding:0 0 6px}
+  .net .tbl.stack td.key{order:1}
+  .net .tbl.stack td[data-label]{display:grid;grid-template-columns:minmax(72px,auto) minmax(0,1fr);column-gap:12px;justify-items:end;align-items:start;text-align:right}
+  .net .tbl.stack td[data-label]::before{content:attr(data-label);grid-column:1;grid-row:1 / span 8;justify-self:start;font-size:var(--t-label);letter-spacing:.12em;text-transform:uppercase;color:var(--ink-4);padding-top:3px;text-align:left}
+  .net .tbl.stack td[data-label]>*{grid-column:2}
+  .net .tbl.stack td.cell-stack{grid-template-columns:minmax(0,1fr);justify-items:stretch;row-gap:6px;text-align:left}
+  .net .tbl.stack td.cell-stack::before{grid-row:auto}
+  .net .tbl.stack td.cell-stack>*{grid-column:1;justify-self:start}
+  .net .tbl.stack td.cell-stack form.row{flex-wrap:wrap!important}
+  .net .tbl.stack td.cell-stack .in{min-width:0!important;max-width:100%}
+  .net .tbl.stack td .row{justify-content:flex-end}
+  .net .tbl.stack td:empty{display:none}
+}
+/* 15. Filter rows: the selected filter reads as selected. */
+.net .btn.sm[aria-current="page"]{font-weight:700}
+/* end team desk fixes */
+
+/* === ui-polish: creator, brand and shared page fixes (QA 17 Nov) === */
+/* Phones: a table marked .stack-sm shows each row as a card of "label  value" lines (labels from td[data-label]).
+   The first cell is the card's title. Desktop is unchanged. */
+@media(max-width:600px){
+  .net .scroll-x:has(> .tbl.stack-sm){overflow-x:visible;background:var(--surface)}
+  .net .tbl.stack-sm thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+  .net .tbl.stack-sm,.net .tbl.stack-sm tbody,.net .tbl.stack-sm tr{display:block;width:100%}
+  .net .tbl.stack-sm tr{padding:14px 16px 10px;border-bottom:1px solid var(--line-2)}
+  .net .tbl.stack-sm tbody tr:last-child{border-bottom:0}
+  .net .tbl.stack-sm td,.net .tbl.stack-sm td:first-child,.net .tbl.stack-sm td.num{display:block;position:relative;left:auto;z-index:auto;background:none;box-shadow:none;border:0;text-align:left;padding:5px 0 5px 104px;min-height:28px;overflow-wrap:anywhere}
+  .net .tbl.stack-sm td::before{content:attr(data-label);position:absolute;left:0;top:7px;width:92px;font-size:var(--t-label);letter-spacing:.14em;text-transform:uppercase;color:var(--ink-4);font-weight:400;line-height:1.4}
+  .net .tbl.stack-sm td:first-child{padding:0 0 6px;font-size:15px}
+  .net .tbl.stack-sm td:first-child::before,.net .tbl.stack-sm td[data-label=""]::before,.net .tbl.stack-sm td:not([data-label])::before{display:none}
+  .net .tbl.stack-sm td[data-label=""],.net .tbl.stack-sm td:not([data-label]){padding-left:0}
+  .net .tbl.stack-sm td[data-label=""]:empty{display:none}
+  /* long cells (forms, dispute flag) put the label above the value so nothing is squeezed */
+  .net .tbl.stack-sm td.wide{padding-left:0;padding-top:24px}
+  .net .tbl.stack-sm td.wide::before{top:6px}
+  .net .tbl.stack-sm td .who b{white-space:normal}
+}
+
+/* Header: the signed-in brand nav fits one row on phones (short labels; Settings and Log out stay in the footer menu) */
+.net .lbl-short{display:none}
+@media(max-width:600px){
+  .net .top .bar-in:has(.brand-nav){gap:8px}
+  .net .tnav.brand-nav{flex-wrap:nowrap;gap:2px}
+  .net .tnav.brand-nav a{padding:8px;white-space:nowrap}
+  .net .tnav.brand-nav .lbl-long{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+  .net .tnav.brand-nav .lbl-short{display:inline}
+}
+/* Header: the full creator nav fits one row on tablets (below 768px the tab bar takes over) */
+@media(min-width:768px) and (max-width:1000px){
+  .net .top .bar-in:has(.creator-nav){gap:8px}
+  .net .top .bar-in:has(.creator-nav) .lock small{display:none}
+  .net .tnav.creator-nav{flex-wrap:nowrap;gap:2px}
+  .net .tnav.creator-nav a{padding:8px;font-size:13.5px;white-space:nowrap}
+}
+
+/* Receipt: one gold accent per view (the CFO button); the total's eyebrow goes plum. Referral link wraps whole. */
+.net .pg-receipt .grand .k{color:var(--p300)}
+.net .pg-receipt .refer code{display:inline-block;max-width:100%;overflow-wrap:anywhere}
+/* end creator brand fixes */

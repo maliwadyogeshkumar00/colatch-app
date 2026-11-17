@@ -12,6 +12,7 @@ import { ScoreStrip } from "../_ui/Score";
 import { brandTrust, payByLine, isFeatured } from "@/lib/net/trust";
 import { nextMove, isMine } from "@/lib/net/moves";
 import { MoveRow } from "../_ui/Moves";
+import { dealState, APP_LABEL } from "../_ui/dealState";
 
 export const metadata = { title: "Your opportunities", robots: { index: false } };
 
@@ -23,8 +24,15 @@ export default async function Page({ searchParams }) {
   const c = me.creator;
   const today = new Date().toISOString().slice(0, 10);
   const camps = (await env.DB.prepare("SELECT * FROM campaigns WHERE status='open' AND is_open=1 AND (deadline IS NULL OR deadline >= ?) ORDER BY created_at DESC LIMIT 300").bind(today).all()).results ?? [];
-  const appRows = (await env.DB.prepare("SELECT campaign_id, match_score FROM campaign_applications WHERE (creator_id=? OR handle=?) AND status <> 'withdrawn'").bind(c.id, c.handle).all()).results ?? [];
+  const appRows = (await env.DB.prepare("SELECT campaign_id, match_score, status FROM campaign_applications WHERE (creator_id=? OR handle=?) AND status <> 'withdrawn'").bind(c.id, c.handle).all()).results ?? [];
   const applied = new Set(appRows.map((r) => r.campaign_id));
+  // The chip on a brief card shows where that application or deal stands now, with the same labels as My deals.
+  const appStatus = new Map(appRows.map((r) => [r.campaign_id, r.status]));
+  const dealByCampaign = new Map();
+  for (const d of ((await env.DB.prepare("SELECT campaign_id, stage, pay_status, sow_accepted_at, draft_status, live_at, post_url FROM creator_deals WHERE creator_id=? AND stage <> 'dropped' ORDER BY updated_at ASC").bind(c.id).all().catch(() => ({ results: [] }))).results ?? [])) {
+    if (d.campaign_id && (d.stage !== "cancelled" || !dealByCampaign.has(d.campaign_id))) dealByCampaign.set(d.campaign_id, d);
+  }
+  const briefState = (id) => dealByCampaign.has(id) ? dealState(dealByCampaign.get(id)) : appStatus.get(id) === "new" ? ["Applied", "good"] : APP_LABEL[appStatus.get(id)] || ["Applied", "good"];
   // Once applied, show the score saved with the application, the same one the brand and the team see.
   const savedScore = new Map(appRows.filter((r) => r.match_score != null).map((r) => [r.campaign_id, Number(r.match_score)]));
   const revealed = new Set(((await env.DB.prepare("SELECT campaign_id FROM creator_deals WHERE creator_id=? AND sow_accepted_at IS NOT NULL").bind(c.id).all()).results ?? []).map((r) => r.campaign_id));
@@ -71,7 +79,7 @@ export default async function Page({ searchParams }) {
           {(myMoves.length > 0 || nextBrief || gaps.length > 0) && <div className="sheet" style={{ marginBottom: 24 }}>
             <div className="sheet__h"><h2 id="sheet-mine">Your move</h2><span className="n">{myMoves.length + (nextBrief ? 1 : 0) + (gaps.length ? 1 : 0)}</span></div>
             {myMoves.map(({ d, m }) => <MoveRow key={d.id} kind="mine" href={`/creator/deals/${d.id}`} title={m.forCreator} sub={`${d.brand || "Brand"} · ${d.deliverable || "Deal"}`} cta="Open" />)}
-            {nextBrief && <MoveRow kind="mine" href={`/creator/o/${nextBrief.k.slug}`} title={`Apply: ${nextBrief.k.title}`} sub={`${nextBrief.m.score} match · ${rewardLine(nextBrief.k)}${countdown(nextBrief.k.deadline) ? " · " + countdown(nextBrief.k.deadline) : ""}`} cta="See brief" />}
+            {nextBrief && <MoveRow kind="mine" href={`/creator/o/${nextBrief.k.slug}`} title={`Apply: ${nextBrief.k.title}`} sub={`${nextBrief.m.score}/100 match · ${rewardLine(nextBrief.k)}${countdown(nextBrief.k.deadline) ? " · " + countdown(nextBrief.k.deadline) : ""}`} cta="See brief" />}
             {gaps.length > 0 && <MoveRow kind="mine" href="/creator/profile" title="Finish your profile" sub={`Missing: ${gaps.slice(0, 3).join(", ")}${unlockable.length ? ` · unlocks ${unlockable.length} more ${unlockable.length === 1 ? "brief" : "briefs"}` : ""}`} cta="Update" />}
           </div>}
           {(waiting.length > 0 || pendingApps.length > 0) && <div className="sheet">
@@ -94,7 +102,7 @@ export default async function Page({ searchParams }) {
       <div className="sheet__h" style={{ marginTop: 8 }}><h2>Briefs that fit you</h2><span className="n">{mine.length}</span></div>
       <div className="spread" style={{ marginBottom: 14 }}>
         <div className="row" style={{ gap: 8 }}>
-          {(c.skills || "").split(",").filter(Boolean).map((s) => <span key={s} className="tag">{s.trim()}</span>)}
+          {(() => { const sk = (c.skills || "").split(",").map((s) => s.trim()).filter(Boolean); return sk.length > 1 ? sk.filter((s) => s.toLowerCase() !== "creator") : sk; })().map((s) => <span key={s} className="tag">{s.charAt(0).toUpperCase() + s.slice(1)}</span>)}
           {c.city && <span className="tag">{c.city}</span>}
           {c.followers ? <span className="tag">{compact(c.followers)} followers</span> : null}
         </div>
@@ -111,7 +119,7 @@ export default async function Page({ searchParams }) {
                 <div className="row" style={{ gap: 10, flex: "none" }}>
                   {isFeatured(k) && <span className="pill ok">Featured</span>}
                   {sc.tier === "Icon" && isFresh(k) && <span className="pill ok">Early</span>}
-                  {applied.has(k.id) && <span className="pill good">Applied</span>}
+                  {applied.has(k.id) && (() => { const [st, tone] = briefState(k.id); return <span className={`pill ${tone}`}>{st}</span>; })()}
                   <div className="score sm" style={{ "--v": savedScore.get(k.id) ?? m.score }} title="Match score"><i>{savedScore.get(k.id) ?? m.score}</i></div>
                 </div>
               </div>

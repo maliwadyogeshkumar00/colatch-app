@@ -126,7 +126,7 @@ export default async function Page() {
             </div>
             {brandTierFor(nb).pct < 15 && <p className="hint" style={{ margin: "0 0 8px" }}>{(nb < 5 ? 5 : 10) - nb} more {(nb < 5 ? 5 : 10) - nb === 1 ? "brand" : "brands"} and new earnings from every brand you've brought are at {nb < 5 ? 12 : 15}%.</p>}
             <p className="muted" style={{ margin: "0 0 12px" }}>You earn on each of their deals that gets paid, from Colatch's own fee, never from creators. Only brands new to Colatch count.</p>
-            <a className="btn-foil" href={waBrands} target="_blank" rel="noopener">Share with a brand on WhatsApp</a>
+            <a className="btn plum" href={waBrands} target="_blank" rel="noopener">Share with a brand on WhatsApp</a>
           </div>
           <div>
             <h3>Bring a creator → ₹{REF.creatorBonus} after their first paid deal</h3>
@@ -134,7 +134,7 @@ export default async function Page() {
             <a className="btn plum" href={waCreators} target="_blank" rel="noopener">Share with a creator on WhatsApp</a>
           </div>
         </div>
-        <div className="row" style={{ marginTop: 18 }}>Your code <code className="k" style={{ fontSize: 15 }}>{code}</code> · <code className="k">{origin}/r/{code}</code></div>
+        <div className="row" style={{ marginTop: 18, gap: 8 }}><span>Your code <code className="k" style={{ fontSize: 15 }}>{code}</code></span><span>Invite link <code className="k" style={{ overflowWrap: "anywhere" }}>{origin}/c/{code}</code></span></div>
         <div className="grid3" style={{ marginTop: 18 }}>
           <div className="panel kpi" style={{ boxShadow: "none" }}><div className="k">People you brought</div><div className="v">{refs.length}</div><div className="s">{nb} {nb === 1 ? "brand" : "brands"} · {nc} {nc === 1 ? "creator" : "creators"}</div></div>
           <div className="panel kpi" style={{ boxShadow: "none" }}><div className="k">Referral earnings</div><div className="v">{inr(refTotal)}</div><div className="s">{inr(refPaid)} paid out</div></div>

@@ -15,6 +15,7 @@ import { transition, FlowError } from "@/lib/net/dealflow";
 import { notify } from "@/lib/net/notify";
 import { audit, logError } from "@/lib/net/security";
 import { REASONS, raiseDispute, DisputeError } from "@/lib/net/disputes";
+import { currentBrand } from "@/lib/net/creatorAuth";
 
 // Checked here as well as in the page: metadata runs before the page streams, so a bad link gets a real 404 status.
 export async function generateMetadata({ params }) {
@@ -242,6 +243,8 @@ export default async function Page({ params, searchParams }) {
   const origin = `https://${headers().get("host")}`;
   const darkTag = { background: "rgba(255,255,255,.1)", color: "#F4EFE3" };
   const lblDim = { color: "rgba(244,239,227,.6)" };
+  // Header only: a signed-in brand keeps its own nav here. Access to this page is still the share link.
+  const signedIn = await currentBrand().catch(() => null);
 
   const hero = (
     <Hero eyebrow={`Your Colatch shortlist · ${k.brand || k.client_company || ""}`} title={escapeHtml(k.title)}>
@@ -251,7 +254,7 @@ export default async function Page({ params, searchParams }) {
   );
 
   return (
-    <PublicShell mode="client" hero={hero}>
+    <PublicShell mode="client" brandName={signedIn ? signedIn.name || signedIn.email : null} hero={hero}>
       <div className="pg-shortlist">
         <style dangerouslySetInnerHTML={{ __html: CSS }} />
         <div style={{ marginBottom: 16 }}><Flash sp={searchParams} /></div>
@@ -323,7 +326,7 @@ export default async function Page({ params, searchParams }) {
                   : <form action={approve} className="row" style={{ marginTop: 16 }}>
                   <input type="hidden" name="token" value={token} />
                   <input type="hidden" name="app" value={r.id} />
-                  <input className="in" name="note" style={{ flex: 1, minWidth: 200 }} placeholder="Comment for the Colatch team (optional)" defaultValue={r.client_note ?? ""} />
+                  <input className="in" name="note" style={{ flex: 1, minWidth: 200 }} placeholder="Note for the Colatch team" aria-label="Note for the Colatch team (optional)" defaultValue={r.client_note ?? ""} />
                   <button className="btn" formAction={decline}>Not for us</button>
                   {r.rate_quote ? <button className="btn plum">Approve</button> : <span className="hint">Fee being confirmed by the Colatch team</span>}
                 </form>}
@@ -343,7 +346,7 @@ export default async function Page({ params, searchParams }) {
             <div className="panel kpi"><div className="k">Link clicks</div><div className="v">{compact(tClicks)}</div><div className="s">from tracked creator links</div></div>
             <div className="panel kpi"><div className="k">Orders</div><div className="v">{tOrders || "—"}</div><div className="s">from creator codes</div></div>
           </div>
-          <div className="panel scroll-x" style={{ marginTop: 14 }}><table className="tbl">
+          <div className="panel scroll-x" style={{ marginTop: 14 }}><table className="tbl stack-sm">
             <thead><tr><th>Creator</th><th>Progress</th><th className="num">Views</th><th className="num">CPV</th><th className="num">Clicks</th><th>Post</th></tr></thead>
             <tbody>{deals.map((d) => {
               const done = railDone(d);
@@ -351,12 +354,12 @@ export default async function Page({ params, searchParams }) {
               const post = d.live_at ? safeUrl(d.post_url) : null;
               return (
                 <tr key={d.id}>
-                  <td><div className="who"><div className="ava" style={{ width: 32, height: 32, fontSize: 11 }}>{safeUrl(d.profile_pic) ? <img src={safeUrl(d.profile_pic)} alt="" /> : initials(d.name || d.handle)}</div><div><b>{d.name || d.handle}</b><span>{d.deliverable}</span></div></div></td>
-                  <td><span className="dots">{RAIL.map((r, i) => <i key={r.key} className={done[i] ? "on" : ""} title={r.label} />)}</span><div className="hint">{d.stage === "cancelled" ? "Cancelled" : at < 0 ? "Waiting for the creator to accept terms" : RAIL[at].label}</div>{priced[d.id] && <div className="hint">All-in {inr(priced[d.id].total)}{priced[d.id].frozen ? " (as paid)" : ""}</div>}</td>
-                  <td className="num">{compact(d.actual_views)}</td>
-                  <td className="num">{d.fee && d.actual_views ? "₹" + (d.fee / d.actual_views).toFixed(2) : "—"}</td>
-                  <td className="num">{d.clicks}</td>
-                  <td>
+                  <td data-label="Creator"><div className="who"><div className="ava" style={{ width: 32, height: 32, fontSize: 11 }}>{safeUrl(d.profile_pic) ? <img src={safeUrl(d.profile_pic)} alt="" /> : initials(d.name || d.handle)}</div><div><b>{d.name || d.handle}</b><span>{d.deliverable}</span></div></div></td>
+                  <td data-label="Progress"><span className="dots">{RAIL.map((r, i) => <i key={r.key} className={done[i] ? "on" : ""} title={r.label} />)}</span><div className="hint">{d.stage === "cancelled" ? "Cancelled" : at < 0 ? "Waiting for the creator to accept terms" : RAIL[at].label}</div>{priced[d.id] && <div className="hint">All-in {inr(priced[d.id].total)}{priced[d.id].frozen ? " (as paid)" : ""}</div>}</td>
+                  <td className="num" data-label="Views">{compact(d.actual_views)}</td>
+                  <td className="num" data-label="CPV">{d.fee && d.actual_views ? "₹" + (d.fee / d.actual_views).toFixed(2) : "—"}</td>
+                  <td className="num" data-label="Clicks">{d.clicks}</td>
+                  <td className="wide" data-label="Post">
                     {post ? <a className="link" href={post} {...EXT}>View ↗</a> : d.live_at && d.post_url ? <span className="hint">{String(d.post_url).slice(0, 60)}</span> : <span className="hint">Not live yet</span>}
                     {d.live_at && !d.brand_signoff_at && <form action={signoff} style={{ marginTop: 6 }}><input type="hidden" name="token" value={token} /><input type="hidden" name="deal" value={d.id} /><label className="hint" style={{ display: "block" }}><input type="checkbox" name="public" value="1" defaultChecked /> creator may show it as proof</label><button className="btn sm plum">Sign off work</button></form>}
                     {d.brand_signoff_at && <div className="hint" style={{ color: "var(--good)" }}>Signed off ✓</div>}

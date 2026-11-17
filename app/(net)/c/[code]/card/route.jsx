@@ -29,6 +29,10 @@ export async function GET(req, { params }) {
   const host = url.host.replace(/^www\./, "");
   const code = f?.code || "COLATCH";
   const isCreator = f?.ownerType === "creator";
+  // The gold box is 780px wide inside its padding (1080 - 2*90 - 2*60). Bold caps in Ubuntu run up to about 0.8em each
+  // plus letter spacing, so size the code to fit up to ~16 characters, capped at the original 132px.
+  const codeSize = Math.max(56, Math.min(132, Math.floor(780 / (Math.max(1, code.length) * 0.84))));
+  const codeSpacing = Math.round(codeSize * 0.045);
 
   const stats = [];
   if (isCreator) {
@@ -80,7 +84,7 @@ export async function GET(req, { params }) {
 
         <div style={{ display: "flex", flexDirection: "column", padding: "54px 60px", borderRadius: 44, background: "linear-gradient(135deg,#F2D163 0%,#E8B84B 30%,#C8962E 70%,#A87422 100%)", color: "#1E1128" }}>
           <div style={{ display: "flex", fontSize: 36, letterSpacing: 4, textTransform: "uppercase", fontWeight: 700, opacity: 0.8 }}>Join with my code</div>
-          <div style={{ display: "flex", marginTop: 10, fontSize: 132, fontWeight: 700, letterSpacing: 6 }}>{code}</div>
+          <div style={{ display: "flex", marginTop: 10, fontSize: codeSize, fontWeight: 700, letterSpacing: codeSpacing, whiteSpace: "nowrap" }}>{code}</div>
           <div style={{ display: "flex", marginTop: 14, fontSize: 36 }}>{host}/c/{code}</div>
         </div>
       </div>

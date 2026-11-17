@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import TeamShell from "../../_ui/TeamShell";
 import Flash, { flashUrl } from "../../_ui/flash";
 import { requireTeam } from "../_guard";
+import { sentence, dayTime } from "@/components/team/labels";
 import { env } from "@/lib/net/env";
 import { logEvent } from "@/lib/net/deal";
 import { audit } from "@/lib/net/security";
@@ -57,7 +58,7 @@ export default async function Page({ searchParams }) {
   const open = rows.filter((r) => r.status === "open");
 
   return (
-    <TeamShell active="home" eyebrow="Trust and safety" title="Off-platform <b>reports</b>" email={me.email}>
+    <TeamShell active="reports" eyebrow="Trust and safety" title="Off-platform <b>reports</b>" email={me.email}>
       <p className="lead">Creators report when someone asks to move a deal outside Colatch. Confirm it if it checks out (the creator gets ₹{BOUNTY}), or dismiss it. Talk to the brand before confirming.</p>
       <div style={{ marginBottom: 16 }}><Flash sp={searchParams} /></div>
       <div className="panel">
@@ -66,10 +67,10 @@ export default async function Page({ searchParams }) {
             <thead><tr><th>Reported</th><th>Deal</th><th>What happened</th><th>Status</th><th></th></tr></thead>
             <tbody>{rows.map((r) => (
               <tr key={r.id}>
-                <td><b>{r.creator_name || (r.handle ? "@" + r.handle : r.reporter_side)}</b><div className="hint">{String(r.created_at).slice(0, 16)} · by {r.reporter_side}</div></td>
+                <td><b>{r.creator_name || (r.handle ? "@" + r.handle : r.reporter_side)}</b><div className="hint">{dayTime(r.created_at)} · by {r.reporter_side}</div></td>
                 <td>{r.deal_id ? <a className="link" href={`/team/deals/${r.deal_id}`}>{r.brand || r.client_company || "Deal"}</a> : r.campaign_title || "—"}<div className="hint">{r.deliverable || r.campaign_title || ""}</div></td>
                 <td style={{ maxWidth: 380, whiteSpace: "pre-line" }}>{r.note}</td>
-                <td><span className={`pill ${r.status === "confirmed" ? "good" : r.status === "open" ? "ok" : ""}`}>{r.status}</span></td>
+                <td><span className={`pill ${r.status === "confirmed" ? "good" : r.status === "open" ? "ok" : ""}`}>{sentence(r.status)}</span></td>
                 <td>{r.status === "open" && (
                   <div className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
                     <form action={confirm}><input type="hidden" name="id" value={r.id} /><button className="btn sm plum">Confirm</button></form>

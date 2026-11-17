@@ -41,7 +41,7 @@ export default async function Page({ params }) {
         <div><h1 style={{ margin: 0 }}>{name}</h1><p style={{ margin: "8px 0 0" }}>@{c.handle}{c.city ? ` · ${c.city}` : ""}{c.language ? ` · ${c.language}` : ""}</p></div>
       </div>
       {c.bio_pitch && <p style={{ fontSize: 18, marginTop: 20 }}>{c.bio_pitch}</p>}
-      <div className="row" style={{ marginTop: 16, gap: 8 }}>{[...list(c.skills), ...list(c.niche)].map((t, i) => <span key={t + i} className="tag" style={{ background: "rgba(255,255,255,.1)", color: "#F4EFE3" }}>{t}</span>)}</div>
+      <div className="row" style={{ marginTop: 16, gap: 8 }}>{tagList([...list(c.skills), ...list(c.niche)]).map((t, i) => <span key={t + i} className="tag" style={{ background: "rgba(255,255,255,.1)", color: "#F4EFE3" }}>{t}</span>)}</div>
     </div></section>
   );
   return (
@@ -91,4 +91,11 @@ export default async function Page({ params }) {
       </div>
     </PublicShell>
   );
+}
+
+/** Sentence case, no repeats, and no generic "Creator" tag once a specific type is set. */
+function tagList(raw) {
+  const seen = new Set();
+  const out = raw.map((t) => t.charAt(0).toUpperCase() + t.slice(1)).filter((t) => !seen.has(t.toLowerCase()) && seen.add(t.toLowerCase()));
+  return out.length > 1 ? out.filter((t) => t.toLowerCase() !== "creator") : out;
 }

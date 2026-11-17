@@ -73,7 +73,9 @@ export default async function Page({ searchParams }) {
           {cats.length > 0 && <Row label="Brand" k="cat" opts={cats} />}
         </div>
         {rows.length === 0 ? (
-          <div className="panel empty"><b>No ideas match that yet.</b>Clear a filter, or <a className="link" href="/brief">post your own brief</a> and we usually send a shortlist within 2 working days.</div>
+          sp.cat || sp.occ || sp.fmt
+            ? <div className="panel empty"><b>No ideas match that yet.</b><a className="link" href="/pitches">Clear the filters</a> to see every idea, or <a className="link" href="/brief">post your own brief</a> and we usually send a shortlist within 2 working days.</div>
+            : <div className="panel empty"><b>No ideas posted yet.</b>Creator pitches show up here with their price as soon as they're posted. You don't have to wait: <a className="link" href="/brief">post a brief</a> and the Colatch team usually sends a shortlist of matched creators within 2 working days. Are you a creator? <a className="link" href="/join">Join free</a> and pitch an idea.</div>
         ) : (
           <div className="board">{rows.map((p) => {
             const who = firstName(p.name);

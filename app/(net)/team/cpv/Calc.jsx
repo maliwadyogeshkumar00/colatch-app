@@ -24,18 +24,20 @@ export default function Calc() {
           <div key={i} className="panel pad">
             <h2>Creator {i + 1}</h2>
             <div className="stack">
-              <div className="fld"><label>Name <span className="opt">— optional</span></label><input value={c.name} onChange={(e) => set(i, "name", e.target.value)} placeholder={i === 0 ? "@priya.dances" : ""} /></div>
-              <div className="fld"><label>Fee ₹ (all deliverables)</label><input value={c.fee} onChange={(e) => set(i, "fee", e.target.value)} inputMode="numeric" placeholder="25000" /></div>
-              <div className="fld"><label>Avg views per reel</label><input value={c.views} onChange={(e) => set(i, "views", e.target.value)} inputMode="numeric" placeholder="60000" /></div>
+              <div className="fld"><label>Name <span className="opt">— optional</span></label><input value={c.name} onChange={(e) => set(i, "name", e.target.value)} placeholder={i === 0 ? "e.g. @priya.dances" : ""} /></div>
+              <div className="fld"><label>Fee ₹ (all deliverables)</label><input value={c.fee} onChange={(e) => set(i, "fee", e.target.value)} inputMode="numeric" placeholder="e.g. 25,000" /></div>
+              <div className="fld"><label>Avg views per reel</label><input value={c.views} onChange={(e) => set(i, "views", e.target.value)} inputMode="numeric" placeholder="e.g. 60,000" /></div>
               <div className="fld"><label>Reels in the deal</label><input value={c.reels} onChange={(e) => set(i, "reels", e.target.value)} inputMode="numeric" /></div>
-              <div className="fld"><label>Avg likes + comments <span className="opt">— optional</span></label><input value={c.eng} onChange={(e) => set(i, "eng", e.target.value)} inputMode="numeric" placeholder="3200" /></div>
+              <div className="fld"><label>Avg likes + comments <span className="opt">— optional</span></label><input value={c.eng} onChange={(e) => set(i, "eng", e.target.value)} inputMode="numeric" placeholder="e.g. 3,200" /></div>
             </div>
             <div style={{ marginTop: 18, borderTop: "1px solid var(--line)", paddingTop: 14 }}>
+              {!out[i] ? <p className="hint" style={{ margin: 0 }}>{!num(c.fee) && !num(c.views) ? "Enter the fee and avg views to see CPV, CPM and total views." : !num(c.fee) ? "Enter the fee to see the results." : "Enter the avg views per reel to see the results."}</p> : <>
               <div className="spread"><span className="lbl">CPV</span><b style={{ fontSize: 24, fontWeight: 300 }}>{out[i] ? rs(out[i].cpv, 2) : "—"}</b></div>
               <div className="spread"><span className="lbl">CPM</span><b>{out[i] ? rs(out[i].cpm) : "—"}</b></div>
-              <div className="spread"><span className="lbl">Cost per engagement</span><b>{out[i]?.cpe ? rs(out[i].cpe, 2) : "—"}</b></div>
+              <div className="spread"><span className="lbl">Cost per engagement</span><b>{out[i].cpe ? rs(out[i].cpe, 2) : <span className="hint">add likes + comments</span>}</b></div>
               <div className="spread"><span className="lbl">Total views</span><b>{out[i] ? Math.round(out[i].tv).toLocaleString("en-IN") : "—"}</b></div>
-              {out[i] && <div style={{ marginTop: 10 }}><span className={`pill ${out[i].t[0]}`}>{out[i].t[1]}</span></div>}
+              <div style={{ marginTop: 10 }}><span className={`pill ${out[i].t[0]}`}>{out[i].t[1]}</span></div>
+              </>}
             </div>
           </div>
         ))}

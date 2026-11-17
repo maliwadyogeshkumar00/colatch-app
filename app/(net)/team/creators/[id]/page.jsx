@@ -7,6 +7,8 @@ import { env } from "@/lib/net/env";
 import { lookupProfile, metaReady } from "@/lib/net/meta";
 import { upsertFromInstagram, aiReview, compact, inr, erBand, tierFor, int, str, NICHES, CREATOR_STATUSES, DEAL_STAGES, STAGE_LABEL } from "@/lib/net/creators";
 import { SKILLS, list } from "@/lib/net/match";
+import { appStatusLabel, creatorStatusLabel, day } from "@/components/team/labels";
+import { dealStepName } from "@/components/team/dealStep";
 
 export const metadata = { title: "Creator", robots: { index: false, follow: false } };
 
@@ -87,7 +89,13 @@ export default async function Page({ params, searchParams }) {
   const claims = (await env.DB.prepare("SELECT email, created_at FROM creator_accounts WHERE creator_id=? AND claim_status='pending'").bind(c.id).all().catch(() => ({ results: [] }))).results ?? [];
   const vcode = c.verify_code;
   const skills = list(c.skills);
+  // Niche chips match case-insensitively ("food" ticks "Food") and save the canonical spelling. A stored niche that is
+  // not in the list gets its own ticked chip, so saving the profile never drops it.
   const niches = list(c.niche);
+  const nicheOn = new Set(niches.map((n) => String(n).trim().toLowerCase()));
+  const extraNiches = niches.filter((n) => !NICHES.some((x) => x.toLowerCase() === String(n).trim().toLowerCase()));
+  // The status select always contains the creator's current value, so saving never silently changes it.
+  const statuses = c.status && !CREATOR_STATUSES.includes(c.status) ? [c.status, ...CREATOR_STATUSES] : CREATOR_STATUSES;
   const wa = c.phone ? `https://wa.me/${String(c.phone).replace(/\D/g, "").replace(/^(\d{10})$/, "91$1")}` : "";
   const ig = metaReady(env);
   const esc = (s) => String(s).replace(/</g, "&lt;");
@@ -106,14 +114,14 @@ export default async function Page({ params, searchParams }) {
       <div className="grid4">
         <div className="panel kpi"><div className="k">Followers</div><div className="v">{compact(c.followers)}</div><div className="s">{c.tier || "—"} · @{c.handle}</div></div>
         <div className="panel kpi"><div className="k">Engagement</div><div className="v">{c.engagement_rate != null ? `${c.engagement_rate}%` : "—"}</div><div className="s"><span className={`pill ${b.tone}`}>{b.label}</span></div></div>
-        <div className="panel kpi"><div className="k">Quality score</div><div className="v">{c.quality_score ?? "—"}</div><div className="s">{review ? `${review.engine === "ai" ? "AI" : "Rules"} review · ${String(review.created_at).slice(0, 10)}` : "Not reviewed yet"}</div></div>
+        <div className="panel kpi"><div className="k">Quality score</div><div className="v">{c.quality_score ?? "—"}</div><div className="s">{review ? `${review.engine === "ai" ? "AI" : "Rules"} review · ${day(review.created_at)}` : "Not reviewed yet"}</div></div>
         <div className="panel kpi"><div className="k">Reel rate</div><div className="v">{c.rate_reel ? inr(c.rate_reel) : "—"}</div><div className="s">{c.avg_views && c.rate_reel ? `CPV ₹${(c.rate_reel / c.avg_views).toFixed(2)} per view` : "Add rate + avg views for CPV"}</div></div>
       </div>
 
       <div className="note info" style={{ marginTop: 16 }}>
         {claims.length > 0 && <div className="note warn" style={{ marginBottom: 10 }}><b>Pending claim:</b> {claims.map((x) => x.email).join(", ")} joined with this handle. Check it's really them (bio code, DM from the account) before verifying: until then they can't see deals or payouts. <form action={act} style={{ display: "inline" }}>{hidden("owner")}<button className="btn sm">Verify claim</button></form></div>}
         {ownerOk ? <b style={{ color: "var(--good)" }}>Owner verified ✓ · </b> : vcode ? <span>Bio code <code className="k">{vcode}</code> <form action={act} style={{ display: "inline" }}>{hidden("owner")}<button className="btn sm">Mark verified</button></form> · </span> : null}
-        Source: <b>{c.source}</b>{c.last_synced_at ? ` · Instagram numbers from ${String(c.last_synced_at).slice(0, 10)}` : ""} · {hasAccount ? `Creator has a portal login (${hasAccount.email})` : "No portal login yet"}
+        Source: <b>{c.source}</b>{c.last_synced_at ? ` · Instagram numbers from ${day(c.last_synced_at)}` : ""} · {hasAccount ? `Creator has a portal login (${hasAccount.email})` : "No portal login yet"}
         {ig && <form action={act} style={{ display: "inline", marginLeft: 10 }}>{hidden("refresh")}<button className="btn sm">Refresh from Instagram</button></form>}
       </div>
       {review?.summary && <p className="small" style={{ margin: "12px 0 0" }}><b>Latest review:</b> {review.summary}</p>}
@@ -125,9 +133,9 @@ export default async function Page({ params, searchParams }) {
           <h2>Profile</h2>
           <div className="form-grid">
             <div className="fld"><label htmlFor="f-team-creators-id-name-1">Name</label><input id="f-team-creators-id-name-1" name="name" defaultValue={c.name ?? ""} /></div>
-            <div className="fld"><label htmlFor="f-team-creators-id-status-2">Status</label><select id="f-team-creators-id-status-2" name="status" defaultValue={c.status}>{CREATOR_STATUSES.map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}</select></div>
+            <div className="fld"><label htmlFor="f-team-creators-id-status-2">Status</label><select id="f-team-creators-id-status-2" name="status" defaultValue={c.status}>{statuses.map((s) => <option key={s} value={s}>{creatorStatusLabel(s)}</option>)}</select></div>
             <div className="fld full"><label>Talent</label><div className="chips">{SKILLS.map((s) => <label key={s} className="chip"><input type="checkbox" name="skills" value={s} defaultChecked={skills.includes(s)} /><span>{s}</span></label>)}</div></div>
-            <div className="fld full"><label>Niche</label><div className="chips">{NICHES.map((s) => <label key={s} className="chip"><input type="checkbox" name="niche" value={s} defaultChecked={niches.includes(s)} /><span>{s}</span></label>)}</div></div>
+            <div className="fld full"><label>Niche</label><div className="chips">{NICHES.map((s) => <label key={s} className="chip"><input type="checkbox" name="niche" value={s} defaultChecked={nicheOn.has(s.toLowerCase())} /><span>{s}</span></label>)}{extraNiches.map((s) => <label key={"x-" + s} className="chip"><input type="checkbox" name="niche" value={s} defaultChecked /><span>{s}</span></label>)}</div></div>
             <div className="fld"><label htmlFor="f-team-creators-id-city-3">City</label><input id="f-team-creators-id-city-3" name="city" defaultValue={c.city ?? ""} /></div>
             <div className="fld"><label htmlFor="f-team-creators-id-state-4">State</label><input id="f-team-creators-id-state-4" name="state" defaultValue={c.state ?? ""} /></div>
             <div className="fld"><label htmlFor="f-team-creators-id-language-5">Languages</label><input id="f-team-creators-id-language-5" name="language" defaultValue={c.language ?? ""} placeholder="Hindi, English" /></div>
@@ -166,14 +174,14 @@ export default async function Page({ params, searchParams }) {
           <div className="panel">
             <div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Deals</h2></div>
             {deals.length ? <table className="tbl"><thead><tr><th>Brand</th><th>Stage</th><th className="num">Fee</th><th className="num">CPV</th></tr></thead><tbody>
-              {deals.map((d) => { const v = d.actual_views || d.expected_views; return <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{d.brand}</a><div className="hint">{d.deliverable}</div></td><td><span className="pill">{STAGE_LABEL[d.stage]}</span></td><td className="num">{inr(d.fee)}</td><td className="num">{d.fee && v ? `₹${(d.fee / v).toFixed(2)}` : "—"}</td></tr>; })}
+              {deals.map((d) => { const v = d.actual_views || d.expected_views; return <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{d.brand}</a><div className="hint">{d.deliverable}</div></td><td><span className="pill">{dealStepName(d)}</span></td><td className="num">{inr(d.fee)}</td><td className="num">{d.fee && v ? `₹${(d.fee / v).toFixed(2)}` : "—"}</td></tr>; })}
             </tbody></table> : <p className="hint" style={{ padding: "0 20px 18px" }}>No deals yet.</p>}
           </div>
 
           <div className="panel">
             <div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Applications</h2></div>
             {apps.length ? <table className="tbl"><tbody>
-              {apps.map((a) => <tr key={a.id}><td><a className="link" href={`/team/campaigns/${a.cid}`}>{a.title}</a><div className="hint">{String(a.created_at).slice(0, 10)}</div></td><td className="num">{a.match_score ?? "—"}</td><td><span className="pill">{a.status}</span></td></tr>)}
+              {apps.map((a) => <tr key={a.id}><td><a className="link" href={`/team/campaigns/${a.cid}`}>{a.title}</a><div className="hint">{day(a.created_at)}</div></td><td className="num">{a.match_score ?? "—"}</td><td><span className="pill">{appStatusLabel(a.status)}</span></td></tr>)}
             </tbody></table> : <p className="hint" style={{ padding: "0 20px 18px" }}>Hasn't applied to any opportunity.</p>}
           </div>
         </div>

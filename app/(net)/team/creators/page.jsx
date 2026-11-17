@@ -6,6 +6,7 @@ import { env } from "@/lib/net/env";
 import { lookupProfile, metaReady, cleanHandle } from "@/lib/net/meta";
 import { upsertFromInstagram, compact, erBand, tierFor, int, str, parseCsv, mapCsvRows, NICHES, CREATOR_STATUSES, STAGE_LABEL } from "@/lib/net/creators";
 import { SKILLS, LANGUAGES, CITIES } from "@/lib/net/match";
+import { creatorStatusLabel, nicheLabel, inrFull } from "@/components/team/labels";
 
 export const metadata = { title: "Influencer finder", robots: { index: false, follow: false } };
 
@@ -120,9 +121,12 @@ export default async function Page({ searchParams }) {
   let rows = [];
   let total = 0;
   let dbErr = "";
+  let extraStatuses = [];
   try {
     rows = (await env.DB.prepare(`SELECT * FROM creators WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT 200`).bind(...args).all()).results ?? [];
     total = (await env.DB.prepare("SELECT COUNT(*) n FROM creators").first())?.n ?? 0;
+    // Stored statuses outside the standard list (e.g. "active") still get a filter option.
+    extraStatuses = ((await env.DB.prepare("SELECT DISTINCT status FROM creators WHERE status IS NOT NULL").all().catch(() => ({ results: [] }))).results ?? []).map((r) => r.status).filter((x) => x && !CREATOR_STATUSES.includes(x));
   } catch (e) { dbErr = e instanceof Error ? e.message : String(e); }
   const filtered = Boolean(q || fSkill || fNiche || fCity || fLang || fGender || fMin != null || fMax != null || fEr != null || fStatus);
   const initials = (s) => String(s).replace(/[^a-z0-9]/gi, " ").trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
@@ -173,7 +177,7 @@ export default async function Page({ searchParams }) {
         <button className="btn plum" type="submit">Search</button>
         <div className="fld"><label htmlFor="f-team-creators-gender-6">Gender</label><select id="f-team-creators-gender-6" name="gender" defaultValue={fGender}><option value="">Any</option>{["Female", "Male", "Other"].map((s) => <option key={s}>{s}</option>)}</select></div>
         <div className="fld"><label htmlFor="f-team-creators-er-7">Min engagement %</label><input id="f-team-creators-er-7" name="er" defaultValue={u.er ?? ""} placeholder="e.g. 2" /></div>
-        <div className="fld"><label htmlFor="f-team-creators-status-8">Status</label><select id="f-team-creators-status-8" name="status" defaultValue={fStatus}><option value="">Any</option>{CREATOR_STATUSES.map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}</select></div>
+        <div className="fld"><label htmlFor="f-team-creators-status-8">Status</label><select id="f-team-creators-status-8" name="status" defaultValue={fStatus}><option value="">Any</option>{[...CREATOR_STATUSES, ...extraStatuses].map((s) => <option key={s} value={s}>{creatorStatusLabel(s)}</option>)}</select></div>
         <div className="fld"><label htmlFor="f-team-creators-sort-9">Sort</label><select id="f-team-creators-sort-9" name="sort" defaultValue={sort}>{[["followers", "Biggest first"], ["er", "Best engagement"], ["quality", "Best quality score"], ["new", "Newest"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
         {filtered && <a className="btn ghost" href="/team/creators">Clear</a>}
       </form>
@@ -182,18 +186,18 @@ export default async function Page({ searchParams }) {
       <div className="sec">
         <div className="spread" style={{ marginBottom: 12 }}><div className="h2" style={{ margin: 0 }}>{filtered ? `${rows.length} matching creators` : `${total} creators in the database`}</div>{rows.length === 200 && <span className="hint">Showing the first 200. Narrow the filters.</span>}</div>
         {rows.length ? (
-          <div className="panel scroll-x"><table className="tbl">
+          <div className="panel scroll-x"><table className="tbl stack">
             <thead><tr><th>Creator</th><th>Talent · niche</th><th>City</th><th className="num">Followers</th><th className="num">Engagement</th><th className="num">Quality</th><th className="num">Reel rate</th><th>Status</th></tr></thead>
             <tbody>{rows.map((c) => { const b = erBand(c.engagement_rate, c.followers); return (
               <tr key={c.id}>
                 <td><a className="who" href={`/team/creators/${c.id}`}><div className="ava">{c.profile_pic ? <img src={c.profile_pic} alt="" loading="lazy" /> : initials(c.name || c.handle)}</div><div><b>{c.name || c.handle}{c.verified ? " ✓" : ""}</b><span>@{c.handle}</span></div></a></td>
-                <td>{(c.skills || "").split(",").filter(Boolean).slice(0, 2).map((s) => <span key={s} className="tag">{s.trim()}</span>)}{c.niche && <span className="tag">{c.niche.split(",")[0]}</span>}</td>
-                <td>{c.city || <span className="muted">—</span>}</td>
-                <td className="num">{compact(c.followers)}</td>
-                <td className="num">{c.engagement_rate != null ? <span className={`pill ${b.tone}`}>{c.engagement_rate}%</span> : <span className="muted">—</span>}</td>
-                <td className="num">{c.quality_score ?? <span className="muted">—</span>}</td>
-                <td className="num">{c.rate_reel ? `₹${compact(c.rate_reel)}` : <span className="muted">—</span>}</td>
-                <td><span className="pill">{STAGE_LABEL[c.status] || c.status}</span></td>
+                <td data-label="Talent · niche">{(c.skills || "").split(",").filter(Boolean).slice(0, 2).map((s) => <span key={s} className="tag">{s.trim()}</span>)}{c.niche && <span className="tag">{nicheLabel(c.niche.split(",")[0])}</span>}</td>
+                <td data-label="City">{c.city || <span className="muted">—</span>}</td>
+                <td data-label="Followers" className="num">{compact(c.followers)}</td>
+                <td data-label="Engagement" className="num">{c.engagement_rate != null ? <span className={`pill ${b.tone}`}>{c.engagement_rate}%</span> : <span className="muted">—</span>}</td>
+                <td data-label="Quality" className="num">{c.quality_score ?? <span className="muted" title="Not reviewed yet">—</span>}</td>
+                <td data-label="Reel rate" className="num">{c.rate_reel ? inrFull(c.rate_reel) : <span className="muted">—</span>}</td>
+                <td data-label="Status"><span className="pill">{creatorStatusLabel(c.status)}</span></td>
               </tr>); })}</tbody>
           </table></div>
         ) : (
