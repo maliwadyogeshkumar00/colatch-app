@@ -6,6 +6,8 @@ import { env } from "@/lib/net/env";
 import { startTeamSession, revokeSessions, TEAM_COOKIE } from "@/lib/net/creatorAuth";
 import { audit, ROLE_LABEL } from "@/lib/net/security";
 import { requireTeam } from "../_guard";
+import { PageHeader, Grid, Section, Card, AsideCard, Avatar } from "@/components/ui";
+import { DefList } from "@/components/admin/Charts";
 import { checkLogin, setPassword, TOO_MANY } from "../../reset/_lib";
 
 export const metadata = { title: "My settings", robots: { index: false, follow: false } };
@@ -39,28 +41,47 @@ async function signOutEverywhere() {
 export default async function Page({ searchParams }) {
   const me = await requireTeam("view");
   return (
-    <TeamShell active="settings" title="My <b>settings</b>" email={me.email} role={me.role}>
-      <div style={{ maxWidth: 560 }}>
-        <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
-        <div className="panel pad" style={{ marginBottom: 18 }}>
-          <h2>{me.name || me.email}</h2>
-          <p className="muted" style={{ margin: 0 }}>{me.email} · {ROLE_LABEL[me.role] || me.role}</p>
-        </div>
-        <form className="panel pad" action={changePassword}>
-          <h2>Change password</h2>
-          <div className="stack">
-            <div className="fld"><label htmlFor="f-team-settings-current-1">Current password</label><input id="f-team-settings-current-1" name="current" type="password" required autoComplete="current-password" /></div>
-            <div className="fld"><label htmlFor="f-team-settings-password-2">New password <span className="opt">— at least 10 characters</span></label><input id="f-team-settings-password-2" name="password" type="password" minLength={10} required autoComplete="new-password" /></div>
-            <div className="fld"><label htmlFor="f-team-settings-confirm-3">Type the new password again</label><input id="f-team-settings-confirm-3" name="confirm" type="password" minLength={10} required autoComplete="new-password" /></div>
-          </div>
-          <button className="btn-foil" style={{ marginTop: 20 }}>Change password</button>
-        </form>
-        <form className="panel pad" action={signOutEverywhere} style={{ marginTop: 18 }}>
-          <h2>Sign out everywhere</h2>
-          <p className="muted" style={{ margin: "-4px 0 14px" }}>Signs your team login out on every device, including this one.</p>
-          <button className="btn">Sign out on all devices</button>
-        </form>
-      </div>
+    <TeamShell active="settings" email={me.email} role={me.role}>
+      <PageHeader
+        crumbs={[{ label: "Team" }, { label: "My settings" }]}
+        eyebrow="Your login"
+        title="My <b>settings</b>"
+        sub="Your password and the devices you're signed in on. Roles are changed by an owner or admin in Team members."
+      />
+      <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
+      <Grid aside={<>
+        <AsideCard eyebrow="Signed in as" title={me.name || me.email}>
+          <div style={{ marginBottom: 14 }}><Avatar name={me.name || me.email} size={44} /></div>
+          <DefList items={[
+            { label: "Email", value: me.email },
+            { label: "Role", value: ROLE_LABEL[me.role] || me.role },
+          ]} />
+        </AsideCard>
+        <AsideCard eyebrow="Good practice" title="Keep the desk safe">
+          <p className="small" style={{ margin: 0 }}>Use a password you don't use anywhere else, at least 10 characters. If a phone or laptop goes missing, sign out everywhere and change your password.</p>
+        </AsideCard>
+      </>}>
+        <Section id="password" title="Change password" sub="Changing it signs out your other devices; this one stays signed in.">
+          <Card>
+            <form action={changePassword}>
+              <div className="stack">
+                <div className="fld"><label htmlFor="f-team-settings-current-1">Current password</label><input id="f-team-settings-current-1" name="current" type="password" required autoComplete="current-password" /></div>
+                <div className="fld"><label htmlFor="f-team-settings-password-2">New password <span className="opt">— at least 10 characters</span></label><input id="f-team-settings-password-2" name="password" type="password" minLength={10} required autoComplete="new-password" /></div>
+                <div className="fld"><label htmlFor="f-team-settings-confirm-3">Type the new password again</label><input id="f-team-settings-confirm-3" name="confirm" type="password" minLength={10} required autoComplete="new-password" /></div>
+              </div>
+              <button className="btn-foil" style={{ marginTop: 20 }}>Change password</button>
+            </form>
+          </Card>
+        </Section>
+        <Section id="devices" title="Sign out everywhere" sub="Signs your team login out on every device, including this one.">
+          <Card>
+            <form action={signOutEverywhere} className="spread" style={{ gap: 12, flexWrap: "wrap" }}>
+              <p className="small" style={{ margin: 0, flex: "1 1 240px" }}>You'll need your password to log back in on each device.</p>
+              <button className="btn">Sign out on all devices</button>
+            </form>
+          </Card>
+        </Section>
+      </Grid>
     </TeamShell>
   );
 }

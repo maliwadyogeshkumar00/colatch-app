@@ -6,6 +6,9 @@ import { sentence, dayTime } from "@/components/team/labels";
 import { env } from "@/lib/net/env";
 import { logEvent } from "@/lib/net/deal";
 import { audit } from "@/lib/net/security";
+import { parseWhen, weekSeries } from "@/lib/net/dashboard";
+import { PageHeader, KpiStrip, FilterBar, FilterChips, DataTable, Grid, Section, AsideCard, Pill, Cell } from "@/components/ui";
+import { ShareBar } from "@/components/admin/Charts";
 
 export const metadata = { title: "Off-platform reports", robots: { index: false, follow: false } };
 
@@ -56,33 +59,62 @@ export default async function Page({ searchParams }) {
      ORDER BY CASE b.status WHEN 'open' THEN 0 ELSE 1 END, b.created_at DESC LIMIT 200`
   ).all().catch(() => ({ results: [] }))).results ?? [];
   const open = rows.filter((r) => r.status === "open");
+  const status = ["open", "confirmed", "dismissed"].includes(searchParams?.status) ? String(searchParams.status) : "all";
+  const shown = status === "all" ? rows : rows.filter((r) => r.status === status);
+  const by = (st) => rows.filter((r) => r.status === st).length;
+  const now = Date.now();
+  const age = (r) => { const w = parseWhen(r.created_at); return w ? (now - w.t) / 36e5 : 0; };
+  const late = open.filter((r) => age(r) > 72).length;
+  const bounties = rows.filter((r) => r.status === "confirmed" && r.reporter_side === "creator").length;
+  const TONE = { open: "mine", confirmed: "done", dismissed: "off" };
+  const weekly = weekSeries(rows.map((r) => r.created_at), now, 8);
 
   return (
-    <TeamShell active="reports" eyebrow="Trust and safety" title="Off-platform <b>reports</b>" email={me.email}>
-      <p className="lead">Creators report when someone asks to move a deal outside Colatch. Confirm it if it checks out (the creator gets ₹{BOUNTY}), or dismiss it. Talk to the brand before confirming.</p>
+    <TeamShell active="reports" email={me.email} role={me.role}>
+      <PageHeader
+        crumbs={[{ label: "Trust and safety" }, { label: "Off-platform reports" }]}
+        eyebrow="Trust and safety"
+        title="Off-platform <b>reports</b>"
+        sub={`Creators report when someone asks to move a deal outside Colatch. Confirm it if it checks out (the creator gets ₹${BOUNTY}), or dismiss it. Talk to the brand before confirming.`}
+      />
       <div style={{ marginBottom: 16 }}><Flash sp={searchParams} /></div>
-      <div className="panel">
-        {rows.length ? (
-          <div className="scroll-x"><table className="tbl">
-            <thead><tr><th>Reported</th><th>Deal</th><th>What happened</th><th>Status</th><th></th></tr></thead>
-            <tbody>{rows.map((r) => (
-              <tr key={r.id}>
-                <td><b>{r.creator_name || (r.handle ? "@" + r.handle : r.reporter_side)}</b><div className="hint">{dayTime(r.created_at)} · by {r.reporter_side}</div></td>
-                <td>{r.deal_id ? <a className="link" href={`/team/deals/${r.deal_id}`}>{r.brand || r.client_company || "Deal"}</a> : r.campaign_title || "—"}<div className="hint">{r.deliverable || r.campaign_title || ""}</div></td>
-                <td style={{ maxWidth: 380, whiteSpace: "pre-line" }}>{r.note}</td>
-                <td><span className={`pill ${r.status === "confirmed" ? "good" : r.status === "open" ? "ok" : ""}`}>{sentence(r.status)}</span></td>
-                <td>{r.status === "open" && (
-                  <div className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
-                    <form action={confirm}><input type="hidden" name="id" value={r.id} /><button className="btn sm plum">Confirm</button></form>
-                    <form action={dismiss}><input type="hidden" name="id" value={r.id} /><button className="btn sm">Dismiss</button></form>
-                  </div>
-                )}</td>
-              </tr>
-            ))}</tbody>
-          </table></div>
-        ) : <div className="empty" style={{ padding: 24 }}><b>No reports yet.</b> When a creator reports an off-platform request from their deal room, it shows up here.</div>}
-      </div>
-      {open.length > 0 && <p className="hint" style={{ marginTop: 12 }}>{open.length} open {open.length === 1 ? "report" : "reports"}. Aim to decide within 72 hours: that's the promise creators see.</p>}
+
+      <KpiStrip label="Reports at a glance" items={[
+        { featured: open.length > 0, label: "Open to decide", value: open.length, foot: late ? `${late} past the 72-hour promise` : "decide within 72 hours", href: "?status=open" },
+        { label: "Confirmed", value: by("confirmed"), foot: bounties ? `${bounties} with a ₹${BOUNTY} thank-you credit` : "no credits yet", href: "?status=confirmed" },
+        { label: "Dismissed", value: by("dismissed"), foot: "no credit, nothing changes on the deal", href: "?status=dismissed" },
+        { label: "Reports · 8 weeks", value: weekly.reduce((a, b) => a + b, 0), spark: weekly, sparkLabel: "Reports per week, last 8 weeks", foot: "per week, oldest first" },
+      ]} />
+
+      <Grid aside={<>
+        <AsideCard eyebrow="How to decide" title="Check before you confirm">
+          <p className="small" style={{ marginTop: 0 }}>Read the deal room, then call the brand. Confirming adds ₹{BOUNTY} to a creator reporter's earnings (approved, waiting for payout) and notes it on the deal. Confirming needs a finance role.</p>
+          <p className="small" style={{ marginBottom: 0 }}>Aim to decide within 72 hours: that's the promise creators see.</p>
+        </AsideCard>
+        {rows.length > 0 && <AsideCard eyebrow="Insight" title="Where reports end up">
+          <ShareBar label="Reports by status" parts={[{ label: "Open", n: open.length, href: "?status=open" }, { label: "Confirmed", n: by("confirmed"), href: "?status=confirmed" }, { label: "Dismissed", n: by("dismissed"), href: "?status=dismissed" }]} />
+        </AsideCard>}
+      </>}>
+        <Section title="Reports" sub={`${shown.length} ${shown.length === 1 ? "report" : "reports"}. Open first, newest first.`}>
+          <FilterBar label="Filter reports">
+            <FilterChips name="status" label="Filter by status" current={status} hrefFor={(v) => (v === "all" ? "?" : `?status=${v}`)}
+              options={[{ value: "all", label: "All", count: rows.length }, { value: "open", label: "Open", count: open.length }, { value: "confirmed", label: "Confirmed", count: by("confirmed") }, { value: "dismissed", label: "Dismissed", count: by("dismissed") }]} />
+          </FilterBar>
+          <DataTable caption="Off-platform reports" rows={shown} columns={[
+            { key: "who", label: "Reported", render: (r) => <Cell eyebrow={`${dayTime(r.created_at)} · by ${r.reporter_side}`} title={r.creator_name || (r.handle ? "@" + r.handle : r.reporter_side)} sub={<span className="adm-pre">{r.note}</span>} /> },
+            { key: "status", label: "Status", primary: true, render: (r) => <span className="ui-pills"><Pill tone={TONE[r.status] || "quiet"}>{sentence(r.status)}</Pill>{r.status === "open" && age(r) > 72 && <Pill tone="gold">Past 72h</Pill>}</span> },
+            { key: "deal", label: "Deal", render: (r) => <span>{r.deal_id ? <a className="link" href={`/team/deals/${r.deal_id}`}>{r.brand || r.client_company || "Deal"}</a> : r.campaign_title || "—"}{(r.deliverable || r.campaign_title) && <span className="adm-dim" style={{ display: "block" }}>{r.deliverable || r.campaign_title}</span>}</span> },
+            { key: "act", label: "Decision", labelHidden: true, primary: true, num: true, render: (r) => (r.status === "open" ? (
+              <div className="adm-acts">
+                <form action={confirm}><input type="hidden" name="id" value={r.id} /><button className="btn sm plum">Confirm</button></form>
+                <form action={dismiss}><input type="hidden" name="id" value={r.id} /><button className="btn sm">Dismiss</button></form>
+              </div>
+            ) : null) },
+          ]} empty={status === "all"
+            ? { title: "No reports yet.", body: "When a creator reports an off-platform request from their deal room, it shows up here." }
+            : { title: "Nothing with this status.", body: "Try another filter.", action: <a className="btn sm" href="?">See all reports</a> }} />
+        </Section>
+      </Grid>
     </TeamShell>
   );
 }

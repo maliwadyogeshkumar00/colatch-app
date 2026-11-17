@@ -9,6 +9,8 @@ import { checkLogin, setPassword, overLimit, mailBase, clientIp, TOO_MANY } from
 import { notify } from "@/lib/net/notify";
 import { claimStatus, ClaimNote } from "../../join/_claim";
 import { addressFromForm } from "@/lib/net/creators";
+import { PageHeader, Grid, AsideCard } from "@/components/ui";
+import { Facts } from "@/components/creator/Parts";
 
 export const metadata = { title: "Account settings", robots: { index: false } };
 const BACK = "/creator/settings";
@@ -96,10 +98,24 @@ export default async function Page({ searchParams }) {
   const addr = own ? await env.DB.prepare("SELECT name, line1, line2, city, state, pincode, phone FROM creator_addresses WHERE creator_id = ?").bind(me.creator.id).first() : null;
   return (
     <PublicShell path="/creator/settings" creatorName={status === "own" ? me.creator?.name : null}>
-      <div className="wrap narrow" style={{ maxWidth: 520, padding: "20px 0 0" }}>
-        {searchParams?.at !== "shipping" && <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>}
-        {status !== "own" && <div style={{ marginBottom: 18 }}><ClaimNote status={status} /></div>}
-        <form className="panel pad" action={resendVerify} style={{ marginBottom: 18 }}>
+      <div className="cr-page">
+        <PageHeader crumbs={[{ label: "Home", href: "/creator" }, "Settings"]} eyebrow="Account" title="Account <b>settings</b>" sub={`Signed in as ${me.email}. Your login, shipping address and devices.`} />
+        {searchParams?.at !== "shipping" && <Flash sp={searchParams} />}
+        {status !== "own" && <ClaimNote status={status} />}
+        <Grid aside={<>
+          <AsideCard eyebrow="At a glance" title="Your account">
+            <Facts rows={[
+              { label: "Email", value: <span className="row" style={{ gap: 8 }}><span style={{ overflowWrap: "anywhere" }}>{me.email}</span>{verified ? <span className="pill good">Confirmed</span> : <span className="pill ok">Not confirmed</span>}</span> },
+              { label: "Profile", value: status === "own" ? <span className="pill good">Verified yours</span> : status === "rejected" ? <span className="pill low">Not linked</span> : <span className="pill">Being verified</span> },
+              ...(own ? [{ label: "Shipping", value: addr ? <span className="pill good">Saved</span> : <a className="link" href="#shipping">Not added</a> }] : []),
+            ]} />
+          </AsideCard>
+          <AsideCard eyebrow="Elsewhere" title="Profile and payouts" foot={<a className="link" href="/creator/profile#payout">Payout details →</a>}>
+            <p className="small muted" style={{ margin: 0 }}>Your UPI, PAN and GSTIN live on your profile page, next to your media kit.</p>
+          </AsideCard>
+        </>}>
+        <div className="stack cr-forms">
+        <form className="panel pad" action={resendVerify}>
           <div className="spread"><h2 style={{ margin: 0 }}>Email</h2>{verified ? <span className="pill good">Confirmed</span> : <span className="pill ok">Not confirmed</span>}</div>
           <p className="muted" style={{ margin: "10px 0 0" }}>{me.email}</p>
           {!verified && <><p className="hint" style={{ margin: "8px 0 14px" }}>Confirm your email so brands and the Colatch team can reach you about deals and payments.</p><button className="btn">Send confirmation link</button></>}
@@ -114,7 +130,7 @@ export default async function Page({ searchParams }) {
           </div>
           <button className="btn-foil" style={{ marginTop: 20 }}>Change password</button>
         </form>
-        {own && <form className="panel pad ship-form" action={saveAddress} id="shipping" aria-labelledby="shipping-h" style={{ marginTop: 18 }}>
+        {own && <form className="panel pad ship-form" action={saveAddress} id="shipping" aria-labelledby="shipping-h">
           <div className="spread"><h2 id="shipping-h" style={{ margin: 0 }}>Shipping address for product seeding</h2>{addr ? <span className="pill good">Saved</span> : <span className="pill ok">Not added</span>}</div>
           {searchParams?.at === "shipping" && <div style={{ marginTop: 12 }}><Flash sp={searchParams} /></div>}
           <p className="note info ship-private" style={{ margin: "12px 0 16px" }}><b>Only the Colatch team sees this. Brands never do.</b> We use it to send you products for gifting and seeding deals you accept.</p>
@@ -132,12 +148,14 @@ export default async function Page({ searchParams }) {
             {addr && <button className="btn ghost" formAction={deleteAddress} formNoValidate>Delete address</button>}
           </div>
         </form>}
-        <form className="panel pad" action={signOutEverywhere} style={{ marginTop: 18 }}>
+        <form className="panel pad" action={signOutEverywhere}>
           <h2>Sign out everywhere</h2>
           <p className="muted" style={{ margin: "-4px 0 14px" }}>Lost a phone, or logged in on someone else's laptop? This signs your account out on every device, including this one.</p>
           <button className="btn">Sign out on all devices</button>
         </form>
-        <p className="hint" style={{ margin: "16px 0 0" }}><a className="link" href="/creator">Back to my briefs</a> · <a className="link" href="/creator/logout">Log out</a></p>
+        <p className="hint" style={{ margin: 0 }}><a className="link" href="/creator">Back to my briefs</a> · <a className="link" href="/creator/logout">Log out</a></p>
+        </div>
+        </Grid>
       </div>
     </PublicShell>
   );

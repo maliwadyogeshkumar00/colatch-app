@@ -9,6 +9,7 @@ import { AGE_BANDS, audienceSummary } from "@/lib/net/audience";
 import { findSimilar } from "@/lib/net/lookalike";
 import { SKILLS, LANGUAGES, CITIES } from "@/lib/net/match";
 import { creatorStatusLabel, nicheLabel, inrFull } from "@/components/team/labels";
+import { PageHeader, KpiStrip, FilterBar, FilterChips, DataTable, Grid, Section, Card, AsideCard, InlineState, Pill, Split, Cell, Avatar } from "@/components/ui";
 
 export const metadata = { title: "Influencer finder", robots: { index: false, follow: false } };
 
@@ -153,119 +154,163 @@ export default async function Page({ searchParams }) {
   const flash = u.err || u.ok;
   const lb = lookup ? erBand(lookup.engagement_rate, lookup.followers) : null;
 
+  // Read-only roll-up of the whole database for the KPI strip. A failure only blanks the tiles.
+  const kpi = await env.DB.prepare(
+    `SELECT COUNT(*) n, SUM(CASE WHEN verified = 1 THEN 1 ELSE 0 END) v, AVG(engagement_rate) er,
+            SUM(CASE WHEN EXISTS (SELECT 1 FROM creator_accounts a WHERE a.creator_id = creators.id) THEN 1 ELSE 0 END) logins
+     FROM creators WHERE COALESCE(status, '') <> 'blacklisted'`
+  ).first().catch(() => null);
+  const kn = (v) => (kpi ? Number(v || 0) : "—");
+  const avgEr = kpi?.er != null ? `${Number(kpi.er).toFixed(1)}%` : "—";
+  // Sort chips keep every other filter in the link.
+  const sortHref = (v) => {
+    const sp = new URLSearchParams();
+    for (const [key, val] of Object.entries(u)) if (!["sort", "ok", "err", "lerr"].includes(key)) [].concat(val).forEach((x) => x !== "" && x != null && sp.append(key, String(x)));
+    if (v !== "followers") sp.set("sort", v);
+    const qs = sp.toString();
+    return `/team/creators${qs ? `?${qs}` : ""}`;
+  };
+  const SORTS = [["followers", "Biggest first"], ["er", "Best engagement"], ["quality", "Best quality score"], ["new", "Newest"]];
+  const TIERS = ["Nano", "Micro", "Mid", "Macro", "Mega"];
+  const tierParts = TIERS.map((t) => ({ label: t, n: rows.filter((r) => (r.tier || tierFor(r.followers)) === t).length })).filter((x) => x.n > 0);
+  const columns = [
+    { key: "creator", label: "Creator", render: (c) => (
+      <span className="tr-person"><Avatar name={c.name || c.handle} src={c.profile_pic || undefined} size={40} />
+        <Cell title={<>{c.name || c.handle}{c.verified ? " ✓" : ""}</>} sub={<span>@{c.handle}</span>} /></span>
+    ) },
+    ...(seed ? [{ key: "why", label: "Why similar", render: (c) => <span className="tr-simwhy"><span className="sim-score sm">{c._score}<small>/100</small></span> <span className="small">{c._why}</span></span> }] : []),
+    { key: "talent", label: "Talent · niche", render: (c) => (<>
+      <span className="tr-why">{(c.skills || "").split(",").filter(Boolean).slice(0, 2).map((s) => <span key={s} className="tag">{s.trim()}</span>)}{c.niche && <span className="tag">{nicheLabel(c.niche.split(",")[0])}</span>}</span>
+      {(pf[c.id]?.length > 0 || audienceSummary(c)) && <div className="finder-meta">{(pf[c.id] ?? []).map((p) => <span key={p.platform} className="pf-chip" title={PLATFORM_LABEL[p.platform]}>{PLATFORM_LABEL[p.platform]}{p.followers != null ? ` ${compact(p.followers)}` : ""}</span>)}{audienceSummary(c) && <span className="aud-line">Audience: {audienceSummary(c)}</span>}</div>}
+    </>) },
+    { key: "city", label: "City", render: (c) => c.city || <span className="muted">—</span> },
+    { key: "followers", label: "Followers", num: true, primary: true, render: (c) => compact(c.followers) },
+    { key: "er", label: "Engagement", num: true, render: (c) => { const b = erBand(c.engagement_rate, c.followers); return c.engagement_rate != null ? <span className={`pill ${b.tone}`}>{c.engagement_rate}%</span> : <span className="muted">—</span>; } },
+    { key: "quality", label: "Quality", num: true, render: (c) => c.quality_score ?? <span className="muted" title="Not reviewed yet">—</span> },
+    { key: "rate", label: "Reel rate", num: true, render: (c) => (c.rate_reel ? inrFull(c.rate_reel) : <span className="muted">—</span>) },
+    { key: "status", label: "Status", render: (c) => <Pill>{creatorStatusLabel(c.status)}</Pill> },
+  ];
+
   return (
-    <TeamShell active="finder" eyebrow="Creator tools" title="Find the <b>right creator</b>." email={me.email}
-      actions={<a className="btn-foil" href="#add">+ Add creators</a>}>
-      <p className="lead">Search Colatch's own creator database by talent, niche, city, language and size. Look up any public Instagram creator or business account by handle and save it here with live numbers.</p>
+    <TeamShell active="finder" email={me.email} role={me.role}>
+      <PageHeader
+        crumbs={[{ label: "Creator tools" }, { label: "Influencer finder" }]}
+        actions={<a className="btn-foil" href="#add">+ Add creators</a>}
+        eyebrow="Creator tools · Finder"
+        title="Find the <b>right creator</b>."
+        sub="Search Colatch's own creator database by talent, niche, city, language and size. Look up any public Instagram creator or business account by handle and save it here with live numbers."
+      />
 
-      {dbErr && <div className="note bad" style={{ marginBottom: 18 }}><b>Database not reachable.</b> ({dbErr})</div>}
-      {flash && <div className={`note ${u.err ? "bad" : "good"}`} style={{ marginBottom: 18 }}>{flash}</div>}
+      {dbErr && <div style={{ marginBottom: 16 }}><InlineState kind="error" label="Database not reachable.">{dbErr}</InlineState></div>}
+      {flash && <div className={`note ${u.err ? "bad" : "good"}`} style={{ marginBottom: 16 }}>{flash}</div>}
 
-      <div className="panel pad">
-        <div className="spread"><h2 style={{ margin: 0 }}>Look up on Instagram</h2>{ig ? <span className="pill good">Instagram connected</span> : <span className="pill ok">Instagram not connected</span>}</div>
-        <form method="get" className="row" style={{ marginTop: 14 }}>
-          <input className="in" style={{ flex: 1, minWidth: 220 }} name="lookup" placeholder="@handle or instagram.com/handle" required defaultValue={lookup?.handle ?? u.lookup ?? ""} />
-          <button className="btn plum" type="submit" disabled={!ig}>Look up</button>
-        </form>
-        {!ig && <p className="hint" style={{ margin: "10px 0 0" }}>Connect Colatch's Instagram business account (META_ACCESS_TOKEN and META_IG_USER_ID in Vercel) to pull live followers and engagement. Until then, add creators by hand or import a sheet below.</p>}
-        {lookupErr && <div className="note bad" style={{ marginTop: 14 }}>{lookupErr}</div>}
-        {lookup && (
-          <div className="panel pad" style={{ marginTop: 16, boxShadow: "none", background: "var(--ivory)" }}>
-            <div className="spread">
-              <div className="who"><div className="ava" style={{ width: 56, height: 56 }}>{lookup.profile_pic ? <img src={lookup.profile_pic} alt="" /> : initials(lookup.handle)}</div>
-                <div><b style={{ fontSize: 17 }}>{lookup.name || lookup.handle}</b><span>@{lookup.handle} · {tierFor(lookup.followers)}</span></div></div>
-              <form action={saveLookup} className="row"><input type="hidden" name="handle" value={lookup.handle} /><button className="btn plum">Save to database</button></form>
-            </div>
-            <div className="grid4" style={{ marginTop: 16 }}>
-              <div><div className="lbl">Followers</div><div style={{ fontSize: 22, fontWeight: 300 }}>{compact(lookup.followers)}</div></div>
-              <div><div className="lbl">Engagement</div><div style={{ fontSize: 22, fontWeight: 300 }}>{lookup.engagement_rate}% <span className={`pill ${lb.tone}`}>{lb.label}</span></div></div>
-              <div><div className="lbl">Avg likes · comments</div><div style={{ fontSize: 22, fontWeight: 300 }}>{compact(lookup.avg_likes)} · {compact(lookup.avg_comments)}</div></div>
-              <div><div className="lbl">Posts / week · Reels</div><div style={{ fontSize: 22, fontWeight: 300 }}>{lookup.posts_per_week} · {Math.round(lookup.reel_share * 100)}%</div></div>
-            </div>
-            {lookup.bio && <p className="muted small" style={{ margin: "14px 0 0", whiteSpace: "pre-line" }}>{lookup.bio}</p>}
+      <KpiStrip label="Creator database at a glance" items={[
+        { label: "Creators", value: kn(kpi?.n), foot: "in the database, blacklist excluded" },
+        { label: "Verified", value: kn(kpi?.v), foot: "numbers checked on Instagram" },
+        { label: "With a portal login", value: kn(kpi?.logins), foot: "can apply and accept deals" },
+        { featured: true, label: "Average engagement", value: avgEr, foot: "across creators with an engagement figure" },
+      ]} />
+
+      <Grid aside={
+        <AsideCard eyebrow="Insight" title={seed ? `Creators like <b>@${seed.handle}</b>` : filtered ? "This search by size" : "The database by size"}
+          foot={filtered ? <a href="/team/creators">Clear the search</a> : <a href="#add">Import a sheet</a>}>
+          {tierParts.length ? <Split label="Creators in this list by tier" parts={tierParts} /> : <p className="small">No creators in this list yet.</p>}
+          <p className="small">{rows.length === 200 ? "Showing the first 200 by the current sort." : `${rows.length.toLocaleString("en-IN")} in this list.`} Tiers follow followers: Nano under 10K, Micro to 1L, Mid to 5L, Macro to 10L, Mega above.</p>
+        </AsideCard>
+      }>
+        <Section id="lookup" title="Look up on Instagram" actions={ig ? <Pill tone="done">Instagram connected</Pill> : <Pill tone="wait">Instagram not connected</Pill>}>
+          <Card>
+            <form method="get" className="row tr-fields">
+              <input className="in tr-grow" name="lookup" aria-label="Instagram handle or link" placeholder="@handle or instagram.com/handle" required defaultValue={lookup?.handle ?? u.lookup ?? ""} />
+              <button className="btn plum" type="submit" disabled={!ig}>Look up</button>
+            </form>
+            {!ig && <p className="hint" style={{ margin: "10px 0 0" }}>Connect Colatch's Instagram business account (META_ACCESS_TOKEN and META_IG_USER_ID in Vercel) to pull live followers and engagement. Until then, add creators by hand or import a sheet below.</p>}
+            {lookupErr && <div className="note bad" style={{ marginTop: 14 }}>{lookupErr}</div>}
+            {lookup && (
+              <div className="tr-lookup">
+                <div className="spread">
+                  <div className="who"><div className="ava" style={{ width: 56, height: 56 }}>{lookup.profile_pic ? <img src={lookup.profile_pic} alt="" /> : initials(lookup.handle)}</div>
+                    <div><b style={{ fontSize: 17 }}>{lookup.name || lookup.handle}</b><span>@{lookup.handle} · {tierFor(lookup.followers)}</span></div></div>
+                  <form action={saveLookup} className="row"><input type="hidden" name="handle" value={lookup.handle} /><button className="btn plum">Save to database</button></form>
+                </div>
+                <dl className="tr-stats">
+                  <div><dt>Followers</dt><dd>{compact(lookup.followers)}</dd></div>
+                  <div><dt>Engagement</dt><dd>{lookup.engagement_rate}% <span className={`pill ${lb.tone}`}>{lb.label}</span></dd></div>
+                  <div><dt>Avg likes · comments</dt><dd>{compact(lookup.avg_likes)} · {compact(lookup.avg_comments)}</dd></div>
+                  <div><dt>Posts / week · Reels</dt><dd>{lookup.posts_per_week} · {Math.round(lookup.reel_share * 100)}%</dd></div>
+                </dl>
+                {lookup.bio && <p className="muted small" style={{ margin: "14px 0 0", whiteSpace: "pre-line" }}>{lookup.bio}</p>}
+              </div>
+            )}
+          </Card>
+        </Section>
+      </Grid>
+
+      <Section id="finder" title={seed ? `${rows.length} creators like @${seed.handle}` : filtered ? `${rows.length} matching creators` : `${total} creators in the database`}
+        sub={seed ? <>Ranked by shared talent and niche, size, city, languages, engagement, audience and platforms. <a className="link" href={`/team/creators/${seed.id}`}>Open @{seed.handle}</a></> : rows.length === 200 ? "Showing the first 200. Narrow the filters." : "Filter by talent, niche, city, language, size, audience and platforms."}>
+        <form className="panel filters" method="get">
+          <div className="fld"><label htmlFor="f-team-creators-q-1">Search</label><input id="f-team-creators-q-1" name="q" defaultValue={q} placeholder="Name, handle, bio, tag…" /></div>
+          <div className="fld"><label htmlFor="f-team-creators-skill-2">Talent</label><select id="f-team-creators-skill-2" name="skill" defaultValue={fSkill}><option value="">Any</option>{SKILLS.map((s) => <option key={s}>{s}</option>)}</select></div>
+          <div className="fld"><label htmlFor="f-team-creators-niche-3">Niche</label><select id="f-team-creators-niche-3" name="niche" defaultValue={fNiche}><option value="">Any</option>{NICHES.map((s) => <option key={s}>{s}</option>)}</select></div>
+          <div className="fld"><label htmlFor="f-team-creators-city-4">City</label><input id="f-team-creators-city-4" name="city" list="cities" defaultValue={fCity} placeholder="Any" /></div>
+          <div className="fld"><label htmlFor="f-team-creators-lang-5">Language</label><select id="f-team-creators-lang-5" name="lang" defaultValue={fLang}><option value="">Any</option>{LANGUAGES.map((s) => <option key={s}>{s}</option>)}</select></div>
+          <div className="fld"><label htmlFor="f-team-creators-fmin">Followers</label><div className="row" style={{ gap: 6, flexWrap: "nowrap" }}><input id="f-team-creators-fmin" name="fmin" aria-label="Minimum followers" defaultValue={u.fmin ?? ""} placeholder="Min" /><input name="fmax" aria-label="Maximum followers" defaultValue={u.fmax ?? ""} placeholder="Max" /></div></div>
+          <button className="btn plum" type="submit">Search</button>
+          <div className="fld"><label htmlFor="f-team-creators-gender-6">Gender</label><select id="f-team-creators-gender-6" name="gender" defaultValue={fGender}><option value="">Any</option>{["Female", "Male", "Other"].map((s) => <option key={s}>{s}</option>)}</select></div>
+          <div className="fld"><label htmlFor="f-team-creators-er-7">Min engagement %</label><input id="f-team-creators-er-7" name="er" defaultValue={u.er ?? ""} placeholder="e.g. 2" /></div>
+          <div className="fld"><label htmlFor="f-team-creators-status-8">Status</label><select id="f-team-creators-status-8" name="status" defaultValue={fStatus}><option value="">Any</option>{[...CREATOR_STATUSES, ...extraStatuses].map((s) => <option key={s} value={s}>{creatorStatusLabel(s)}</option>)}</select></div>
+          <div className="fld"><label htmlFor="f-team-creators-sort-9">Sort</label><select id="f-team-creators-sort-9" name="sort" defaultValue={sort}>{SORTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
+          {filtered && <a className="btn ghost" href="/team/creators">Clear</a>}
+          <div className="finder-more">
+            <div className="fld"><label htmlFor="f-team-creators-like">Find creators like</label><input id="f-team-creators-like" name="like" defaultValue={u.like ?? ""} placeholder="@handle" autoCapitalize="none" spellCheck={false} /></div>
+            <div className="fld"><label htmlFor="f-team-creators-aud">Audience mostly</label><select id="f-team-creators-aud" name="aud" defaultValue={fAud}><option value="">Any</option><option value="women">Women (60%+)</option><option value="men">Men (60%+)</option></select></div>
+            <div className="fld"><label htmlFor="f-team-creators-acity">Audience city</label><input id="f-team-creators-acity" name="acity" list="cities" defaultValue={fACity} placeholder="In their top cities" /></div>
+            <div className="fld"><label htmlFor="f-team-creators-aage">Core audience age</label><select id="f-team-creators-aage" name="aage" defaultValue={fAge}><option value="">Any</option>{AGE_BANDS.map((b) => <option key={b} value={b}>{b}</option>)}</select></div>
+            <fieldset className="fld pf-filter">
+              <legend>Also on <span className="opt">— all ticked</span></legend>
+              <div className="chips">{PLATFORMS.map((p) => <label key={p.id} className="chip"><input type="checkbox" name="pf" value={p.id} defaultChecked={fPf.includes(p.id)} /><span>{p.label}</span></label>)}</div>
+            </fieldset>
           </div>
-        )}
-      </div>
-
-      <form className="panel filters sec" method="get">
-        <div className="fld"><label htmlFor="f-team-creators-q-1">Search</label><input id="f-team-creators-q-1" name="q" defaultValue={q} placeholder="Name, handle, bio, tag…" /></div>
-        <div className="fld"><label htmlFor="f-team-creators-skill-2">Talent</label><select id="f-team-creators-skill-2" name="skill" defaultValue={fSkill}><option value="">Any</option>{SKILLS.map((s) => <option key={s}>{s}</option>)}</select></div>
-        <div className="fld"><label htmlFor="f-team-creators-niche-3">Niche</label><select id="f-team-creators-niche-3" name="niche" defaultValue={fNiche}><option value="">Any</option>{NICHES.map((s) => <option key={s}>{s}</option>)}</select></div>
-        <div className="fld"><label htmlFor="f-team-creators-city-4">City</label><input id="f-team-creators-city-4" name="city" list="cities" defaultValue={fCity} placeholder="Any" /></div>
-        <div className="fld"><label htmlFor="f-team-creators-lang-5">Language</label><select id="f-team-creators-lang-5" name="lang" defaultValue={fLang}><option value="">Any</option>{LANGUAGES.map((s) => <option key={s}>{s}</option>)}</select></div>
-        <div className="fld"><label>Followers</label><div className="row" style={{ gap: 6, flexWrap: "nowrap" }}><input name="fmin" defaultValue={u.fmin ?? ""} placeholder="Min" /><input name="fmax" defaultValue={u.fmax ?? ""} placeholder="Max" /></div></div>
-        <button className="btn plum" type="submit">Search</button>
-        <div className="fld"><label htmlFor="f-team-creators-gender-6">Gender</label><select id="f-team-creators-gender-6" name="gender" defaultValue={fGender}><option value="">Any</option>{["Female", "Male", "Other"].map((s) => <option key={s}>{s}</option>)}</select></div>
-        <div className="fld"><label htmlFor="f-team-creators-er-7">Min engagement %</label><input id="f-team-creators-er-7" name="er" defaultValue={u.er ?? ""} placeholder="e.g. 2" /></div>
-        <div className="fld"><label htmlFor="f-team-creators-status-8">Status</label><select id="f-team-creators-status-8" name="status" defaultValue={fStatus}><option value="">Any</option>{[...CREATOR_STATUSES, ...extraStatuses].map((s) => <option key={s} value={s}>{creatorStatusLabel(s)}</option>)}</select></div>
-        <div className="fld"><label htmlFor="f-team-creators-sort-9">Sort</label><select id="f-team-creators-sort-9" name="sort" defaultValue={sort}>{[["followers", "Biggest first"], ["er", "Best engagement"], ["quality", "Best quality score"], ["new", "Newest"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
-        {filtered && <a className="btn ghost" href="/team/creators">Clear</a>}
-        <div className="finder-more">
-          <div className="fld"><label htmlFor="f-team-creators-like">Find creators like</label><input id="f-team-creators-like" name="like" defaultValue={u.like ?? ""} placeholder="@handle" autoCapitalize="none" spellCheck={false} /></div>
-          <div className="fld"><label htmlFor="f-team-creators-aud">Audience mostly</label><select id="f-team-creators-aud" name="aud" defaultValue={fAud}><option value="">Any</option><option value="women">Women (60%+)</option><option value="men">Men (60%+)</option></select></div>
-          <div className="fld"><label htmlFor="f-team-creators-acity">Audience city</label><input id="f-team-creators-acity" name="acity" list="cities" defaultValue={fACity} placeholder="In their top cities" /></div>
-          <div className="fld"><label htmlFor="f-team-creators-aage">Core audience age</label><select id="f-team-creators-aage" name="aage" defaultValue={fAge}><option value="">Any</option>{AGE_BANDS.map((b) => <option key={b} value={b}>{b}</option>)}</select></div>
-          <fieldset className="fld pf-filter">
-            <legend>Also on <span className="opt">— all ticked</span></legend>
-            <div className="chips">{PLATFORMS.map((p) => <label key={p.id} className="chip"><input type="checkbox" name="pf" value={p.id} defaultChecked={fPf.includes(p.id)} /><span>{p.label}</span></label>)}</div>
-          </fieldset>
-        </div>
-      </form>
-      <datalist id="cities">{CITIES.map((c) => <option key={c} value={c} />)}</datalist>
-
-      <div className="sec">
-        {fLike && !seed && !dbErr && <div className="note bad" style={{ marginBottom: 12 }}>No creator @{fLike} in the database yet. Look them up on Instagram above, then search again.</div>}
-        <div className="spread" style={{ marginBottom: 12 }}><div className="h2" style={{ margin: 0 }}>{seed ? `${rows.length} creators like @${seed.handle}` : filtered ? `${rows.length} matching creators` : `${total} creators in the database`}</div>{rows.length === 200 && <span className="hint">Showing the first 200. Narrow the filters.</span>}</div>
-        {seed && <p className="hint" style={{ margin: "-4px 0 12px" }}>Ranked by shared talent and niche, size, city, languages, engagement, audience and platforms. <a className="link" href={`/team/creators/${seed.id}`}>Open @{seed.handle}</a></p>}
-        {rows.length ? (
-          <div className="panel scroll-x"><table className="tbl stack">
-            <thead><tr><th>Creator</th>{seed && <th>Why similar</th>}<th>Talent · niche</th><th>City</th><th className="num">Followers</th><th className="num">Engagement</th><th className="num">Quality</th><th className="num">Reel rate</th><th>Status</th></tr></thead>
-            <tbody>{rows.map((c) => { const b = erBand(c.engagement_rate, c.followers); return (
-              <tr key={c.id}>
-                <td><a className="who" href={`/team/creators/${c.id}`}><div className="ava">{c.profile_pic ? <img src={c.profile_pic} alt="" loading="lazy" /> : initials(c.name || c.handle)}</div><div><b>{c.name || c.handle}{c.verified ? " ✓" : ""}</b><span>@{c.handle}</span></div></a></td>
-                {seed && <td data-label="Why similar"><span className="sim-score sm">{c._score}<small>/100</small></span> <span className="small">{c._why}</span></td>}
-                <td data-label="Talent · niche">{(c.skills || "").split(",").filter(Boolean).slice(0, 2).map((s) => <span key={s} className="tag">{s.trim()}</span>)}{c.niche && <span className="tag">{nicheLabel(c.niche.split(",")[0])}</span>}
-                  {(pf[c.id]?.length > 0 || audienceSummary(c)) && <div className="finder-meta">{(pf[c.id] ?? []).map((p) => <span key={p.platform} className="pf-chip" title={PLATFORM_LABEL[p.platform]}>{PLATFORM_LABEL[p.platform]}{p.followers != null ? ` ${compact(p.followers)}` : ""}</span>)}{audienceSummary(c) && <span className="aud-line">Audience: {audienceSummary(c)}</span>}</div>}</td>
-                <td data-label="City">{c.city || <span className="muted">—</span>}</td>
-                <td data-label="Followers" className="num">{compact(c.followers)}</td>
-                <td data-label="Engagement" className="num">{c.engagement_rate != null ? <span className={`pill ${b.tone}`}>{c.engagement_rate}%</span> : <span className="muted">—</span>}</td>
-                <td data-label="Quality" className="num">{c.quality_score ?? <span className="muted" title="Not reviewed yet">—</span>}</td>
-                <td data-label="Reel rate" className="num">{c.rate_reel ? inrFull(c.rate_reel) : <span className="muted">—</span>}</td>
-                <td data-label="Status"><span className="pill">{creatorStatusLabel(c.status)}</span></td>
-              </tr>); })}</tbody>
-          </table></div>
-        ) : (
-          <div className="panel empty"><b>{filtered ? "No creator matches these filters." : "No creators yet."}</b>{filtered ? "Loosen a filter, or look the creator up on Instagram above." : "Import your existing sheet below, add creators by hand, or share the creator sign-up page so they join themselves."}</div>
-        )}
-      </div>
-
-      <div className="sec grid2" id="add">
-        <form className="panel pad" action={addCreator}>
-          <h2>Add a creator</h2>
-          <div className="form-grid">
-            <div className="fld"><label htmlFor="f-team-creators-handle-10">Instagram handle</label><input id="f-team-creators-handle-10" name="handle" required placeholder="@handle" /></div>
-            <div className="fld"><label htmlFor="f-team-creators-name-11">Name</label><input id="f-team-creators-name-11" name="name" /></div>
-            <div className="fld full"><label>Talent</label><div className="chips">{SKILLS.slice(0, 16).map((s) => <label key={s} className="chip"><input type="checkbox" name="skills" value={s} /><span>{s}</span></label>)}</div></div>
-            <div className="fld"><label htmlFor="f-team-creators-niche-12">Niche</label><select id="f-team-creators-niche-12" name="niche"><option value="">—</option>{NICHES.map((n) => <option key={n}>{n}</option>)}</select></div>
-            <div className="fld"><label htmlFor="f-team-creators-city-13">City</label><input id="f-team-creators-city-13" name="city" list="cities" /></div>
-            <div className="fld"><label htmlFor="f-team-creators-language-14">Languages</label><input id="f-team-creators-language-14" name="language" placeholder="Hindi, English" /></div>
-            <div className="fld"><label htmlFor="f-team-creators-gender-15">Gender</label><select id="f-team-creators-gender-15" name="gender"><option value="">—</option><option>Female</option><option>Male</option><option>Other</option></select></div>
-            <div className="fld"><label htmlFor="f-team-creators-followers-16">Followers</label><input id="f-team-creators-followers-16" name="followers" placeholder="e.g. 85K or 1.2L" /></div>
-            <div className="fld"><label htmlFor="f-team-creators-rate-reel-17">Reel rate (₹)</label><input id="f-team-creators-rate-reel-17" name="rate_reel" placeholder="e.g. 25000" /></div>
-            <div className="fld"><label htmlFor="f-team-creators-phone-18">Phone / WhatsApp</label><input id="f-team-creators-phone-18" name="phone" /></div>
-            <div className="fld"><label htmlFor="f-team-creators-email-19">Email</label><input id="f-team-creators-email-19" name="email" type="email" /></div>
-            <div className="fld full"><label htmlFor="f-team-creators-notes-20">Notes</label><input id="f-team-creators-notes-20" name="notes" /></div>
-          </div>
-          <button className="btn plum" style={{ marginTop: 16 }}>Add creator</button>
         </form>
-        <form className="panel pad" action={importSheet}>
-          <h2>Import a sheet</h2>
-          <p className="hint" style={{ marginTop: -6 }}>Paste from Excel or Google Sheets, or upload a CSV. The first row must be headers. We read: <b>handle</b> (or username / instagram link), name, niche, city, state, language, gender, followers, avg views, engagement rate, email, phone, reel rate, story rate, post rate, tags, notes. Existing handles are updated, never duplicated.</p>
-          <div className="fld"><label htmlFor="f-team-creators-file-21">Upload CSV <span className="opt">— optional</span></label><input id="f-team-creators-file-21" type="file" name="file" accept=".csv,.tsv,.txt" /></div>
-          <div className="fld" style={{ marginTop: 12 }}><label htmlFor="f-team-creators-csv-22">Or paste rows</label><textarea id="f-team-creators-csv-22" name="csv" rows={9} placeholder={"handle\tname\tniche\tcity\tfollowers\treel rate\n@priya.dances\tPriya\tDance\tDelhi\t82K\t25000"} /></div>
-          <button className="btn plum" style={{ marginTop: 16 }}>Import</button>
-        </form>
-      </div>
+        <datalist id="cities">{CITIES.map((c) => <option key={c} value={c} />)}</datalist>
+
+        {fLike && !seed && !dbErr && <div className="note bad tr-gap">No creator @{fLike} in the database yet. Look them up on Instagram above, then search again.</div>}
+        {!seed && <div className="tr-gap"><FilterBar label="Sort creators">
+          <FilterChips name="sort" label="Sort by" current={sort} hrefFor={sortHref} options={SORTS.map(([value, label]) => ({ value, label }))} />
+        </FilterBar></div>}
+        <DataTable caption="Creators" columns={columns} rows={rows} rowHref={(c) => `/team/creators/${c.id}`} scroll
+          empty={{ title: filtered ? "No creator matches these filters." : "No creators yet.", body: filtered ? "Loosen a filter, or look the creator up on Instagram above." : "Import your existing sheet below, add creators by hand, or share the creator sign-up page so they join themselves.", action: filtered ? <a className="btn sm" href="/team/creators">Clear the filters</a> : <a className="btn sm" href="#add">Add creators</a> }} />
+      </Section>
+
+      <Section id="add" title="Add creators" sub="One by hand, or a whole sheet at once. Existing handles are updated, never duplicated.">
+        <Grid cols={2}>
+          <Card><form action={addCreator}>
+            <h3 className="tr-cardh">Add a creator</h3>
+            <div className="form-grid">
+              <div className="fld"><label htmlFor="f-team-creators-handle-10">Instagram handle</label><input id="f-team-creators-handle-10" name="handle" required placeholder="@handle" /></div>
+              <div className="fld"><label htmlFor="f-team-creators-name-11">Name</label><input id="f-team-creators-name-11" name="name" /></div>
+              <div className="fld full"><label>Talent</label><div className="chips">{SKILLS.slice(0, 16).map((s) => <label key={s} className="chip"><input type="checkbox" name="skills" value={s} /><span>{s}</span></label>)}</div></div>
+              <div className="fld"><label htmlFor="f-team-creators-niche-12">Niche</label><select id="f-team-creators-niche-12" name="niche"><option value="">—</option>{NICHES.map((n) => <option key={n}>{n}</option>)}</select></div>
+              <div className="fld"><label htmlFor="f-team-creators-city-13">City</label><input id="f-team-creators-city-13" name="city" list="cities" /></div>
+              <div className="fld"><label htmlFor="f-team-creators-language-14">Languages</label><input id="f-team-creators-language-14" name="language" placeholder="Hindi, English" /></div>
+              <div className="fld"><label htmlFor="f-team-creators-gender-15">Gender</label><select id="f-team-creators-gender-15" name="gender"><option value="">—</option><option>Female</option><option>Male</option><option>Other</option></select></div>
+              <div className="fld"><label htmlFor="f-team-creators-followers-16">Followers</label><input id="f-team-creators-followers-16" name="followers" placeholder="e.g. 85K or 1.2L" /></div>
+              <div className="fld"><label htmlFor="f-team-creators-rate-reel-17">Reel rate (₹)</label><input id="f-team-creators-rate-reel-17" name="rate_reel" placeholder="e.g. 25000" /></div>
+              <div className="fld"><label htmlFor="f-team-creators-phone-18">Phone / WhatsApp</label><input id="f-team-creators-phone-18" name="phone" /></div>
+              <div className="fld"><label htmlFor="f-team-creators-email-19">Email</label><input id="f-team-creators-email-19" name="email" type="email" /></div>
+              <div className="fld full"><label htmlFor="f-team-creators-notes-20">Notes</label><input id="f-team-creators-notes-20" name="notes" /></div>
+            </div>
+            <button className="btn plum" style={{ marginTop: 16 }}>Add creator</button>
+          </form></Card>
+          <Card><form action={importSheet}>
+            <h3 className="tr-cardh">Import a sheet</h3>
+            <p className="hint" style={{ marginTop: 0 }}>Paste from Excel or Google Sheets, or upload a CSV. The first row must be headers. We read: <b>handle</b> (or username / instagram link), name, niche, city, state, language, gender, followers, avg views, engagement rate, email, phone, reel rate, story rate, post rate, tags, notes. Existing handles are updated, never duplicated.</p>
+            <div className="fld"><label htmlFor="f-team-creators-file-21">Upload CSV <span className="opt">— optional</span></label><input id="f-team-creators-file-21" type="file" name="file" accept=".csv,.tsv,.txt" /></div>
+            <div className="fld" style={{ marginTop: 12 }}><label htmlFor="f-team-creators-csv-22">Or paste rows</label><textarea id="f-team-creators-csv-22" name="csv" rows={9} placeholder={"handle\tname\tniche\tcity\tfollowers\treel rate\n@priya.dances\tPriya\tDance\tDelhi\t82K\t25000"} /></div>
+            <button className="btn plum" style={{ marginTop: 16 }}>Import</button>
+          </form></Card>
+        </Grid>
+      </Section>
     </TeamShell>
   );
 }

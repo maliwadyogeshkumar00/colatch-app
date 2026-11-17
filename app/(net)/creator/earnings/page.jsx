@@ -9,6 +9,9 @@ import { ensureCode, REF, BRAND_TIERS, brandTierFor } from "@/lib/net/referral";
 import { creatorRating } from "@/lib/net/trust";
 import { colatchScore } from "@/lib/net/score";
 import { TierBadge } from "../../_ui/Score";
+import { PageHeader, KpiStrip, ChartCard, Bars, Split, Grid, Section, Card, DataTable, Cell, Figure } from "@/components/ui";
+import { inrShort, monthSeries } from "@/lib/net/dashboard";
+import { istDay } from "@/components/creator/Parts";
 
 async function setShowEarnings(fd) {
   "use server";
@@ -69,30 +72,55 @@ export default async function Page() {
   const caption = `${sc.stats.delivered ? `${sc.stats.delivered} brand ${sc.stats.delivered === 1 ? "deal" : "deals"} done through @colatch` : "I've joined @colatch"} 💛 You only see briefs that fit you, pay is shown upfront and every payment goes through Colatch. Join free with my code ${code}: ${origin}/c/${code}`;
   const waCard = `https://wa.me/?text=${encodeURIComponent(caption)}`;
 
+  // Charts from the rows already loaded: what reached the creator per month (ledger amount, else fee − TDS), and where deals stand.
+  const now = Date.now();
+  const series = monthSeries(paid.filter((d) => d.paid_at).map((d) => ({ at: d.paid_at, amount: sent.has(d.id) ? Number(sent.get(d.id).amount_paise) / 100 : (d.fee || 0) - (d.tds_amount || 0) })), now, 12);
+  const live = deals.filter((d) => d.stage !== "cancelled" && d.pay_status !== "refunded");
+  const groups = [
+    { label: "Paid", n: paid.length },
+    { label: "Money on the way", n: live.filter((d) => d.pay_status === "funded" || d.pay_status === "released").length },
+    { label: "Waiting for brand payment", n: live.filter((d) => d.pay_status === "unfunded" && d.sow_accepted_at).length },
+    { label: "Terms to accept", n: live.filter((d) => d.pay_status === "unfunded" && !d.sow_accepted_at).length },
+  ];
+  const nGroups = groups.reduce((a, g) => a + g.n, 0);
+  const onTimePct = timed.length ? Math.round((onTime / timed.length) * 100) : null;
+  const hero = (
+    <PageHeader variant="hero" eyebrow="Earnings" title={`${inrShort(earned + refPaid)} <b>earned through Colatch.</b>`}
+      sub="Every rupee here went through Colatch: brand-funded before you started, paid after your post was verified." />
+  );
+
   return (
-    <PublicShell creatorName={c.name || c.handle} path="/creator/earnings">
-      <div className="lbl">Earnings</div>
-      <h1 style={{ margin: "6px 0 20px", fontWeight: 300, fontSize: 32, color: "var(--head)" }}>{inr(earned + refPaid)} <span style={{ fontSize: 16, color: "var(--ink-3)" }}>earned through Colatch</span></h1>
+    <PublicShell creatorName={c.name || c.handle} path="/creator/earnings" hero={hero}>
+      <div className="cr-page">
+        <KpiStrip label="Your money" items={[
+          { label: "Paid to you", value: inrShort(earned), title: inr(earned), foot: `${paid.length} ${paid.length === 1 ? "deal" : "deals"}${tds ? ` · ${inr(tds)} TDS you can claim back` : ""}` },
+          { label: "On the way", value: inrShort(pending), title: inr(pending), foot: `Brand has paid Colatch; yours after the post is verified${agreed ? ` · ${inr(agreed)} more agreed, waiting for brand payment` : ""}` },
+          { label: "Paid on time", value: onTimePct != null ? `${onTimePct}%` : "—", foot: avgDays != null ? "avg " + avgDays.toFixed(1) + " days after going live" : "after your first payout" },
+          { label: "Products & tickets", value: inrShort(rewards), title: inr(rewards), foot: "value received" },
+        ]} />
 
-      <div className="grid4">
-        <div className="panel kpi"><div className="k">Paid to you</div><div className="v">{inr(earned)}</div><div className="s">{paid.length} {paid.length === 1 ? "deal" : "deals"}{tds ? ` · ${inr(tds)} TDS you can claim back` : ""}</div></div>
-        <div className="panel kpi"><div className="k">On the way</div><div className="v">{inr(pending)}</div><div className="s">brand has paid Colatch; yours after the post is verified{agreed ? ` · ${inr(agreed)} more agreed, waiting for brand payment` : ""}</div></div>
-        <div className="panel kpi"><div className="k">Paid on time</div><div className="v">{timed.length ? Math.round((onTime / timed.length) * 100) + "%" : "—"}</div><div className="s">{avgDays != null ? "avg " + avgDays.toFixed(1) + " days after going live" : "after your first payout"}</div></div>
-        <div className="panel kpi"><div className="k">Products &amp; tickets</div><div className="v">{inr(rewards)}</div><div className="s">value received</div></div>
-      </div>
+        <Grid cols={2}>
+          <ChartCard title="Paid to you by month" period="Last 12 months" figure={inrShort(series.total)} figureTitle={inr(series.total)} featured
+            foot={series.total ? `${inrShort(series.months[11].total)} in ${series.months[11].label} so far. From the payout ledger, after TDS.` : "Your first payout shows here once a post is verified and paid."}>
+            <Bars months={series.months} label="Paid to you per month, after TDS" fmt={inr} />
+          </ChartCard>
+          <ChartCard title="Where your deals stand" period={`${nGroups} ${nGroups === 1 ? "deal" : "deals"}`} figure={nGroups}
+            foot={nGroups ? <a className="link" href="/creator/applications">See every deal →</a> : <a className="link" href="/creator">Find a brief that fits →</a>}>
+            {nGroups ? <Split label="Deals by payment stage" parts={groups} /> : <p className="hint" style={{ margin: 0 }}>No deals yet. Apply to a brief that fits you to start.</p>}
+          </ChartCard>
+        </Grid>
 
-      <div className="sec">
-        <div className="h2">Your track record</div>
-        <div className="grid4">
-          <div className="panel kpi"><div className="k">Views delivered</div><div className="v">{compact(views)}</div><div className="s">across Colatch campaigns</div></div>
-          <div className="panel kpi"><div className="k">Brand rating</div><div className="v">{rating.rating != null ? "★ " + rating.rating : "—"}</div><div className="s">{rating.n} brand {rating.n === 1 ? "review" : "reviews"}</div></div>
-          <div className="panel kpi"><div className="k">Rebooked by</div><div className="v">{rebooked}</div><div className="s">brands that came back</div></div>
-          <div className="panel kpi"><div className="k">Rate growth</div><div className="v">{growth != null ? (growth > 0 ? "+" : "") + growth + "%" : "—"}</div><div className="s">first deal vs latest · {proofs} verified {proofs === 1 ? "proof" : "proofs"}</div></div>
-        </div>
-        <p className="hint" style={{ margin: "10px 0 0" }}>Your record is verified by Colatch: brand-approved posts, real views and payouts. It shows on your <a className="link" href={`/m/${c.handle}`}>media kit</a>, and you can't get it from deals done off-platform.</p>
-      </div>
+        <Section id="record" title="Your track record" sub="Verified by Colatch: brand-approved posts, real views and payouts.">
+          <KpiStrip label="Track record" items={[
+            { label: "Views delivered", value: compact(views), foot: "across Colatch campaigns" },
+            { label: "Brand rating", value: rating.rating != null ? "★ " + rating.rating : "—", foot: `${rating.n} brand ${rating.n === 1 ? "review" : "reviews"}` },
+            { label: "Rebooked by", value: rebooked, foot: "brands that came back" },
+            { label: "Rate growth", value: growth != null ? (growth > 0 ? "+" : "") + growth + "%" : "—", foot: `first deal vs latest · ${proofs} verified ${proofs === 1 ? "proof" : "proofs"}` },
+          ]} />
+          <p className="hint" style={{ margin: "12px 0 0" }}>Your record shows on your <a className="link" href={`/m/${c.handle}`}>media kit</a>, and you can't get it from deals done off-platform.</p>
+        </Section>
 
-      <div className="sec panel pad" id="flex">
+      <div className="panel pad" id="flex">
         <div className="grid2 flexcard" style={{ alignItems: "center" }}>
           <div>
             <div className="row" style={{ gap: 10 }}><h2 style={{ margin: 0 }}>Your flex card</h2><TierBadge tier={sc.tier} size="sm" /></div>
@@ -116,31 +144,38 @@ export default async function Page() {
         </div>
       </div>
 
-      <div className="sec panel pad">
-        <h2>Refer and earn</h2>
-        <div className="grid2" style={{ alignItems: "start" }}>
-          <div>
-            <h3>Bring a brand → earn {brandTierFor(nb).pct}% of our fee for {REF.months} months</h3>
+      <Section id="refer" title="Refer and earn" sub={`Your code ${code}`}>
+        <Grid cols={2}>
+          <Card>
+            <h3 className="cr-h3">Bring a brand → earn {brandTierFor(nb).pct}% of our fee for {REF.months} months</h3>
             <div className="row" style={{ gap: 6, margin: "0 0 10px" }}>
               {[...BRAND_TIERS].reverse().map((t) => <span key={t.pct} className={`pill ${brandTierFor(nb).pct === t.pct ? "good" : ""}`}>{t.label}: {t.pct}%</span>)}
             </div>
             {brandTierFor(nb).pct < 15 && <p className="hint" style={{ margin: "0 0 8px" }}>{(nb < 5 ? 5 : 10) - nb} more {(nb < 5 ? 5 : 10) - nb === 1 ? "brand" : "brands"} and new earnings from every brand you've brought are at {nb < 5 ? 12 : 15}%.</p>}
             <p className="muted" style={{ margin: "0 0 12px" }}>You earn on each of their deals that gets paid, from Colatch's own fee, never from creators. Only brands new to Colatch count.</p>
             <a className="btn plum" href={waBrands} target="_blank" rel="noopener">Share with a brand on WhatsApp</a>
-          </div>
-          <div>
-            <h3>Bring a creator → ₹{REF.creatorBonus} after their first paid deal</h3>
+          </Card>
+          <Card>
+            <h3 className="cr-h3">Bring a creator → ₹{REF.creatorBonus} after their first paid deal</h3>
             <p className="muted" style={{ margin: "0 0 12px" }}>Paid once their first deal clears, so only real creators count.</p>
             <a className="btn plum" href={waCreators} target="_blank" rel="noopener">Share with a creator on WhatsApp</a>
-          </div>
+            <p className="small" style={{ margin: "16px 0 0" }}>Your code <code className="k" style={{ fontSize: 15 }}>{code}</code></p>
+            <p className="small" style={{ margin: "6px 0 0" }}>Invite link <code className="k" style={{ overflowWrap: "anywhere" }}>{origin}/c/{code}</code></p>
+          </Card>
+        </Grid>
+        <div style={{ marginTop: 16 }}>
+          <KpiStrip label="Referrals" items={[
+            { label: "People you brought", value: refs.length, foot: `${nb} ${nb === 1 ? "brand" : "brands"} · ${nc} ${nc === 1 ? "creator" : "creators"}` },
+            { label: "Referral earnings", value: inrShort(refTotal), title: inr(refTotal), foot: `${inr(refPaid)} paid out` },
+            { label: "Next payout", value: inrShort(refTotal - refPaid), title: inr(refTotal - refPaid), foot: "earned, not yet paid out by the team" },
+          ]} />
         </div>
-        <div className="row" style={{ marginTop: 18, gap: 8 }}><span>Your code <code className="k" style={{ fontSize: 15 }}>{code}</code></span><span>Invite link <code className="k" style={{ overflowWrap: "anywhere" }}>{origin}/c/{code}</code></span></div>
-        <div className="grid3" style={{ marginTop: 18 }}>
-          <div className="panel kpi" style={{ boxShadow: "none" }}><div className="k">People you brought</div><div className="v">{refs.length}</div><div className="s">{nb} {nb === 1 ? "brand" : "brands"} · {nc} {nc === 1 ? "creator" : "creators"}</div></div>
-          <div className="panel kpi" style={{ boxShadow: "none" }}><div className="k">Referral earnings</div><div className="v">{inr(refTotal)}</div><div className="s">{inr(refPaid)} paid out</div></div>
-          <div className="panel kpi" style={{ boxShadow: "none" }}><div className="k">Next payout</div><div className="v">{inr(refTotal - refPaid)}</div><div className="s">earned, not yet paid out by the team</div></div>
-        </div>
-        {earn.length > 0 && <table className="tbl" style={{ marginTop: 14 }}><tbody>{earn.map((e, i) => <tr key={i}><td>{reasonLabel[e.reason] || e.reason}</td><td>{String(e.created_at).slice(0, 10)}</td><td className="num">{inr(e.amount)}</td><td><span className={`pill ${e.status === "paid" ? "good" : e.status === "void" ? "low" : ""}`}>{({ pending: "Earned, payout pending", paid: "Paid out", void: "Cancelled" })[e.status] || e.status}</span></td></tr>)}</tbody></table>}
+        {earn.length > 0 && <div style={{ marginTop: 16 }}><DataTable caption="Referral earnings" rows={earn} rowKey={(e, i) => i} columns={[
+          { key: "reason", label: "For", render: (e) => <Cell title={reasonLabel[e.reason] || e.reason} sub={istDay(e.created_at)} /> },
+          { key: "status", label: "Status", primary: true, render: (e) => <span className={`pill ${e.status === "paid" ? "good" : e.status === "void" ? "low" : ""}`}>{({ pending: "Earned, payout pending", paid: "Paid out", void: "Cancelled" })[e.status] || e.status}</span> },
+          { key: "amount", label: "Amount", num: true, primary: true, render: (e) => <Figure value={inr(e.amount)} /> },
+        ]} /></div>}
+      </Section>
       </div>
     </PublicShell>
   );

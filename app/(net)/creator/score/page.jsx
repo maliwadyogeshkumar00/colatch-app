@@ -4,7 +4,9 @@ import PublicShell from "../../_ui/PublicShell";
 import { env } from "@/lib/net/env";
 import { currentCreator } from "@/lib/net/creatorAuth";
 import { colatchScore, TIERS, SCORE_RULE } from "@/lib/net/score";
-import { ScoreRing, TierBadge, TIER_STYLE } from "../../_ui/Score";
+import { TierBadge } from "../../_ui/Score";
+import { PageHeader, KpiStrip, ChartCard, Split, Grid, Section, Card, AsideCard } from "@/components/ui";
+import { ScoreRing, TierMark, TierBar, tierProgress } from "@/components/creator/Parts";
 
 export const metadata = { title: "Your Colatch Score", robots: { index: false } };
 
@@ -18,6 +20,7 @@ const CSS = `
 .pg-score .you{position:absolute;top:-10px;right:14px;background:var(--gold-foil);color:var(--purple-deep);font-size:10.5px;font-weight:700;padding:3px 9px;border-radius:999px;letter-spacing:.06em}
 .pg-score .meterbar{height:8px;border-radius:99px;background:var(--ivory-2);overflow:hidden;margin-top:8px}
 .pg-score .meterbar i{display:block;height:100%;border-radius:99px;background:var(--p500)}
+.pg-score .step .you{color:var(--p900)}
 .pg-score .part{padding:14px 0;border-bottom:1px solid var(--line-2)}
 .pg-score .part:last-child{border-bottom:0}
 .pg-score .part .h{display:flex;justify-content:space-between;gap:12px;font-size:14.5px}
@@ -37,30 +40,42 @@ export default async function Page() {
   const s = await colatchScore(env, c.id);
   const idx = TIERS.findIndex((t) => t.tier === s.tier);
 
+  const prog = tierProgress(s);
   const hero = (
-    <section className="hero"><div className="hero-in">
-      <div className="eb">Colatch Score</div>
-      <div className="row" style={{ gap: 26, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
-        <ScoreRing score={s.score} tier={s.tier} size={120} />
-        <div>
-          <h1 style={{ margin: 0 }}>You're <b>{s.tier}.</b></h1>
-          <p style={{ margin: "10px 0 0" }}>{s.next ? s.next.need : "That's the top. Brands see you first, you're paid fastest and every new brief reaches you a day early."}</p>
-        </div>
-      </div>
-    </div></section>
+    <PageHeader variant="hero" eyebrow="Colatch Score" title={`You're <b>${s.tier}.</b>`}
+      sub={s.next ? s.next.need : "That's the top. Brands see you first, you're paid fastest and every new brief reaches you a day early."}
+      meta={<div className="cr-fig cr-dark cr-scorehero"><ScoreRing score={s.score} size={132} /><div style={{ minWidth: 0 }}><p className="cr-fig__l">Your tier</p><div style={{ marginTop: 8 }}><TierMark tier={s.tier} /></div><p className="cr-fig__n">{prog.nxt ? <><b>{prog.gap}</b> {prog.gap === 1 ? "point" : "points"} to {prog.nxt.tier}</> : "Top tier"}</p></div></div>} />
   );
 
   return (
     <PublicShell creatorName={c.name || c.handle} path="/creator/score" hero={hero}>
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
-      <div className="pg-score">
-        <div className="rule">
-          <span style={{ fontSize: 22, lineHeight: 1 }} aria-hidden="true">♛</span>
-          <div><b>{SCORE_RULE}</b><div style={{ marginTop: 6, fontSize: 14, color: "rgba(244,239,227,.78)" }}>Your score is built from things Colatch has checked: posts we verified live, brands signing off your work, their star ratings and how often you go live on time. Nobody can buy it, and it goes up every time you deliver.</div></div>
-        </div>
+      <div className="pg-score cr-page">
+        <KpiStrip label="Your Colatch record" items={[
+          { label: "Posts delivered", value: s.stats.delivered, foot: "verified live by Colatch" },
+          { label: "Brand rating", value: s.stats.rating != null ? `★ ${s.stats.rating}` : "–", foot: `${s.stats.ratings} ${s.stats.ratings === 1 ? "review" : "reviews"}` },
+          { label: "On time", value: s.stats.timed ? `${s.stats.onTime}/${s.stats.timed}` : "–", foot: "posts live by the agreed date" },
+          { label: "Brand sign-offs", value: s.stats.signoffs, foot: "brands that approved your work" },
+        ]} />
 
-        <div className="sec">
-          <div className="h2">The four tiers</div>
+        <Grid cols={2}>
+          <ChartCard title="Points by source" period="Out of 100" figure={s.score} foot="Every part is checked by Colatch. Nobody can buy it.">
+            {s.score > 0 ? <Split label="Colatch Score points by source" parts={s.parts.map((p) => ({ label: p.label, n: p.points }))} /> : <p className="hint" style={{ margin: 0 }}>No points yet. Your first verified live post adds points here.</p>}
+          </ChartCard>
+          <ChartCard title={prog.nxt ? `Progress to ${prog.nxt.tier}` : "Top tier reached"} period={`${prog.cur.tier} tier`} figure={prog.nxt ? `${prog.pct}%` : "100%"}
+            foot={prog.nxt ? `${prog.gap} ${prog.gap === 1 ? "point" : "points"} more and you unlock: ${prog.nxt.perk}` : "Icon creators see every new brief 24 hours early."}>
+            <TierBar s={s} />
+          </ChartCard>
+        </Grid>
+
+        <Card tone="night" pad="lg">
+          <div className="row" style={{ gap: 14, alignItems: "flex-start", flexWrap: "nowrap" }}>
+            <span style={{ fontSize: 22, lineHeight: 1, color: "var(--gold-2)" }} aria-hidden="true">♛</span>
+            <div><b>{SCORE_RULE}</b><div style={{ marginTop: 6, fontSize: 14, color: "var(--ui-on-night-2)" }}>Your score is built from things Colatch has checked: posts we verified live, brands signing off your work, their star ratings and how often you go live on time. Nobody can buy it, and it goes up every time you deliver.</div></div>
+          </div>
+        </Card>
+
+        <Section id="tiers" title="The four tiers" sub={`You're ${s.tier}${prog.nxt ? `; ${prog.nxt.tier} starts at ${prog.nxt.min} points` : ""}.`}>
           <div className="ladder">
             {TIERS.map((t, i) => (
               <div key={t.tier} className={`step${i === idx ? " on" : ""}${i < idx ? " done" : ""}`}>
@@ -71,39 +86,28 @@ export default async function Page() {
               </div>
             ))}
           </div>
-        </div>
+        </Section>
 
-        <div className="sec grid2">
-          <div className="panel pad">
-            <h2>Where your {s.score} points come from</h2>
-            {s.parts.map((p) => (
-              <div key={p.label} className="part">
-                <div className="h"><b>{p.label}</b><span className="muted">{p.points} / {p.max}</span></div>
-                <div className="meterbar"><i style={{ width: `${p.max ? Math.round((p.points / p.max) * 100) : 0}%` }} /></div>
-                <div className="pts-how">{p.how}</div>
-              </div>
-            ))}
-          </div>
-          <div className="stack">
-            <div className="panel pad">
-              <h2>Your perks right now</h2>
-              <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>{s.perks.map((p) => <li key={p}>{p}</li>)}</ul>
-            </div>
-            <div className="panel pad">
-              <h2>Your Colatch record</h2>
-              <div className="grid2" style={{ gap: 12 }}>
-                <div className="kpi" style={{ padding: 0 }}><div className="k">Posts delivered</div><div className="v">{s.stats.delivered}</div></div>
-                <div className="kpi" style={{ padding: 0 }}><div className="k">Brand rating</div><div className="v">{s.stats.rating != null ? `★ ${s.stats.rating}` : "–"}</div><div className="s">{s.stats.ratings} {s.stats.ratings === 1 ? "review" : "reviews"}</div></div>
-                <div className="kpi" style={{ padding: 0 }}><div className="k">On time</div><div className="v">{s.stats.timed ? `${s.stats.onTime}/${s.stats.timed}` : "–"}</div></div>
-                <div className="kpi" style={{ padding: 0 }}><div className="k">Brand sign-offs</div><div className="v">{s.stats.signoffs}</div></div>
-              </div>
-            </div>
-            <div className="panel pad" style={{ background: TIER_STYLE[s.tier]?.bg?.startsWith("linear") ? "var(--paper)" : "var(--paper)" }}>
-              <h2>Show it off</h2>
-              <p style={{ margin: 0, color: "var(--ink-2)" }}>Your tier is on your <a className="link" href={`/m/${c.handle}`}>media kit</a> and your <a className="link" href="/creator/earnings#flex">flex card</a>. Post the card on your story: every creator who joins with your code and finishes a paid deal earns you ₹500.</p>
-            </div>
-          </div>
-        </div>
+        <Grid aside={<>
+          <AsideCard eyebrow="Unlocked" title="Your perks right now">
+            <ul style={{ margin: 0, paddingLeft: 18, lineHeight: 1.7 }}>{s.perks.map((p) => <li key={p}>{p}</li>)}</ul>
+          </AsideCard>
+          <AsideCard eyebrow="Share" title="Show it off">
+            <p style={{ margin: 0, color: "var(--ink-2)" }}>Your tier is on your <a className="link" href={`/m/${c.handle}`}>media kit</a> and your <a className="link" href="/creator/earnings#flex">flex card</a>. Post the card on your story: every creator who joins with your code and finishes a paid deal earns you ₹500.</p>
+          </AsideCard>
+        </>}>
+          <Section id="parts" title={`Where your ${s.score} points come from`} sub="What each part counts and how to raise it.">
+            <Card>
+              {s.parts.map((p) => (
+                <div key={p.label} className="part">
+                  <div className="h"><b>{p.label}</b><span className="muted">{p.points} / {p.max}</span></div>
+                  <div className="meterbar"><i style={{ width: `${p.max ? Math.round((p.points / p.max) * 100) : 0}%` }} /></div>
+                  <div className="pts-how">{p.how}</div>
+                </div>
+              ))}
+            </Card>
+          </Section>
+        </Grid>
       </div>
     </PublicShell>
   );

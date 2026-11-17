@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import PublicShell from "../../_ui/PublicShell";
+import { SplitAuth } from "@/components/ui";
+import { ACCOUNT_PANEL } from "@/components/brand/AuthPanels";
 import Flash, { flashUrl } from "../../_ui/flash";
 import { env } from "@/lib/net/env";
 import { createResetToken, isEmail, RESET_HOURS, audit } from "@/lib/net/security";
@@ -41,17 +43,15 @@ async function request(fd) {
 
 export default function Page({ searchParams }) {
   return (
-    <PublicShell path="/reset/request">
-      <div className="wrap narrow" style={{ maxWidth: 440, padding: "20px 0 0" }}>
+    <PublicShell path="/reset/request" flush>
+      <SplitAuth panel={ACCOUNT_PANEL} intro={{ eyebrow: "Account help", title: "Reset your <b>password</b>.", sub: "For creator and brand accounts. Colatch team members: ask an owner or admin for a reset link." }}>
         <form className="panel pad" action={request}>
-          <h2>Reset your password</h2>
-          <p className="muted" style={{ margin: "-4px 0 18px" }}>For creator and brand accounts. Colatch team members: ask an owner or admin for a reset link.</p>
           <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
           <div className="fld"><label htmlFor="f-reset-request-email-1">Email</label><input id="f-reset-request-email-1" name="email" type="email" required autoComplete="email" /></div>
           <button className="btn-foil" style={{ marginTop: 20, width: "100%", justifyContent: "center" }}>Send reset link</button>
           <p className="hint" style={{ margin: "16px 0 0" }}>Back to <a className="link" href="/creator/login">creator log in</a> · <a className="link" href="/brand/login">brand log in</a></p>
         </form>
-      </div>
+      </SplitAuth>
     </PublicShell>
   );
 }

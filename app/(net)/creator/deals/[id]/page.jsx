@@ -2,6 +2,9 @@ import { notFound, redirect } from "next/navigation";
 import { headers } from "next/headers";
 import PublicShell from "../../../_ui/PublicShell";
 import DealRail from "../../../_ui/DealRail";
+import { PageHeader, KpiStrip, Grid, Section } from "@/components/ui";
+import { inrShort } from "@/lib/net/dashboard";
+import { istDay, istShort } from "@/components/creator/Parts";
 import { env } from "@/lib/net/env";
 import { currentCreator } from "@/lib/net/creatorAuth";
 import { inr, str } from "@/lib/net/creators";
@@ -184,90 +187,30 @@ export default async function Page({ params, searchParams }) {
   if (thread.length) await markRead(d.id, reader).catch(() => {});
   const shipments = await listShipments(d.id).catch(() => []);
 
+  const fmtFee = d.fee ? inrShort(d.fee) : "Product";
+  const payByT = d.live_at ? Date.parse(String(d.live_at).replace(" ", "T") + "Z") + payDays * 864e5 : null;
+  const dueDay = payByT ? istShort(new Date(payByT)) : d.go_live_date ? istShort(d.go_live_date) || d.go_live_date : null;
+  const dueYear = payByT ? istDay(new Date(payByT)) : d.go_live_date ? istDay(d.go_live_date) : null;
   return (
     <PublicShell creatorName={me.creator.name || me.creator.handle} path="/creator/applications">
-      <div className="spread" style={{ marginBottom: 16 }}>
-        <div><div className="lbl">{PAY_LABEL[k?.pay_type || "cash"]}</div><h1 style={{ margin: "6px 0 0", fontWeight: 300, fontSize: 30, color: "var(--head)" }}>{d.sow_accepted_at ? d.brand || "Brand" : "Brand revealed after you accept"} · <b style={{ fontWeight: 600 }}>{d.deliverable || "Deliverables"}</b></h1></div>
-        {k?.slug && <a className="btn" href={`/creator/o/${k.slug}`}>See the brief</a>}
-      </div>
-      {flash && <div className={`note ${tone}`} style={{ marginBottom: 16 }}>{flash}</div>}
-      <DealRail d={d} side="creator" />
+      <div className="cr-page">
+        <PageHeader crumbs={[{ label: "My deals", href: "/creator/applications" }, d.deliverable || "Deal"]} eyebrow={PAY_LABEL[k?.pay_type || "cash"]}
+          title={<>{d.sow_accepted_at ? d.brand || "Brand" : "Brand revealed after you accept"} · <b>{d.deliverable || "Deliverables"}</b></>}
+          actions={k?.slug ? <a className="btn sm" href={`/creator/o/${k.slug}`}>See the brief</a> : null} />
+        {flash && <div className={`note ${tone}`}>{flash}</div>}
+        <DealRail d={d} side="creator" />
+        <KpiStrip label="Deal money and dates" items={[
+          { label: "Your fee", value: fmtFee, title: d.fee ? inr(d.fee) : undefined, foot: d.fee ? `Paid within ${payDays} days of going live` : "No cash fee on this deal" },
+          { label: "Take-home (estimate)", value: th ? inrShort(th.net) : "—", title: th ? inr(th.net) : undefined, foot: th ? (th.tds ? `After ${inr(th.tds)} TDS you can claim back` : "No TDS expected") : "Shows once a fee is set" },
+          { label: payBy ? "Payment due" : "Go-live", value: dueDay || "Not set", title: dueYear || undefined, foot: payBy ? (d.pay_status === "paid" ? `${dueYear} · paid` : `${dueYear} · from your verified post`) : dueYear ? `${dueYear} · agreed with the team` : "Agreed with the Colatch team" },
+          { label: "Revisions left", value: `${revLeft} of ${d.revisions_included}`, foot: "More only with your OK and a fee" },
+        ]} />
 
-      <div className="grid2 sec" style={{ alignItems: "start", marginTop: 18 }}>
-        <div className="stack">
-          {closed && <div className="panel pad"><h2>This deal was cancelled</h2><p style={{ margin: 0 }}>Nothing more to do here. If you had already started work, message the Colatch team.</p></div>}
-          {!closed && !d.sow_accepted_at && (
-            <form className="panel pad" action={accept}>
-              {hid}
-              <h2>Statement of work</h2>
-              <table className="tbl"><tbody>
-                <tr><td>Deliverables</td><td><b>{d.deliverable || "As in the brief"}</b></td></tr>
-                <tr><td>Fee</td><td><b>{d.fee ? inr(d.fee) : "Product only"}</b>{d.fee ? ` · paid within ${payDays} days of going live` : ""}</td></tr>
-                <tr><td>Revisions</td><td>{d.revisions_included} rounds included; more only with your OK and an extra fee</td></tr>
-                <tr><td>Usage</td><td>{k?.usage_rights || "Organic posting only"}</td></tr>
-                <tr><td>Keep live</td><td>At least 30 days</td></tr>
-                <tr><td>Go-live</td><td>{d.go_live_date || "Agreed with the team"}</td></tr>
-                <tr><td>If the brand cancels</td><td>Talk to the Colatch team. The brand's payment stays with Colatch until it is settled.</td></tr>
-              </tbody></table>
-              <label className="row" style={{ marginTop: 16, gap: 10, flexWrap: "nowrap", fontSize: 13.5, alignItems: "flex-start" }}><input type="checkbox" name="agree" value="1" style={{ marginTop: 3 }} /><span>I accept these terms and will follow ASCI disclosure rules.</span></label>
-              <button className="btn-foil" style={{ marginTop: 16 }}>Accept terms</button>
-            </form>
-          )}
-
-          {!closed && d.sow_accepted_at && d.pay_status === "unfunded" && <div className="panel pad"><h2>Waiting for the brand's payment</h2><p style={{ margin: 0 }}>Don't start yet. Once the brand's money is with Colatch, the "Brand funded" step ticks and you can send your draft.</p></div>}
-          {!closed && d.sow_accepted_at && d.pay_status !== "unfunded" && ["none", "changes"].includes(d.draft_status) && (
-            <form className="panel pad" action={sendDraft}>
-              {hid}
-              <div className="spread"><h2 style={{ margin: 0 }}>{d.draft_status === "changes" ? "Send the revised draft" : "Send your draft"}</h2><span className={`pill ${revLeft ? "good" : "ok"}`}>{revLeft} of {d.revisions_included} revisions left</span></div>
-              {feedback && d.draft_status === "changes" && <div className="note info" style={{ marginTop: 12, whiteSpace: "pre-line" }}><b>Brand feedback:</b> {feedback.note}</div>}
-              <div className="fld" style={{ marginTop: 14 }}><label htmlFor="f-creator-deals-id-draft-url-1">Draft link</label><input id="f-creator-deals-id-draft-url-1" name="draft_url" type="url" required pattern="https://.*" placeholder="https:// Google Drive / Dropbox / WeTransfer link" defaultValue={d.draft_url ?? ""} /></div>
-              {must.length > 0 && <div className="fld" style={{ marginTop: 14 }}><label>Brief checklist</label>{must.map((m, i) => <label key={i} className="row" style={{ gap: 10, flexWrap: "nowrap", marginTop: 6, fontSize: 14 }}><input type="checkbox" name={`m${i}`} value="1" defaultChecked={Boolean(ticks[String(i)])} /><span>{m}</span></label>)}</div>}
-              {avoid.length > 0 && <div className="note bad" style={{ marginTop: 12 }}><b>Don't:</b> {avoid.join(" · ")}</div>}
-              <label className="row" style={{ marginTop: 14, gap: 10, flexWrap: "nowrap", fontSize: 13.5, alignItems: "flex-start" }}><input type="checkbox" name="disclosure" value="1" style={{ marginTop: 3 }} /><span>{DISCLOSURE_LINE}</span></label>
-              <div className="fld" style={{ marginTop: 14 }}><label htmlFor="f-creator-deals-id-note-2">Note to the brand <span className="opt">— optional</span></label><input id="f-creator-deals-id-note-2" name="note" /></div>
-              <button className="btn-foil" style={{ marginTop: 16 }}>Send draft</button>
-            </form>
-          )}
-
-          {d.draft_status === "submitted" && <div className="panel pad"><h2>Draft in review</h2><p style={{ margin: 0 }}>{d.auto_approve_at
-            ? <>The brand has until <b>{new Date(d.auto_approve_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })}</b> to reply ({countdown(d.auto_approve_at)} left). If they don't, your draft is approved automatically.</>
-            : <>The brand is reviewing your draft. We'll tell you as soon as they approve it or ask for changes.</>}</p></div>}
-
-          {!closed && d.draft_status === "approved" && !d.live_at && d.post_url && <div className="note info">You shared {safeUrl(d.post_url) ? <a className="link" href={safeUrl(d.post_url)} target="_blank" rel="noopener noreferrer">your live post</a> : "your live post"}. The team is checking it. You can update the link below if it changed.</div>}
-          {!closed && d.draft_status === "approved" && !d.live_at && (
-            <form className="panel pad" action={postLive}>
-              {hid}
-              <h2>Post it and share the link</h2>
-              <p className="muted" style={{ margin: "0 0 12px" }}>Your payment clock starts when we verify the live post{d.fee ? `: paid within ${payDays} days` : ""}.</p>
-              {d.track_code && <div className="note info" style={{ marginBottom: 12 }}>Use code <b>{d.track_code}</b> in your caption or story, and the link <code className="k">{origin}/go/{d.track_code}</code>. That's how the brand sees the sales you drive.</div>}
-              <div className="fld"><label htmlFor="f-creator-deals-id-post-url-3">Live post link</label><input id="f-creator-deals-id-post-url-3" name="post_url" type="url" required pattern="https://.*" placeholder="https://www.instagram.com/reel/…" defaultValue={d.post_url ?? ""} /></div>
-              <button className="btn-foil" style={{ marginTop: 14 }}>Submit live link</button>
-            </form>
-          )}
-
-          {d.live_at && <div className="panel pad"><h2>Payment</h2>
-            {d.pay_status === "paid" ? <div className="note good">Paid on {String(d.paid_at ?? "").slice(0, 10)} · bank reference (UTR) <b>{d.utr}</b>{d.tds_amount ? ` · TDS ${inr(d.tds_amount)} (shows in your Form 26AS)` : ""}</div>
-              : <p style={{ margin: 0 }}>Your post went live on {String(d.live_at).slice(0, 10)}. Payment due by <b>{payBy}</b>. {d.pay_status === "released" ? "Your payout is approved; you'll see the bank reference here once it's sent." : ""}</p>}
-            {d.brand_signoff_at && <div className="note good" style={{ marginTop: 12 }}>The brand signed off your work{d.proof_public ? <>. <a className="link" href={`/proof/${d.id}`} target="_blank">Your verified proof ↗</a> is on your media kit.</> : "."}</div>}
-            {!myRating ? (
-              <form action={rate} className="row" style={{ marginTop: 12 }}>
-                {hid}
-                <span className="small">Rate this brand (anonymous):</span>
-                <select className="in" name="stars" style={{ width: "auto" }}>{[5, 4, 3, 2, 1].map((n) => <option key={n} value={n}>{"★".repeat(n)}</option>)}</select>
-                <input className="in" name="note" style={{ flex: 1, minWidth: 160 }} placeholder="Paid on time? Clear brief?" />
-                <button className="btn sm">Rate</button>
-              </form>
-            ) : <p className="hint" style={{ margin: "10px 0 0" }}>You rated this brand {"★".repeat(myRating.stars)}.</p>}
-            {!me.creator.upi_id && <p className="hint" style={{ margin: "10px 0 0" }}>Add your UPI ID in <a className="link" href="/creator/profile#payout">your payout details</a> so we can pay you.</p>}
-          </div>}
-
+        <Grid aside={<>
           <div className="panel pad dr-panel">
             <DealThread id="messages" messages={thread} me="creator" unread={unread} action={sendMessage} canPost={!closed} hidden={[["id", d.id]]} mid={crypto.randomUUID()}
               names={{ brand: d.sow_accepted_at ? d.brand || "Brand" : "Brand" }} readOnlyNote="This deal is closed, so messages are off." />
           </div>
-        </div>
-
-        <div className="stack">
           {(shipments.length > 0 || d.usage_channels) && <div className="panel pad dr-panel">
             <ShipmentStatus shipments={shipments} showCarrier title={shipments.length === 1 ? "Product shipment" : "Product shipments"} />
             {d.usage_channels && <><h2 style={{ marginTop: shipments.length ? 18 : 0 }}>Usage rights</h2><UsageLine d={d} /></>}
@@ -283,9 +226,9 @@ export default async function Page({ params, searchParams }) {
           </div>}
           <div className="panel pad">
             <h2>Timeline</h2>
-            {events.length ? events.map((e) => <div key={e.id} style={{ padding: "8px 0", borderTop: "1px solid var(--line-2)" }}><div className="spread"><b className="small">{kindLabel[e.kind] || e.kind}</b><span className="hint">{String(e.created_at).slice(5, 16)}</span></div>{e.note && e.kind !== "paid" && <div className="small muted" style={{ whiteSpace: "pre-line", marginTop: 2 }}>{e.note}</div>}</div>) : <p className="hint">Nothing yet.</p>}
+            {events.length ? events.map((e) => <div key={e.id} style={{ padding: "8px 0", borderTop: "1px solid var(--line-2)" }}><div className="spread"><b className="small">{kindLabel[e.kind] || e.kind}</b><span className="hint">{istDay(e.created_at)}</span></div>{e.note && e.kind !== "paid" && <div className="small muted" style={{ whiteSpace: "pre-line", marginTop: 2 }}>{e.note}</div>}</div>) : <p className="hint">Nothing yet.</p>}
           </div>
-          <div className="panel pad" style={{ borderStyle: "dashed", borderColor: "rgba(155,59,59,.35)" }}>
+          <div className="panel pad" style={{ borderStyle: "dashed", borderColor: "var(--line-3)" }}>
             <h2>What you'd lose going direct</h2>
             {goingDirectLosses({ funded: d.pay_status !== "unfunded", fee: d.fee, payDays }).map((x) => <div key={x.title} className="small" style={{ padding: "5px 0", color: "var(--ink-2)" }}><b>{x.title}.</b> {x.line}</div>)}
           </div>
@@ -319,7 +262,78 @@ export default async function Page({ params, searchParams }) {
             </details>
           )}
           <p className="hint">Questions about this deal? WhatsApp the Colatch team from the number in your welcome message. Colatch never asks you to pay anything.</p>
-        </div>
+        </>}>
+          <Section id="next" title={closed ? "Deal closed" : "Your next step"} sub={closed ? null : "Everything you need to do on this deal happens here."}>
+            <div className="stack">
+          {closed && <div className="panel pad"><h2>This deal was cancelled</h2><p style={{ margin: 0 }}>Nothing more to do here. If you had already started work, message the Colatch team.</p></div>}
+          {!closed && !d.sow_accepted_at && (
+            <form className="panel pad" action={accept}>
+              {hid}
+              <h2>Statement of work</h2>
+              <table className="tbl"><tbody>
+                <tr><td>Deliverables</td><td><b>{d.deliverable || "As in the brief"}</b></td></tr>
+                <tr><td>Fee</td><td><b>{d.fee ? inr(d.fee) : "Product only"}</b>{d.fee ? ` · paid within ${payDays} days of going live` : ""}</td></tr>
+                <tr><td>Revisions</td><td>{d.revisions_included} rounds included; more only with your OK and an extra fee</td></tr>
+                <tr><td>Usage</td><td>{k?.usage_rights || "Organic posting only"}</td></tr>
+                <tr><td>Keep live</td><td>At least 30 days</td></tr>
+                <tr><td>Go-live</td><td>{d.go_live_date || "Agreed with the team"}</td></tr>
+                <tr><td>If the brand cancels</td><td>Talk to the Colatch team. The brand's payment stays with Colatch until it is settled.</td></tr>
+              </tbody></table>
+              <label className="row" style={{ marginTop: 16, gap: 10, flexWrap: "nowrap", fontSize: 13.5, alignItems: "flex-start" }}><input type="checkbox" name="agree" value="1" style={{ marginTop: 3 }} /><span>I accept these terms and will follow ASCI disclosure rules.</span></label>
+              <button className="btn-foil" style={{ marginTop: 16 }}>Accept terms</button>
+            </form>
+          )}
+
+          {!closed && d.sow_accepted_at && d.pay_status === "unfunded" && <div className="panel pad"><h2>Waiting for the brand's payment</h2><p style={{ margin: 0 }}>Don't start yet. Once the brand's money is with Colatch, the "Brand funded" step ticks and you can send your draft.</p></div>}
+          {!closed && d.sow_accepted_at && d.pay_status !== "unfunded" && ["none", "changes"].includes(d.draft_status) && (
+            <form className="panel pad" action={sendDraft}>
+              {hid}
+              <div className="spread"><h2 style={{ margin: 0 }}>{d.draft_status === "changes" ? "Send the revised draft" : "Send your draft"}</h2><span className={`pill ${revLeft ? "good" : "ok"}`}>{revLeft} of {d.revisions_included} revisions left</span></div>
+              {feedback && d.draft_status === "changes" && <div className="note info" style={{ marginTop: 12, whiteSpace: "pre-line" }}><b>Brand feedback:</b> {feedback.note}</div>}
+              <div className="fld" style={{ marginTop: 14 }}><label htmlFor="f-creator-deals-id-draft-url-1">Draft link</label><input id="f-creator-deals-id-draft-url-1" name="draft_url" type="url" required pattern="https://.*" placeholder="https:// Google Drive / Dropbox / WeTransfer link" defaultValue={d.draft_url ?? ""} /></div>
+              {must.length > 0 && <div className="fld" style={{ marginTop: 14 }}><label>Brief checklist</label>{must.map((m, i) => <label key={i} className="row" style={{ gap: 10, flexWrap: "nowrap", marginTop: 6, fontSize: 14 }}><input type="checkbox" name={`m${i}`} value="1" defaultChecked={Boolean(ticks[String(i)])} /><span>{m}</span></label>)}</div>}
+              {avoid.length > 0 && <div className="note info" style={{ marginTop: 12 }}><b>Don't:</b> {avoid.join(" · ")}</div>}
+              <label className="row" style={{ marginTop: 14, gap: 10, flexWrap: "nowrap", fontSize: 13.5, alignItems: "flex-start" }}><input type="checkbox" name="disclosure" value="1" style={{ marginTop: 3 }} /><span>{DISCLOSURE_LINE}</span></label>
+              <div className="fld" style={{ marginTop: 14 }}><label htmlFor="f-creator-deals-id-note-2">Note to the brand <span className="opt">— optional</span></label><input id="f-creator-deals-id-note-2" name="note" /></div>
+              <button className="btn-foil" style={{ marginTop: 16 }}>Send draft</button>
+            </form>
+          )}
+
+          {d.draft_status === "submitted" && <div className="panel pad"><h2>Draft in review</h2><p style={{ margin: 0 }}>{d.auto_approve_at
+            ? <>The brand has until <b>{new Date(d.auto_approve_at).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" })}</b> to reply ({countdown(d.auto_approve_at)} left). If they don't, your draft is approved automatically.</>
+            : <>The brand is reviewing your draft. We'll tell you as soon as they approve it or ask for changes.</>}</p></div>}
+
+          {!closed && d.draft_status === "approved" && !d.live_at && d.post_url && <div className="note info">You shared {safeUrl(d.post_url) ? <a className="link" href={safeUrl(d.post_url)} target="_blank" rel="noopener noreferrer">your live post</a> : "your live post"}. The team is checking it. You can update the link below if it changed.</div>}
+          {!closed && d.draft_status === "approved" && !d.live_at && (
+            <form className="panel pad" action={postLive}>
+              {hid}
+              <h2>Post it and share the link</h2>
+              <p className="muted" style={{ margin: "0 0 12px" }}>Your payment clock starts when we verify the live post{d.fee ? `: paid within ${payDays} days` : ""}.</p>
+              {d.track_code && <div className="note info" style={{ marginBottom: 12 }}>Use code <b>{d.track_code}</b> in your caption or story, and the link <code className="k">{origin}/go/{d.track_code}</code>. That's how the brand sees the sales you drive.</div>}
+              <div className="fld"><label htmlFor="f-creator-deals-id-post-url-3">Live post link</label><input id="f-creator-deals-id-post-url-3" name="post_url" type="url" required pattern="https://.*" placeholder="https://www.instagram.com/reel/…" defaultValue={d.post_url ?? ""} /></div>
+              <button className="btn-foil" style={{ marginTop: 14 }}>Submit live link</button>
+            </form>
+          )}
+
+          {d.live_at && <div className="panel pad"><h2>Payment</h2>
+            {d.pay_status === "paid" ? <div className="note good">Paid on {istDay(d.paid_at) || "—"} · bank reference (UTR) <b>{d.utr}</b>{d.tds_amount ? ` · TDS ${inr(d.tds_amount)} (shows in your Form 26AS)` : ""}</div>
+              : <p style={{ margin: 0 }}>Your post went live on {istDay(d.live_at)}. Payment due by <b>{payBy}</b>. {d.pay_status === "released" ? "Your payout is approved; you'll see the bank reference here once it's sent." : ""}</p>}
+            {d.brand_signoff_at && <div className="note good" style={{ marginTop: 12 }}>The brand signed off your work{d.proof_public ? <>. <a className="link" href={`/proof/${d.id}`} target="_blank">Your verified proof ↗</a> is on your media kit.</> : "."}</div>}
+            {!myRating ? (
+              <form action={rate} className="row" style={{ marginTop: 12 }}>
+                {hid}
+                <span className="small">Rate this brand (anonymous):</span>
+                <select className="in" name="stars" style={{ width: "auto" }}>{[5, 4, 3, 2, 1].map((n) => <option key={n} value={n}>{"★".repeat(n)}</option>)}</select>
+                <input className="in" name="note" style={{ flex: 1, minWidth: 160 }} placeholder="Paid on time? Clear brief?" />
+                <button className="btn sm">Rate</button>
+              </form>
+            ) : <p className="hint" style={{ margin: "10px 0 0" }}>You rated this brand {"★".repeat(myRating.stars)}.</p>}
+            {!me.creator.upi_id && <p className="hint" style={{ margin: "10px 0 0" }}>Add your UPI ID in <a className="link" href="/creator/profile#payout">your payout details</a> so we can pay you.</p>}
+          </div>}
+
+            </div>
+          </Section>
+        </Grid>
       </div>
     </PublicShell>
   );

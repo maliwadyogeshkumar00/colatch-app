@@ -6,6 +6,8 @@ import { revokeSessions } from "@/lib/net/creatorAuth";
 import { audit, can } from "@/lib/net/security";
 import { requireTeam } from "../_guard";
 import { linkCampaignsByEmail } from "../../brand/_lib";
+import { day } from "@/components/team/labels";
+import { PageHeader, KpiStrip, FilterBar, FilterChips, DataTable, Grid, Section, AsideCard, Pill, Split, Cell } from "@/components/ui";
 
 export const metadata = { title: "Brand accounts", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -65,35 +67,73 @@ export default async function Page({ searchParams }) {
             u.email AS verifier, (SELECT COUNT(*) FROM campaigns k WHERE k.brand_account_id=b.id) AS campaigns
      FROM brand_accounts b LEFT JOIN team_users u ON u.id=b.verified_by ORDER BY b.created_at DESC LIMIT 500`
   ).all()).results ?? [];
-  const day = (t) => t ? new Date(t).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" }) : null;
-  return (
-    <TeamShell active="brands" title="Brand <b>accounts</b>" email={me.email} role={me.role}>
-      <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
-      <p className="muted" style={{ margin: "0 0 14px", maxWidth: 720 }}>Brands who created an account. Earlier briefs are linked only after the brand confirms its email. Mark a brand verified once you've checked it's a real business (website, GSTIN, a call): its campaigns then show the verified mark to creators.</p>
-      {!canAct && <div className="note info" style={{ marginBottom: 14 }}>You can view brand accounts. Verifying or disabling needs the team permission.</div>}
-      <div className="panel scroll-x">
-        {rows.length === 0 ? <p className="pad hint">No brand accounts yet.</p> : (
-          <table className="tbl">
-            <thead><tr><th scope="col">Brand</th><th scope="col">Email</th><th scope="col">Campaigns</th><th scope="col">Status</th>{canAct && <th scope="col"><span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>Actions</span></th>}</tr></thead>
-            <tbody>{rows.map((b) => (
-              <tr key={b.id}>
-                <td><b>{b.company || "—"}</b><div className="hint">{b.name || ""}{b.phone ? ` · ${b.phone}` : ""}{b.gstin ? ` · GSTIN ${b.gstin}` : ""}</div>{b.website && <div className="hint"><a className="link" href={b.website} target="_blank" rel="noopener noreferrer nofollow">{b.website}</a></div>}</td>
-                <td>{b.email}<div className="hint">{b.email_verified_at ? `Confirmed ${day(b.email_verified_at)}` : "Email not confirmed"}</div></td>
-                <td className="num">{Number(b.campaigns || 0)}</td>
-                <td>
-                  {b.disabled_at ? <span className="pill low">Disabled</span> : b.verified_by ? <span className="pill good">Verified</span> : <span className="pill ok">Not verified</span>}
-                  <div className="hint">{b.verified_by ? `by ${b.verifier || b.verified_by}` : `Joined ${day(b.created_at)}`}{b.last_login_at ? ` · last login ${day(b.last_login_at)}` : ""}</div>
-                </td>
-                {canAct && <td className="num"><div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
-                  {!b.email_verified_at && <form action={confirmEmail}><input type="hidden" name="id" value={b.id} /><button className="btn sm" aria-label={`Confirm email for ${b.email}`}>Confirm email</button></form>}
-                  {!b.verified_by && b.email_verified_at && !b.disabled_at && <form action={markVerified}><input type="hidden" name="id" value={b.id} /><button className="btn sm" aria-label={`Mark ${b.company || b.email} verified`}>Mark brand verified</button></form>}
-                  <form action={setDisabled}><input type="hidden" name="id" value={b.id} /><input type="hidden" name="disable" value={b.disabled_at ? "0" : "1"} /><button className="btn sm" aria-label={`${b.disabled_at ? "Enable" : "Disable"} ${b.email}`}>{b.disabled_at ? "Enable" : "Disable"}</button></form>
-                </div></td>}
-              </tr>
-            ))}</tbody>
-          </table>
-        )}
+  // Everything below is worked out from the rows already loaded: no extra queries.
+  const tab = ["all", "waiting", "verified", "disabled"].includes(searchParams?.tab) ? searchParams.tab : "all";
+  const isVerified = (b) => !b.disabled_at && b.verified_by;
+  const isWaiting = (b) => !b.disabled_at && !b.verified_by;
+  const n = { all: rows.length, waiting: rows.filter(isWaiting).length, verified: rows.filter(isVerified).length, disabled: rows.filter((b) => b.disabled_at).length };
+  const unconfirmed = rows.filter((b) => !b.email_verified_at && !b.disabled_at).length;
+  const linked = rows.reduce((t, b) => t + Number(b.campaigns || 0), 0);
+  const shown = tab === "waiting" ? rows.filter(isWaiting) : tab === "verified" ? rows.filter(isVerified) : tab === "disabled" ? rows.filter((b) => b.disabled_at) : rows;
+  const columns = [
+    { key: "brand", label: "Brand", render: (b) => (
+      <Cell title={b.company || "—"} sub={<>{[b.name, b.phone, b.gstin ? `GSTIN ${b.gstin}` : null].filter(Boolean).join(" · ")}{b.website && <><br /><a className="link" href={b.website} target="_blank" rel="noopener noreferrer nofollow">{b.website}</a></>}</>} />
+    ) },
+    { key: "email", label: "Email", className: "tr-col-email", render: (b) => <span className="tr-wrap">{b.email}<div className="hint">{b.email_verified_at ? `Confirmed ${day(b.email_verified_at)}` : "Email not confirmed"}</div></span> },
+    { key: "campaigns", label: "Campaigns", num: true, render: (b) => Number(b.campaigns || 0) },
+    { key: "status", label: "Status", primary: true, render: (b) => (<>
+      {b.disabled_at ? <Pill tone="off">Disabled</Pill> : b.verified_by ? <Pill tone="done">Verified</Pill> : <Pill tone="wait">Not verified</Pill>}
+      <div className="hint">{b.verified_by ? `by ${b.verifier || b.verified_by}` : `Joined ${day(b.created_at)}`}{b.last_login_at ? ` · last login ${day(b.last_login_at)}` : ""}</div>
+    </>) },
+    ...(canAct ? [{ key: "actions", label: "Actions", labelHidden: true, primary: true, align: "right", render: (b) => (
+      <div className="row tr-acts">
+        {!b.email_verified_at && <form action={confirmEmail}><input type="hidden" name="id" value={b.id} /><button className="btn sm" aria-label={`Confirm email for ${b.email}`}>Confirm email</button></form>}
+        {!b.verified_by && b.email_verified_at && !b.disabled_at && <form action={markVerified}><input type="hidden" name="id" value={b.id} /><button className="btn sm plum" aria-label={`Mark ${b.company || b.email} verified`}>Mark brand verified</button></form>}
+        <form action={setDisabled}><input type="hidden" name="id" value={b.id} /><input type="hidden" name="disable" value={b.disabled_at ? "0" : "1"} /><button className="btn sm" aria-label={`${b.disabled_at ? "Enable" : "Disable"} ${b.email}`}>{b.disabled_at ? "Enable" : "Disable"}</button></form>
       </div>
+    ) }] : []),
+  ];
+  const TABS = [["all", "All"], ["waiting", "Not verified"], ["verified", "Verified"], ["disabled", "Disabled"]];
+
+  return (
+    <TeamShell active="brands" email={me.email} role={me.role}>
+      <PageHeader
+        crumbs={[{ label: "Creator network" }, { label: "Brands" }]}
+        eyebrow="Brands · Accounts"
+        title="Brand <b>accounts</b>"
+        sub="Brands who created an account. Earlier briefs are linked only after the brand confirms its email. Mark a brand verified once you've checked it's a real business (website, GSTIN, a call): its campaigns then show the verified mark to creators."
+      />
+      <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
+      {!canAct && <div className="note info" style={{ marginBottom: 14 }}>You can view brand accounts. Verifying or disabling needs the team permission.</div>}
+
+      <KpiStrip label="Brand accounts at a glance" items={[
+        { label: "Brand accounts", value: n.all, foot: rows.length === 500 ? "showing the newest 500" : "newest first" },
+        { featured: true, label: "Waiting for a check", value: n.waiting, foot: unconfirmed ? `${unconfirmed} still to confirm their email` : "all emails confirmed", href: "?tab=waiting" },
+        { label: "Verified", value: n.verified, foot: "show the verified mark to creators", href: "?tab=verified" },
+        { label: "Briefs linked", value: linked, foot: `${n.disabled} ${n.disabled === 1 ? "account" : "accounts"} disabled` },
+      ]} />
+
+      <Grid aside={<>
+        <AsideCard eyebrow="Insight" title="Where accounts stand" foot={<a href="?tab=all">See every account</a>}>
+          <Split label="Brand accounts by status" parts={[
+            { label: "Not verified", n: n.waiting, href: "?tab=waiting" },
+            { label: "Verified", n: n.verified, href: "?tab=verified" },
+            { label: "Disabled", n: n.disabled, href: "?tab=disabled" },
+          ]} />
+          <p className="small">{n.waiting ? <><b>{n.waiting}</b> {n.waiting === 1 ? "brand is" : "brands are"} waiting for a check. Look at the website and GSTIN, or call, then mark it verified.</> : "Every active brand is verified."}</p>
+        </AsideCard>
+        <AsideCard tone="night" eyebrow="How verifying works" title="A check, then the mark.">
+          <p className="small">Confirming an email links the brand's earlier briefs. Verifying shows the verified mark on its campaigns. Disabling signs the brand out at once.</p>
+        </AsideCard>
+      </>}>
+        <Section title="Accounts" sub={`${shown.length} ${shown.length === 1 ? "account" : "accounts"}${tab === "all" ? "" : ` · ${TABS.find((t) => t[0] === tab)[1]}`}`}>
+          <FilterBar label="Filter brand accounts">
+            <FilterChips name="tab" label="Filter by status" current={tab} hrefFor={(v) => `?tab=${v}`} options={TABS.map(([value, label]) => ({ value, label, count: n[value] }))} />
+          </FilterBar>
+          <DataTable caption="Brand accounts" columns={columns} rows={shown}
+            empty={{ title: rows.length ? "No accounts with this status." : "No brand accounts yet.", body: rows.length ? "Pick another filter." : "Brands get an account when they sign up from the brand login page or send a brief.", action: rows.length ? <a className="btn sm" href="?tab=all">See every account</a> : <a className="btn sm" href="/team/campaigns">Open campaigns</a> }} />
+        </Section>
+      </Grid>
     </TeamShell>
   );
 }

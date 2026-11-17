@@ -2,7 +2,10 @@ import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import TeamShell from "../../_ui/TeamShell";
 import Flash, { flashUrl } from "../../_ui/flash";
-import { dayTime } from "@/components/team/labels";
+import { PageHeader, Grid, Section, Card, AsideCard, EmptyState, InlineState, DataTable, Pill, Tags, Cell } from "@/components/ui";
+import { Tiles, ShareBar, stamp } from "@/components/admin/Charts";
+
+const dayTime = (t) => stamp(t);
 import { env } from "@/lib/net/env";
 import { audit, logError } from "@/lib/net/security";
 import { EVENTS, EVENT_LABEL, MAX_ATTEMPTS, checkUrl, newSecret, parseEvents, sendTest } from "@/lib/net/webhooks";
@@ -101,95 +104,103 @@ export default async function Page({ searchParams }) {
   try { shown = JSON.parse(cookies().get(SECRET_COOKIE)?.value || "null"); } catch { shown = null; }
   const host = (u) => { try { return new URL(u).hostname; } catch { return u || "deleted webhook"; } };
 
+  const on = hooks.filter((h) => h.active).length;
+  const ds = { delivered: log.filter((d) => d.status === "delivered").length, pending: log.filter((d) => d.status === "pending").length, failed: log.filter((d) => d.status === "failed").length };
+  const TONE = { delivered: "done", pending: "wait", failed: "mine" };
+
   return (
-    <TeamShell active="integrations" eyebrow="Owners and admins" title="Integrations and <b>webhooks</b>" email={me.email} role={me.role}>
+    <TeamShell active="integrations" email={me.email} role={me.role}>
       <div className="pf-int">
+        <PageHeader
+          crumbs={[{ label: "Owners and admins" }, { label: "Integrations" }]}
+          eyebrow="Owners and admins"
+          title="Integrations and <b>webhooks</b>"
+          sub="Send deal and campaign events to Zapier, Make, Slack, your CRM or any HTTPS endpoint. Each request is signed, carries ids, stages and amounts in paise, and never a name, email or phone number."
+          actions={<a className="btn-foil" href="#add">+ Add webhook</a>}
+        />
         <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
-        <p className="lead">Send deal and campaign events to Zapier, Make, Slack, your CRM or any HTTPS endpoint. Each request is signed, carries ids, stages and amounts in paise, and never a name, email or phone number.</p>
-        {dbErr && <div className="note" style={{ marginBottom: 14 }}>Couldn't read the webhooks. The database may still be updating; reload in a minute.</div>}
+        {dbErr && <div style={{ marginBottom: 14 }}><InlineState kind="error" label="Couldn't read the webhooks.">The database may still be updating; reload in a minute.</InlineState></div>}
 
         {shown?.secret && (
-          <div className="panel pad pf-secret" style={{ marginBottom: 18 }}>
-            <h2>Signing secret</h2>
+          <Card tone="gold" className="pf-secret" label="Signing secret">
+            <h2 style={{ marginTop: 0 }}>Signing secret</h2>
             <p className="muted" style={{ margin: "-4px 0 10px" }}>Copy it into your tool now. It is shown once and can't be read again; to change it, delete the webhook and add it again.</p>
             <input readOnly value={shown.secret} aria-label="Signing secret" className="pf-mono" data-testid="webhook-secret" />
             <form action={dismissSecret} style={{ marginTop: 10 }}><button className="btn sm">I've copied it, hide the secret</button></form>
-          </div>
+          </Card>
         )}
+        {shown?.secret && <div style={{ height: 18 }} />}
 
-        <section className="sheet" aria-labelledby="wh-h" style={{ marginBottom: 28 }}>
-          <div className="sheet__h"><h2 id="wh-h">Webhooks</h2><span className="n">{hooks.length}</span></div>
-          {hooks.length === 0 ? <div className="panel pad empty"><b>No webhooks yet.</b> Add one below to start sending events.</div> : (
-            <div className="pf-hooks">
-              {hooks.map((h) => (
-                <article key={h.id} className="panel pad pf-hook">
-                  <div className="spread">
-                    <div className="pf-hook__url"><b>{host(h.url)}</b><div className="hint pf-break">{h.url}</div></div>
-                    <span className={`pill ${h.active ? "good" : "low"}`}>{h.active ? "On" : "Off"}</span>
-                  </div>
-                  <div className="chips pf-events">{parseEvents(h.events).map((e) => <span key={e} className="pill">{e}</span>)}</div>
-                  <p className="hint" style={{ margin: "8px 0 12px" }}>
-                    Added {dayTime(h.created_at)}{h.created_by ? ` by ${h.created_by}` : ""} · {h.last_at ? `last answer ${h.last_status ? `HTTP ${h.last_status}` : "none"} ${dayTime(h.last_at)}` : "nothing sent yet"} · {Number(h.pending_n) || 0} retrying · {Number(h.failed_n) || 0} failed
-                  </p>
-                  <div className="row pf-actions">
-                    <form action={testHook}><input type="hidden" name="id" value={h.id} /><button className="btn sm" disabled={!h.active}>Send test event</button></form>
-                    <form action={setActive}><input type="hidden" name="id" value={h.id} /><input type="hidden" name="on" value={h.active ? "0" : "1"} /><button className="btn sm">{h.active ? "Switch off" : "Switch on"}</button></form>
-                    <form action={removeHook} className="row pf-del"><input type="hidden" name="id" value={h.id} />
-                      <label className="hint"><input type="checkbox" name="confirm" value="yes" required /> Delete for good</label>
-                      <button className="btn sm">Delete</button>
-                    </form>
-                  </div>
-                </article>
-              ))}
-            </div>
-          )}
-        </section>
+        <Tiles label="Integration status" cols={4} items={[
+          { label: "Webhooks on", value: `${on}/${hooks.length}`, state: hooks.length === 0 ? "off" : on ? "ok" : "warn", stateText: hooks.length === 0 ? "None yet" : on ? "Sending" : "All off", note: "endpoints receiving events", href: "#wh" },
+          { label: "Delivered", value: ds.delivered, state: ds.delivered ? "ok" : "off", stateText: ds.delivered ? "Answered 2xx" : "Nothing yet", note: `of the latest ${log.length} deliveries`, href: "#log" },
+          { label: "Retrying", value: ds.pending, state: ds.pending ? "warn" : "ok", stateText: ds.pending ? "Waiting" : "Clear", note: `up to ${MAX_ATTEMPTS} attempts over about a day`, href: "#log" },
+          { label: "Failed", value: ds.failed, state: ds.failed ? "warn" : "ok", stateText: ds.failed ? "Check endpoint" : "Clear", note: "gave up, or the webhook was switched off", href: "#log" },
+        ]} />
 
-        <form className="panel pad" action={createHook} style={{ marginBottom: 28, maxWidth: 760 }}>
-          <h2>Add a webhook</h2>
-          <p className="muted" style={{ margin: "-4px 0 14px" }}>We POST JSON to this address when the events you pick happen. Failed deliveries are retried for about a day ({MAX_ATTEMPTS} attempts).</p>
-          <div className="fld"><label htmlFor="f-wh-url">Endpoint address</label><input id="f-wh-url" name="url" type="url" inputMode="url" placeholder="https://hooks.zapier.com/hooks/catch/…" required pattern="https://.+" /></div>
-          <fieldset className="pf-fieldset">
-            <legend className="lbl">Events to send</legend>
-            <div className="pf-checks">
-              {EVENTS.map((e) => (
-                <label key={e} className="pf-check"><input type="checkbox" name="events" value={e} defaultChecked={e.startsWith("deal.")} /><span><code>{e}</code><span className="hint">{EVENT_LABEL[e]}</span></span></label>
-              ))}
-            </div>
-          </fieldset>
-          <button className="btn-foil" style={{ marginTop: 16 }}>Add webhook</button>
-        </form>
-
-        <section className="sheet" aria-labelledby="sig-h" style={{ marginBottom: 28 }}>
-          <div className="sheet__h"><h2 id="sig-h">Checking the signature</h2></div>
-          <div className="panel pad">
-            <p style={{ marginTop: 0 }}>Every request has <code>X-Colatch-Signature: t=&lt;unix seconds&gt;,v1=&lt;hex&gt;</code>. Compute HMAC-SHA256 of <code>{"`${t}.${raw body}`"}</code> with your signing secret and compare it with <code>v1</code>. Reject requests older than 5 minutes. <code>X-Colatch-Delivery</code> is the same on every retry, so use it to ignore duplicates.</p>
+        <Grid aside={<>
+          <AsideCard eyebrow="For your developer" title="Checking the signature">
+            <p className="small" style={{ marginTop: 0 }}>Every request has <code>X-Colatch-Signature: t=&lt;unix seconds&gt;,v1=&lt;hex&gt;</code>. Compute HMAC-SHA256 of <code>{"`${t}.${raw body}`"}</code> with your signing secret and compare it with <code>v1</code>. Reject requests older than 5 minutes. <code>X-Colatch-Delivery</code> is the same on every retry, so use it to ignore duplicates.</p>
             <pre className="pf-code">{`{ "id": "wd_…", "event": "deal.stage_changed", "created_at": "2026-11-17T09:30:00.000Z",
   "data": { "deal_id": "…", "campaign_id": "…", "from_stage": "confirmed", "to_stage": "live",
             "fee_paise": 3500000, "pay_status": "funded" } }`}</pre>
-          </div>
-        </section>
+          </AsideCard>
+          {log.length > 0 && <AsideCard eyebrow="Insight" title="Latest deliveries" foot={<a href="/team/system#wh">Waiting and failed in System health</a>}>
+            <ShareBar label="Latest deliveries by status" parts={[{ label: "Delivered", n: ds.delivered }, { label: "Retrying", n: ds.pending }, { label: "Failed", n: ds.failed }]} />
+          </AsideCard>}
+        </>}>
+          <Section id="wh" title="Webhooks" sub={`${hooks.length} ${hooks.length === 1 ? "endpoint" : "endpoints"}, oldest first.`}>
+            {hooks.length === 0 ? <EmptyState title="No webhooks yet." body="Add one below to start sending events." action={<a className="btn sm" href="#add">Add a webhook</a>} /> : (
+              <div className="pf-hooks">
+                {hooks.map((h) => (
+                  <Card as="article" key={h.id} className="pf-hook">
+                    <div className="spread">
+                      <div className="pf-hook__url"><b>{host(h.url)}</b><div className="hint pf-break">{h.url}</div></div>
+                      <Pill tone={h.active ? "done" : "off"}>{h.active ? "On" : "Off"}</Pill>
+                    </div>
+                    <div className="chips pf-events" style={{ marginTop: 10 }}><Tags items={parseEvents(h.events)} max={8} /></div>
+                    <p className="hint" style={{ margin: "8px 0 12px" }}>
+                      Added {dayTime(h.created_at)}{h.created_by ? ` by ${h.created_by}` : ""} · {h.last_at ? `last answer ${h.last_status ? `HTTP ${h.last_status}` : "none"} ${dayTime(h.last_at)}` : "nothing sent yet"} · {Number(h.pending_n) || 0} retrying · {Number(h.failed_n) || 0} failed
+                    </p>
+                    <div className="row pf-actions">
+                      <form action={testHook}><input type="hidden" name="id" value={h.id} /><button className="btn sm" disabled={!h.active}>Send test event</button></form>
+                      <form action={setActive}><input type="hidden" name="id" value={h.id} /><input type="hidden" name="on" value={h.active ? "0" : "1"} /><button className="btn sm">{h.active ? "Switch off" : "Switch on"}</button></form>
+                      <form action={removeHook} className="row pf-del"><input type="hidden" name="id" value={h.id} />
+                        <label className="hint"><input type="checkbox" name="confirm" value="yes" required /> Delete for good</label>
+                        <button className="btn sm">Delete</button>
+                      </form>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </Section>
 
-        <section aria-labelledby="log-h">
-          <div className="sheet__h"><h2 id="log-h">Delivery log</h2><span className="n">{log.length}</span></div>
-          {log.length === 0 ? <div className="allclear"><b>Nothing sent yet.</b></div> : (
-            <div className="panel scroll-x"><table className="tbl stack">
-              <thead><tr><th>When</th><th>Event</th><th>Endpoint</th><th>Status</th><th>Detail</th></tr></thead>
-              <tbody>{log.map((d) => {
-                const [label, cls] = STATUS[d.status] || [d.status, ""];
-                return (
-                  <tr key={d.id}>
-                    <td className="hint" style={{ whiteSpace: "nowrap" }}>{dayTime(d.created_at)}</td>
-                    <td data-label="Event"><code>{d.event}</code></td>
-                    <td data-label="Endpoint">{host(d.url)}</td>
-                    <td data-label="Status"><span className={`pill ${cls}`}>{label}</span><div className="hint">{d.attempts} of {MAX_ATTEMPTS} attempts</div></td>
-                    <td data-label="Detail" className="pf-break">{d.status === "delivered" ? `Delivered ${dayTime(d.delivered_at)}` : d.last_error || "Waiting for the first attempt"}</td>
-                  </tr>
-                );
-              })}</tbody>
-            </table></div>
-          )}
-        </section>
+          <Section id="add" title="Add a webhook" sub={`We POST JSON to this address when the events you pick happen. Failed deliveries are retried for about a day (${MAX_ATTEMPTS} attempts).`}>
+            <Card>
+              <form action={createHook}>
+                <div className="fld"><label htmlFor="f-wh-url">Endpoint address</label><input id="f-wh-url" name="url" type="url" inputMode="url" placeholder="https://hooks.zapier.com/hooks/catch/…" required pattern="https://.+" /></div>
+                <fieldset className="pf-fieldset">
+                  <legend className="lbl">Events to send</legend>
+                  <div className="pf-checks">
+                    {EVENTS.map((e) => (
+                      <label key={e} className="pf-check"><input type="checkbox" name="events" value={e} defaultChecked={e.startsWith("deal.")} /><span><code>{e}</code><span className="hint">{EVENT_LABEL[e]}</span></span></label>
+                    ))}
+                  </div>
+                </fieldset>
+                <button className="btn plum" style={{ marginTop: 16 }}>Add webhook</button>
+              </form>
+            </Card>
+          </Section>
+
+          <Section id="log" title="Delivery log" sub={`The latest ${log.length} ${log.length === 1 ? "delivery" : "deliveries"}, newest first.`}>
+            <DataTable caption="Webhook delivery log" rows={log} columns={[
+              { key: "event", label: "Event", render: (d) => <Cell eyebrow={dayTime(d.created_at)} title={<code className="adm-mono">{d.event}</code>} sub={host(d.url)} /> },
+              { key: "status", label: "Status", primary: true, render: (d) => { const [label] = STATUS[d.status] || [d.status]; return <span><Pill tone={TONE[d.status] || "quiet"}>{label}</Pill><span className="adm-dim" style={{ display: "block", marginTop: 4 }}>{d.attempts} of {MAX_ATTEMPTS} attempts</span></span>; } },
+              { key: "detail", label: "Detail", render: (d) => <span className="adm-dim pf-break">{d.status === "delivered" ? `Delivered ${dayTime(d.delivered_at)}` : d.last_error || "Waiting for the first attempt"}</span> },
+            ]} empty={{ title: "Nothing sent yet.", body: "Deliveries appear here once a webhook is on and an event happens." }} />
+          </Section>
+        </Grid>
       </div>
     </TeamShell>
   );

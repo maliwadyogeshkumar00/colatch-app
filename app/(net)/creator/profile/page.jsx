@@ -5,12 +5,15 @@ import PublicShell from "../../_ui/PublicShell";
 import CreatorProfileFields from "../../_ui/CreatorProfileFields";
 import { env } from "@/lib/net/env";
 import { currentCreator } from "@/lib/net/creatorAuth";
-import { profileFromForm, saveProfile, compact, str, PLATFORMS, PLATFORM_LABEL, platformFromForm, creatorPlatforms } from "@/lib/net/creators";
+import { profileFromForm, saveProfile, compact, inr, str, PLATFORMS, PLATFORM_LABEL, platformFromForm, creatorPlatforms } from "@/lib/net/creators";
 import { parseAudience, audienceFormValues, audienceSourceLabel, readAudience, AGE_BANDS, MAX_CITIES, ageField, cityField, cityPctField, genderField } from "@/lib/net/audience";
 import { lookupProfile, metaReady } from "@/lib/net/meta";
 import { profileGaps } from "@/lib/net/match";
 import { uploadsReady, uploadCreatorImage, deleteBlob, UPLOAD_MAX_FILES } from "@/lib/net/blob";
 import { audit, logError } from "@/lib/net/security";
+import { safeUrl } from "@/lib/net/guard";
+import { inrShort } from "@/lib/net/dashboard";
+import { PageHeader, Grid, SummaryRail, Avatar } from "@/components/ui";
 
 export const metadata = { title: "Your profile", robots: { index: false } };
 
@@ -195,24 +198,64 @@ export default async function Page({ searchParams }) {
   const platforms = await creatorPlatforms(env, c.id);
   const pfEdit = platforms.find((p) => p.platform === searchParams?.pf) || null;
   const pfDefault = pfEdit?.platform || PLATFORMS.find((p) => !platforms.some((x) => x.platform === p.id))?.id || PLATFORMS[0].id;
+  const kitTags = [...String(c.skills || "").split(","), ...String(c.niche || "").split(",")].map((x) => x.trim()).filter(Boolean).map((x) => x.charAt(0).toUpperCase() + x.slice(1));
+  const pic = safeUrl(c.profile_pic);
+  const reels = String(c.portfolio_links || "").split(/\s+/).filter(Boolean).length;
+  const SECS = [["basics", "What you make"], ["payout", "Payout"], ["media", "Work samples"], ["audience", "Audience"], ["platforms", "Platforms"]];
   return (
     <PublicShell creatorName={c.name || c.handle} path="/creator/profile">
-      <div className="wrap narrow" style={{ padding: 0 }}>
-        <div className="spread" style={{ marginBottom: 18 }}>
-          <div><div className="lbl">Profile</div><h1 style={{ margin: "6px 0 0", fontWeight: 300, fontSize: 30, color: "var(--head)" }}>@{c.handle}</h1></div>
-          <div className="row" style={{ gap: 12 }}><div className="score" style={{ "--v": done }}><i>{done}%</i></div><span className="small muted">complete</span></div>
-        </div>
-        <div className="note info" style={{ marginBottom: 16 }}>Your public media kit: <a className="link" href={`/m/${c.handle}`} target="_blank">{origin}/m/{c.handle}</a>. Put it in your Instagram bio so brands can book you through Colatch.</div>
-        {flash && !at && <div className={`note ${tone}`} style={{ marginBottom: 16 }}>{flash} {tone === "good" && <a className="link" href="/creator">See matches →</a>}</div>}
-        {c.verified ? <div className="note info" style={{ marginBottom: 16 }}>✓ Your follower count ({compact(c.followers)}) comes from Instagram and updates automatically.</div> : null}
-        {!c.owner_verified && <form className="panel pad" action={verifyBio} style={{ marginBottom: 18 }}>
+      <div className="cr-page">
+        <PageHeader crumbs={[{ label: "Home", href: "/creator" }, "Profile"]} eyebrow="Profile · media kit" title={`@${c.handle}`}
+          sub="What you fill in here decides which briefs you see, and builds the media kit brands open before they book you."
+          meta={[{ label: "Complete", value: `${done}%`, gold: done === 100 }, { label: "Work samples", value: `${media.length}/${UPLOAD_MAX_FILES}` }, { label: "Platforms", value: 1 + platforms.length }]} />
+        {flash && !at && <div className={`note ${tone}`}>{flash} {tone === "good" && <a className="link" href="/creator">See matches →</a>}</div>}
+        <nav className="cr-secnav" aria-label="Profile sections">{SECS.map(([id, l]) => <a key={id} href={`#${id}`}>{l}</a>)}</nav>
+
+        <Grid aside={<>
+          <section className="cr-kitmini" aria-labelledby="kitmini-h">
+            <p className="cr-kitmini__eb">Your media kit · what brands see</p>
+            <div className="cr-kitmini__who">
+              <Avatar name={c.name || c.handle} src={pic || undefined} size={56} />
+              <div style={{ minWidth: 0 }}><h2 id="kitmini-h" className="cr-kitmini__name">{c.name || c.handle}</h2><p className="cr-kitmini__sub">@{c.handle}{c.city ? ` · ${c.city}` : ""}</p></div>
+            </div>
+            {c.bio_pitch && <p className="cr-kitmini__bio">{c.bio_pitch}</p>}
+            {kitTags.length > 0 && <div className="cr-kitmini__tags">{kitTags.slice(0, 5).map((t) => <span key={t}>{t}</span>)}</div>}
+            <dl className="cr-kitmini__stats">
+              <div><dt>Followers</dt><dd>{c.followers ? compact(c.followers) : "—"}</dd></div>
+              <div><dt>Avg views</dt><dd>{c.avg_views ? compact(c.avg_views) : "—"}</dd></div>
+              <div><dt>1 Reel</dt><dd>{c.rate_reel ? inrShort(c.rate_reel) : "—"}</dd></div>
+            </dl>
+            <a className="cr-kitmini__open" href={`/m/${c.handle}`} target="_blank">Open my media kit ↗</a>
+          </section>
+          <SummaryRail title="What's filled in" items={[
+            { label: "What you do", value: c.skills ? String(c.skills).split(",").filter(Boolean).length + " picked" : "" },
+            { label: "City", value: c.city || "" },
+            { label: "Followers", value: c.followers ? compact(c.followers) : "" },
+            { label: "Reel rate", value: c.rate_reel ? inr(c.rate_reel) : "" },
+            { label: "Best reels", value: reels ? `${reels} ${reels === 1 ? "link" : "links"}` : "" },
+            { label: "WhatsApp", value: c.phone ? "Added" : "" },
+            { label: "UPI for payouts", value: c.upi_id ? "Added" : "" },
+            { label: "Audience split", value: hasAudience ? "Added" : "" },
+          ]} total={{ label: "Profile complete", value: `${done}%` }}>
+            <p className="hint" style={{ margin: 0 }}>{gaps.length ? <>Missing: {gaps.slice(0, 3).join(", ")}. Saved values show here and on your media kit.</> : "Everything brands look for is filled in."}</p>
+          </SummaryRail>
+          <p className="hint" style={{ margin: 0 }}>Put <a className="link" href={`/m/${c.handle}`} target="_blank">{origin}/m/{c.handle}</a> in your Instagram bio so brands can book you through Colatch.</p>
+        </>}>
+          <div className="stack cr-forms">
+        {c.verified ? <div className="note info">✓ Your follower count ({compact(c.followers)}) comes from Instagram and updates automatically.</div> : null}
+        {!c.owner_verified && <form className="panel pad" action={verifyBio}>
           <h2>Prove this is your account</h2>
           <p style={{ margin: "0 0 12px", color: "var(--ink-2)" }}>Add <code className="k" style={{ fontSize: 14 }}>{c.verify_code}</code> anywhere in your Instagram bio, then tap check. Verified creators get a ✓ that brands see, and rank higher in matches.</p>
           <button className="btn plum">Check my bio</button>
         </form>}
-        {c.owner_verified ? <div className="note good" style={{ marginBottom: 16 }}>✓ Account ownership verified.</div> : null}
-
-        <form className="panel pad" action={savePayout} id="payout" style={{ marginBottom: 18 }}>
+        {c.owner_verified ? <div className="note good">✓ Account ownership verified.</div> : null}
+        <form className="panel pad" action={saveMain} id="basics">
+          <h2>What you make</h2>
+          <div className="fld" style={{ marginBottom: 18 }}><label htmlFor="f-creator-profile-name-5">Name</label><input id="f-creator-profile-name-5" name="name" defaultValue={c.name ?? ""} /></div>
+          <CreatorProfileFields v={c} />
+          <button className="btn-foil" style={{ marginTop: 22 }}>Save profile</button>
+        </form>
+        <form className="panel pad" action={savePayout} id="payout">
           <h2>Payout details</h2>
           <div className="form-grid">
             <div className="fld"><label htmlFor="f-creator-profile-upi-id-1">UPI ID</label><input id="f-creator-profile-upi-id-1" name="upi_id" defaultValue={c.upi_id ?? ""} placeholder="yourname@okhdfcbank" /></div>
@@ -223,8 +266,7 @@ export default async function Page({ searchParams }) {
           <p className="hint" style={{ margin: "12px 0 0" }}>Without a PAN, TDS is deducted at 20% instead of 10%.</p>
           <button className="btn plum" style={{ marginTop: 14 }}>Save payout details</button>
         </form>
-
-        <section className="panel pad" id="media" aria-labelledby="media-h" style={{ marginBottom: 18 }}>
+        <section className="panel pad" id="media" aria-labelledby="media-h">
           <h2 id="media-h">Work samples</h2>
           <p style={{ margin: "0 0 12px", color: "var(--ink-2)" }}>Up to {UPLOAD_MAX_FILES} images on your media kit: JPEG, PNG or WebP, 4 MB each. Show finished work, not your contact details.</p>
           {media.length > 0 && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(140px,1fr))", gap: 12, marginBottom: 14 }}>
@@ -244,14 +286,7 @@ export default async function Page({ searchParams }) {
                 <div><button className="btn plum" style={{ minHeight: 44 }}>Upload image</button></div>
               </form>}
         </section>
-
-        <form className="panel pad" action={saveMain}>
-          <div className="fld" style={{ marginBottom: 18 }}><label htmlFor="f-creator-profile-name-5">Name</label><input id="f-creator-profile-name-5" name="name" defaultValue={c.name ?? ""} /></div>
-          <CreatorProfileFields v={c} />
-          <button className="btn-foil" style={{ marginTop: 22 }}>Save profile</button>
-        </form>
-
-        <form className="panel pad aud-form" action={saveAudience} id="audience" aria-labelledby="audience-h" style={{ marginTop: 18 }}>
+        <form className="panel pad aud-form" action={saveAudience} id="audience" aria-labelledby="audience-h">
           <div className="spread"><h2 id="audience-h" style={{ margin: 0 }}>Your audience</h2>{hasAudience && <span className={`pill ${c.audience_source === "team_checked" ? "good" : "ok"}`}>{c.audience_source === "team_checked" ? "Checked by Colatch" : "Self-reported"}</span>}</div>
           <p style={{ margin: "10px 0 4px", color: "var(--ink-2)" }}>Brands ask who watches you. Open Instagram → Professional dashboard → Total followers, and copy the numbers here. Fill in any part you have; each part should add up to about 100%.</p>
           {hasAudience && <p className="hint" style={{ margin: "0 0 4px" }}>{audienceSourceLabel(c)}</p>}
@@ -282,8 +317,7 @@ export default async function Page({ searchParams }) {
             {hasAudience && <button className="btn ghost" formAction={clearAudience} formNoValidate>Remove audience numbers</button>}
           </div>
         </form>
-
-        <section className="panel pad" id="platforms" aria-labelledby="platforms-h" style={{ marginTop: 18 }}>
+        <section className="panel pad" id="platforms" aria-labelledby="platforms-h">
           <h2 id="platforms-h">Other platforms</h2>
           <p style={{ margin: "0 0 12px", color: "var(--ink-2)" }}>Add where else you post. Brands booking YouTube, Moj or ShareChat find you by this.</p>
           {here("platforms")}
@@ -308,6 +342,8 @@ export default async function Page({ searchParams }) {
             <div className="full"><button className="btn plum">{pfEdit ? `Update ${PLATFORM_LABEL[pfEdit.platform]}` : "Save platform"}</button>{pfEdit && <a className="btn ghost" href="/creator/profile#platforms" style={{ marginLeft: 8 }}>Cancel</a>}</div>
           </form>
         </section>
+          </div>
+        </Grid>
       </div>
     </PublicShell>
   );

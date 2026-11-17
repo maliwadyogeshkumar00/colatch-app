@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { ClaimNote } from "@/app/(net)/join/_claim.js";
-import PublicShell, { Hero } from "../../_ui/PublicShell";
+import PublicShell from "../../_ui/PublicShell";
+import { PageHeader, Grid, Section, AsideCard, EmptyState } from "@/components/ui";
 import Flash, { flashUrl } from "../../_ui/flash";
 import { env } from "@/lib/net/env";
 import { currentCreator } from "@/lib/net/creatorAuth";
@@ -12,7 +13,7 @@ import { PITCH_CATEGORIES, PITCH_FORMATS, PITCH_OCCASIONS, MAX_LIVE_PITCHES } fr
 export const metadata = { title: "Pitch an idea", robots: { index: false } };
 
 const CSS = `
-.pg-pitch .mine{display:grid;gap:14px}
+.pg-pitch .mine{display:grid;gap:14px}\n@media(min-width:760px){.pg-pitch .mine{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .pg-pitch .card-p{background:var(--paper);border:1px solid var(--line);border-radius:16px;padding:18px 20px;box-shadow:var(--sh-1)}
 .pg-pitch .card-p h3{margin:0 0 6px;font-size:17px;color:var(--head)}
 .pg-pitch .card-p p{margin:0 0 10px;color:var(--ink-2);font-size:14px;white-space:pre-line}
@@ -88,18 +89,28 @@ export default async function Page({ searchParams }) {
   const requests = mine.reduce((a, p) => a + (p.requests || 0), 0);
 
   const hero = (
-    <Hero eyebrow="Creator idea board" title="Don't wait for a brief. <b>Pitch one.</b>">
-      <p>Post the content idea you're dying to make, name your price, and brands book it straight from the Colatch idea board. Your handle and contact stay hidden until a brand books, so nobody can take the idea off-platform.</p>
-    </Hero>
+    <PageHeader variant="hero" eyebrow="Creator idea board" title="Don't wait for a brief. <b>Pitch one.</b>"
+      sub="Post the content idea you're dying to make, name your price, and brands book it straight from the Colatch idea board. Your handle and contact stay hidden until a brand books, so nobody can take the idea off-platform."
+      meta={[{ label: "Ideas live", value: `${liveN}/${MAX_LIVE_PITCHES}` }, { label: "Booking requests", value: requests, gold: requests > 0 }]} />
   );
 
   return (
     <PublicShell creatorName={c.name || c.handle} path="/creator/pitch" hero={hero}>
-      <div className="pg-pitch">
+      <div className="pg-pitch cr-page">
         <style dangerouslySetInnerHTML={{ __html: CSS }} />
-        <div style={{ marginBottom: 16 }}><Flash sp={searchParams} /></div>
-        <div className="grid2" style={{ alignItems: "start" }}>
-          <form className="panel pad" action={createPitch}>
+        <Flash sp={searchParams} />
+        <Grid aside={<>
+          <AsideCard eyebrow="Tips" title="What gets booked" foot={<a className="link" href="/pitches">See the idea board →</a>}>
+            <ul className="tip">
+              <li><b>A moment, not just a product.</b> Ideas tied to Diwali, weddings, IPL or exam season get booked first.</li>
+              <li><b>Say who watches you.</b> "70% women in Delhi NCR" beats "big audience".</li>
+              <li><b>Price it like you mean it.</b> Brands see your rating and past Colatch work next to the price.</li>
+              <li><b>No contact details.</b> They're hidden automatically, and your payment is only protected on Colatch.</li>
+            </ul>
+            <p className="small muted" style={{ margin: "14px 0 0" }}>{requests} {requests === 1 ? "brand has" : "brands have"} asked to book your ideas so far.</p>
+          </AsideCard>
+        </>}>
+          <form className="panel pad" action={createPitch} id="new-idea">
             <h2>New idea</h2>
             <div className="stack">
               <div className="fld"><label htmlFor="f-creator-pitch-title-1">Title</label><input id="f-creator-pitch-title-1" name="title" required maxLength={90} placeholder="e.g. Diwali GRWM in Hinglish" /></div>
@@ -114,21 +125,9 @@ export default async function Page({ searchParams }) {
             <button className="btn-foil" style={{ marginTop: 18 }}>Put it on the idea board</button>
             <p className="hint" style={{ margin: "12px 0 0" }}>{liveN} of {MAX_LIVE_PITCHES} ideas live. Colatch's fee is added on the brand's side, your price is what you take home before TDS.</p>
           </form>
-          <div className="panel pad">
-            <h2>What gets booked</h2>
-            <ul className="tip">
-              <li><b>A moment, not just a product.</b> Ideas tied to Diwali, weddings, IPL or exam season get booked first.</li>
-              <li><b>Say who watches you.</b> "70% women in Delhi NCR" beats "big audience".</li>
-              <li><b>Price it like you mean it.</b> Brands see your rating and past Colatch work next to the price.</li>
-              <li><b>No contact details.</b> They're hidden automatically, and your payment is only protected on Colatch.</li>
-            </ul>
-            <p className="small muted" style={{ margin: "14px 0 0" }}>{requests} {requests === 1 ? "brand has" : "brands have"} asked to book your ideas so far. <a className="link" href="/pitches">See the idea board</a></p>
-          </div>
-        </div>
-
-        <div className="sec">
-          <div className="h2">Your ideas</div>
-          {mine.length === 0 ? <div className="panel empty"><b>No ideas yet.</b>Your first one takes two minutes.</div> : (
+        </Grid>
+        <Section id="ideas" title="Your ideas" sub={mine.length ? `${liveN} live · ${mine.length - liveN} paused` : null}>
+          {mine.length === 0 ? <EmptyState title="No ideas yet." body="Your first one takes two minutes. Fill in the form above and it goes live on the idea board." action={<a className="btn sm" href="#new-idea">Write an idea</a>} /> : (
             <div className="mine">{mine.map((p) => (
               <div key={p.id} className="card-p">
                 <div className="spread"><h3>{p.title}</h3><span className={`pill ${p.status === "live" ? "good" : ""}`}>{p.status === "live" ? "Live" : "Paused"}</span></div>
@@ -141,7 +140,7 @@ export default async function Page({ searchParams }) {
               </div>
             ))}</div>
           )}
-        </div>
+        </Section>
       </div>
     </PublicShell>
   );
