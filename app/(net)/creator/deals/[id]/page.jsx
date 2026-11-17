@@ -148,12 +148,17 @@ export default async function Page({ params, searchParams }) {
   const origin = `https://${headers().get("host")}`;
   const hid = <input type="hidden" name="id" value={d.id} />;
   const myDispute = await openDispute(d.id, "creator").catch(() => null);
+  // A dispute the brand or the Colatch team opened on this deal shows here too (reason only, not their notes).
+  const brandDispute = myDispute ? null : await openDispute(d.id, "brand").catch(() => null);
+  const teamDispute = myDispute || brandDispute ? null : await openDispute(d.id, "team").catch(() => null);
+  const otherDispute = brandDispute || teamDispute;
+  const otherBy = brandDispute ? "The brand" : "The Colatch team";
   const lastDispute = myDispute ? null : await lastClosedDispute(d.id, "creator").catch(() => null);
 
   return (
     <PublicShell creatorName={me.creator.name || me.creator.handle} path="/creator/applications">
       <div className="spread" style={{ marginBottom: 16 }}>
-        <div><div className="lbl">{PAY_LABEL[k?.pay_type || "cash"]} deal</div><h1 style={{ margin: "6px 0 0", fontWeight: 300, fontSize: 30, color: "var(--head)" }}>{d.sow_accepted_at ? d.brand || "Brand" : "Brand revealed after you accept"} · <b style={{ fontWeight: 600 }}>{d.deliverable || "Deliverables"}</b></h1></div>
+        <div><div className="lbl">{PAY_LABEL[k?.pay_type || "cash"]}</div><h1 style={{ margin: "6px 0 0", fontWeight: 300, fontSize: 30, color: "var(--head)" }}>{d.sow_accepted_at ? d.brand || "Brand" : "Brand revealed after you accept"} · <b style={{ fontWeight: 600 }}>{d.deliverable || "Deliverables"}</b></h1></div>
         {k?.slug && <a className="btn" href={`/creator/o/${k.slug}`}>See the brief</a>}
       </div>
       {flash && <div className={`note ${tone}`} style={{ marginBottom: 16 }}>{flash}</div>}
@@ -258,6 +263,9 @@ export default async function Page({ params, searchParams }) {
           {myDispute ? (
             <div className="panel pad"><span className="pill mine">Dispute open</span>
               <p className="small" style={{ margin: "10px 0 0" }}>You raised a dispute about <b>{(REASONS[myDispute.reason] || myDispute.reason).toLowerCase()}</b>. The Colatch team is looking into it and will reply here and by email.</p></div>
+          ) : otherDispute ? (
+            <div className="panel pad"><span className="pill mine">Dispute open</span>
+              <p className="small" style={{ margin: "10px 0 0" }}>{otherBy} raised a dispute on this deal about <b>{(REASONS[otherDispute.reason] || otherDispute.reason).toLowerCase()}</b>. The Colatch team is looking into it and will reply here and by email. Raising a dispute doesn't move or hold any money by itself.</p></div>
           ) : (
             <details className="panel pad">
               <summary style={{ cursor: "pointer", fontWeight: 600, minHeight: 44, display: "flex", alignItems: "center" }}>Something wrong? Raise a dispute</summary>

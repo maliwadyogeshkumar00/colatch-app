@@ -25,11 +25,11 @@ export default function PublicShell({ mode = "creator", creatorName = null, bran
         </a>
         {isClient ? (
           brandName ? (
-            <nav className="tnav" aria-label="Main">
-              <a className={on("/brand", true)} aria-current={on("/brand", true) ? "page" : undefined} href="/brand">My campaigns</a>
+            <nav className="tnav brand-nav" aria-label="Main">
+              <a className={on("/brand", true)} aria-current={on("/brand", true) ? "page" : undefined} href="/brand"><span className="lbl-long">My campaigns</span><span className="lbl-short" aria-hidden="true">Campaigns</span></a>
               <a className={`tnav-full ${on("/brand/settings")}`} href="/brand/settings">Settings</a>
               <a className="tnav-full" href="/brand/logout">Log out</a>
-              <a className="cta" href="/brief">Post a brief</a>
+              <a className="cta" href="/brief"><span className="lbl-long">Post a brief</span><span className="lbl-short" aria-hidden="true">+ Brief</span></a>
             </nav>
           ) : (
             <nav className="tnav" aria-label="Main"><a className="tnav-full" href="/pitches">Creator ideas</a><a className="tnav-full" href="/join">I'm a creator</a><a className={on("/brand/login", true)} href="/brand/login">Log in</a><a className="cta" href="/brief">Post a brief</a></nav>

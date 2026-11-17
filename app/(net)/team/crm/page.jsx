@@ -7,6 +7,7 @@ import { env } from "@/lib/net/env";
 import { compact, inr, int, DEAL_STAGES, STAGE_LABEL, MANUAL_STAGES, canSetStage } from "@/lib/net/creators";
 import { transition, FlowError } from "@/lib/net/dealflow";
 import { logEvent } from "@/lib/net/deal";
+import { inrKpi, inrFull } from "@/components/team/labels";
 
 export const metadata = { title: "Creator CRM", robots: { index: false, follow: false } };
 
@@ -50,11 +51,13 @@ export default async function Page({ searchParams }) {
     `SELECT d.*, c.handle, c.name, c.profile_pic, c.followers FROM creator_deals d JOIN creators c ON c.id=d.creator_id
      ${brand ? "WHERE d.brand = ?" : ""} ORDER BY d.updated_at DESC LIMIT 500`
   ).bind(...(brand ? [brand] : [])).all().catch(() => ({ results: [] }))).results ?? [];
+  // Deals with a brand payment in the ledger: the same rule Money and ledger reconciles against.
+  const fundedIds = new Set(((await env.DB.prepare("SELECT DISTINCT deal_id FROM finance_ledger WHERE kind='brand_payment_received' AND deal_id IS NOT NULL").all().catch(() => ({ results: [] }))).results ?? []).map((r) => r.deal_id));
   const brands = (await env.DB.prepare("SELECT DISTINCT brand FROM creator_deals WHERE brand IS NOT NULL AND brand <> '' ORDER BY brand").all().catch(() => ({ results: [] }))).results ?? [];
   const by = Object.fromEntries(DEAL_STAGES.map((s) => [s, []]));
   for (const d of deals) (by[d.stage] ??= []).push(d);
   const active = deals.filter((d) => !["dropped", "cancelled"].includes(d.stage));
-  const committed = deals.filter((d) => ["confirmed", "live", "paid"].includes(d.stage));
+  const committed = deals.filter((d) => ["funded", "released", "paid"].includes(d.pay_status) && fundedIds.has(d.id));
   const spend = committed.reduce((s, d) => s + (d.fee || 0), 0);
   const views = committed.reduce((s, d) => s + (d.actual_views || d.expected_views || 0), 0);
   const doneViews = deals.filter((d) => d.actual_views && d.fee);
@@ -73,7 +76,7 @@ export default async function Page({ searchParams }) {
 
       <div className="grid4">
         <div className="panel kpi"><div className="k">Open deals</div><div className="v">{active.length}</div><div className="s">across {brands.length} brands</div></div>
-        <div className="panel kpi"><div className="k">Committed spend</div><div className="v">{inr(spend)}</div><div className="s">deals the brand has paid for</div></div>
+        <div className="panel kpi"><div className="k">Committed spend</div><div className="v" title={inrFull(spend)}>{inrKpi(spend)}</div><div className="s">creator fees on {committed.length} {committed.length === 1 ? "deal" : "deals"} with a brand payment in the ledger</div></div>
         <div className="panel kpi"><div className="k">Planned views</div><div className="v">{compact(views)}</div><div className="s">{spend && views ? `₹${(spend / views).toFixed(2)} planned CPV` : "—"}</div></div>
         <div className="panel kpi"><div className="k">Actual CPV</div><div className="v">{realCpv != null ? `₹${realCpv.toFixed(2)}` : "—"}</div><div className="s">{doneViews.length} deals with real views</div></div>
       </div>

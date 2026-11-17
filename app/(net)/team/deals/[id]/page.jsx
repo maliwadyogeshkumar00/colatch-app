@@ -13,6 +13,8 @@ import { priceDeal } from "@/lib/net/pricing";
 import { safeUrl } from "@/lib/net/guard";
 import { can, logError } from "@/lib/net/security";
 import { colatchScore } from "@/lib/net/score";
+import { dealStepLine } from "@/components/team/dealStep";
+import { dayTime } from "@/components/team/labels";
 
 export const metadata = { title: "Deal", robots: { index: false, follow: false } };
 
@@ -199,7 +201,7 @@ export default async function Page({ params, searchParams }) {
               <div className="fld"><label htmlFor="f-team-deals-id-go-live-date-6">Go-live date</label><input id="f-team-deals-id-go-live-date-6" name="go_live_date" type="date" defaultValue={d.go_live_date ?? ""} /></div>
             </div>
             </fieldset>
-            <div className="row" style={{ marginTop: 14 }}><button className="btn plum" disabled={d.pay_status !== "unfunded"}>Save terms</button><span className="hint">Stage: {STAGE_LABEL[d.stage] || d.stage}. Changing the fee asks the creator to accept again.</span></div>
+            <div className="row" style={{ marginTop: 14 }}><button className="btn plum" disabled={d.pay_status !== "unfunded"}>Save terms</button><span className="hint">Now: {dealStepLine(d)}.{d.pay_status === "unfunded" ? " Changing the fee asks the creator to accept again." : ""}</span></div>
           </form>}
 
           {progress && d.live_at && <form className="panel pad" action={act}>
@@ -235,7 +237,7 @@ export default async function Page({ params, searchParams }) {
           {money && <div className="panel pad">
             <h2>Money recorded</h2>
             {ledger.length ? <table className="tbl"><tbody>{ledger.map((l, i) => <tr key={i}>
-              <td>{({ brand_payment_received: "Brand paid Colatch", creator_payout_sent: "Paid to creator", brand_refund_sent: "Refunded to brand", referral_payout_sent: "Referral payout", adjustment: "Adjustment" })[l.kind] || l.kind}<div className="hint">{l.utr} · {l.actor_id} · {new Date(l.created_at).toISOString().slice(0, 16).replace("T", " ")}</div></td>
+              <td>{({ brand_payment_received: "Brand paid Colatch", creator_payout_sent: "Paid to creator", brand_refund_sent: "Refunded to brand", referral_payout_sent: "Referral payout", adjustment: "Adjustment" })[l.kind] || l.kind}<div className="hint">{l.utr} · {l.actor_id} · {dayTime(l.created_at)}</div></td>
               <td className="num">{formatPaise(Number(l.amount_paise))}{Number(l.tds_paise) ? <div className="hint">TDS {formatPaise(Number(l.tds_paise))}</div> : null}</td></tr>)}</tbody></table>
               : <p className="hint">No money recorded on this deal yet.</p>}
             <p className="hint" style={{ margin: "10px 0 0" }}>Entries can't be edited or deleted. A mistake is fixed with an adjustment.</p>

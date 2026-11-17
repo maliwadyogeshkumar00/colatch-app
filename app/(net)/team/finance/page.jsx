@@ -5,6 +5,7 @@ import { env } from "@/lib/net/env";
 import { can } from "@/lib/net/security";
 import { formatPaise } from "@/lib/net/dealflow";
 import { reconcile, KIND_LABEL } from "./reconcile";
+import { inrKpi, inrFull } from "@/components/team/labels";
 
 export const metadata = { title: "Money and ledger", robots: { index: false, follow: false } };
 
@@ -64,7 +65,7 @@ export default async function Page({ searchParams }) {
 
       <div className="grid4" style={{ marginBottom: 24 }}>
         {Object.entries(KIND_LABEL).map(([k, label]) => (
-          <div key={k} className="panel kpi"><div className="k">{label}</div><div className="v">{formatPaise(Number(tot[k]?.paise || 0))}</div><div className="s">{tot[k]?.n || 0} {Number(tot[k]?.n) === 1 ? "entry" : "entries"}{Number(tot[k]?.tds) ? ` · TDS ${formatPaise(Number(tot[k].tds))}` : ""}</div></div>
+          <div key={k} className="panel kpi"><div className="k">{label}</div><div className="v" title={inrFull(Number(tot[k]?.paise || 0) / 100)}>{inrKpi(Number(tot[k]?.paise || 0) / 100)}</div><div className="s">{tot[k]?.n || 0} {Number(tot[k]?.n) === 1 ? "entry" : "entries"}{Number(tot[k]?.tds) ? ` · TDS ${formatPaise(Number(tot[k].tds))}` : ""}</div></div>
         ))}
       </div>
 
@@ -77,17 +78,17 @@ export default async function Page({ searchParams }) {
       </form>
 
       {rows.length === 0 ? <div className="allclear"><b>No money recorded{kind || from || to ? " for this filter" : " yet"}.</b> Rows appear when finance records a brand payment or a payout in a deal room.</div> : (
-        <div className="panel scroll-x"><table className="tbl">
+        <div className="panel scroll-x"><table className="tbl stack">
           <thead><tr><th>When</th><th>Type</th><th>Deal</th><th className="num">Amount</th><th className="num">TDS</th><th>Reference</th><th>Recorded by</th></tr></thead>
           <tbody>{rows.map((l) => (
             <tr key={l.id}>
               <td className="hint" style={{ whiteSpace: "nowrap" }}>{when(l.at)}</td>
-              <td>{KIND_LABEL[l.kind] || l.kind}</td>
-              <td>{l.deal_id ? <a className="link" href={`/team/deals/${encodeURIComponent(l.deal_id)}`}>{l.creator_name || l.handle || "Deal"}{l.brand ? ` × ${l.brand}` : ""}</a> : <span className="hint">—</span>}</td>
-              <td className="num">{l.kind === "brand_refund_sent" ? "− " : ""}{formatPaise(Number(l.amount_paise))}</td>
-              <td className="num">{Number(l.tds_paise) ? formatPaise(Number(l.tds_paise)) : "—"}</td>
-              <td className="num">{tail(l.utr)}{l.method ? <div className="hint">{l.method.replace(/_/g, " ")}</div> : null}</td>
-              <td className="hint">{l.actor_id}</td>
+              <td data-label="Type">{KIND_LABEL[l.kind] || l.kind}</td>
+              <td data-label="Deal">{l.deal_id ? <a className="link" href={`/team/deals/${encodeURIComponent(l.deal_id)}`}>{l.creator_name || l.handle || "Deal"}{l.brand ? ` × ${l.brand}` : ""}</a> : <span className="hint">—</span>}</td>
+              <td data-label="Amount" className="num key">{l.kind === "brand_refund_sent" ? "− " : ""}{formatPaise(Number(l.amount_paise))}</td>
+              <td data-label="TDS" className="num">{Number(l.tds_paise) ? formatPaise(Number(l.tds_paise)) : "—"}</td>
+              <td data-label="Reference" className="num">{tail(l.utr)}{l.method ? <div className="hint">{l.method.replace(/_/g, " ")}</div> : null}</td>
+              <td data-label="Recorded by" className="hint">{l.actor_id}</td>
             </tr>
           ))}</tbody>
         </table></div>

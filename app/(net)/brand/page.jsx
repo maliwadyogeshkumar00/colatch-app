@@ -9,6 +9,7 @@ import { formatPaise } from "@/lib/net/dealflow";
 import { audit } from "@/lib/net/security";
 import { overLimit, clientIp } from "../reset/_lib";
 import { sendBrandVerify } from "./_lib";
+import { dayText } from "../_ui/dealState";
 
 export const metadata = { title: "My campaigns", robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -104,14 +105,14 @@ export default async function Page({ searchParams }) {
         {campaigns.length === 0 ? (
           <AllClear>{me.verified ? <>No campaigns yet. <a className="link" href="/brief">Post your first brief</a> and we'll shortlist creators for you.</> : <>Campaigns you sent from {me.email} appear here once your email is confirmed. Or <a className="link" href="/brief">post a new brief</a>.</>}</AllClear>
         ) : (
-          <div className="panel scroll-x"><table className="tbl">
+          <div className="panel scroll-x"><table className="tbl stack-sm">
             <thead><tr><th scope="col">Campaign</th><th scope="col">Status</th><th scope="col">Deadline</th><th scope="col"><span className="sr-only" style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>Links</span></th></tr></thead>
             <tbody>{campaigns.map((k) => (
               <tr key={k.id}>
-                <td>{k.share_token ? <a className="link" href={`/shortlist/${k.share_token}`}>{k.title || k.brand}</a> : (k.title || k.brand)}</td>
-                <td><span className="pill">{STATUS[k.status] || k.status}</span></td>
-                <td>{k.deadline || "—"}</td>
-                <td>{k.share_token && <a className="link" href={`/receipt/${k.share_token}`}>Receipt</a>}</td>
+                <td data-label="Campaign">{k.share_token ? <a className="link" href={`/shortlist/${k.share_token}`}>{k.title || k.brand}</a> : (k.title || k.brand)}</td>
+                <td data-label="Status"><span className="pill">{STATUS[k.status] || k.status}</span></td>
+                <td data-label="Deadline" style={{ whiteSpace: "nowrap" }}>{k.deadline ? dayText(k.deadline) : "—"}</td>
+                <td data-label="">{k.share_token && <a className="link" href={`/receipt/${k.share_token}`}>Receipt</a>}</td>
               </tr>
             ))}</tbody>
           </table></div>

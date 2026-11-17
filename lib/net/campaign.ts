@@ -86,7 +86,8 @@ export function requirementChips(k: CampaignRow): string[] {
 const short = (n: number) => (n >= 1e5 ? `${+(n / 1e5).toFixed(1)}L` : n >= 1e3 ? `${Math.round(n / 1e3)}K` : String(n));
 
 export const PAY_LABEL: Record<string, string> = {
-  cash: 'Paid', cash_product: 'Paid + product', barter: 'Product only', ticket: 'Event tickets', giveaway: 'Giveaway', commission: 'Commission on sales',
+  // 'Paid collab' names the campaign type; plain 'Paid' is kept for payment status.
+  cash: 'Paid collab', cash_product: 'Paid collab + product', barter: 'Product only', ticket: 'Event tickets', giveaway: 'Giveaway', commission: 'Commission on sales',
 };
 /** Reward types where the creator gets no fixed cash fee. Cash-only creators never see these. */
 export const NON_CASH = ['barter', 'ticket', 'giveaway', 'commission'];
@@ -97,8 +98,8 @@ export function rewardLine(k: { pay_type?: string | null; reward_value?: number 
     case 'ticket': return v ? `Event tickets worth ${v}` : 'Event tickets / passes';
     case 'giveaway': return v ? `Giveaway prize worth ${v} for your followers` : 'Run a giveaway for your followers';
     case 'commission': return k.commission_pct ? `${k.commission_pct}% of every sale from your link` : 'Commission on sales from your link';
-    case 'cash_product': return (k.budget_note || 'Paid') + (v ? ` + products worth ${v}` : ' + products');
-    default: return k.budget_note || 'Paid';
+    case 'cash_product': return (k.budget_note || 'Paid collab') + (v ? ` + products worth ${v}` : ' + products');
+    default: return k.budget_note || 'Paid collab';
   }
 }
 

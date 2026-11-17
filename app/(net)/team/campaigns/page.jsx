@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { headers } from "next/headers";
 import TeamShell from "../../_ui/TeamShell";
+import { day } from "@/components/team/labels";
 import Flash, { flashUrl } from "../../_ui/flash";
 import { requireTeam } from "../_guard";
 import { env } from "@/lib/net/env";
@@ -85,7 +86,7 @@ export default async function Page({ searchParams }) {
               </div>
             </div>
             <div className="why">{requirementChips(k).map((r) => <span key={r} style={{ background: "var(--ivory-2)", color: "var(--accent-ink)" }}>{r}</span>)}</div>
-            <div className="facts"><span><b>{k.apps}</b> applicants</span>{k.creators_needed ? <span>Needs <b>{k.creators_needed}</b></span> : null}{k.deliverables && <span>{k.deliverables}</span>}{k.budget_total ? <span>Budget <b>{inr(k.budget_total)}</b></span> : null}{k.deadline && <span>Apply by <b>{k.deadline}</b></span>}</div>
+            <div className="facts"><span><b>{k.apps}</b> {Number(k.apps) === 1 ? "applicant" : "applicants"}</span>{k.creators_needed ? <span>Needs <b>{k.creators_needed}</b></span> : null}{k.deliverables && <span>{k.deliverables}</span>}{k.budget_total ? <span>Budget <b>{inr(k.budget_total)}</b></span> : null}{k.deadline && <span>Apply by <b>{day(k.deadline) || k.deadline}</b></span>}</div>
           </a>
         ))}
         {!shown.length && <div className="panel empty"><b>Nothing here yet.</b>Paste a brief below, or send clients the brief link.</div>}
