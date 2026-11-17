@@ -1194,7 +1194,7 @@ html:has(.net){scroll-padding-top:80px}
 @media (min-width:768px){.net .ui-chip{min-height:36px;padding:0 14px}}
 
 /* ---- DataTable: desktop card + sticky header, tablet scroll, phone = .tbl.stack cards (rules above) */
-.net .ui-table-wrap{background:var(--paper);border:1px solid var(--line);border-radius:16px;min-width:0;margin:0}
+.net .ui-table-wrap{position:relative;background:var(--paper);border:1px solid var(--line);border-radius:16px;min-width:0;margin:0}
 .net .ui-table-wrap.scroll-x{overflow-x:auto}
 .net .ui-table{border-collapse:separate;border-spacing:0;font-size:14px;font-variant-numeric:tabular-nums lining-nums}
 .net .ui-table>tbody{margin-top:0}

@@ -220,7 +220,7 @@ export default async function Page({ params, searchParams }) {
             <div className="stack">
               {claims.length > 0 && <div className="note warn"><b>Pending claim:</b> {claims.map((x) => x.email).join(", ")} joined with this handle. Check it's really them (bio code, DM from the account) before verifying: until then they can't see deals or payouts. <form action={act} style={{ display: "inline" }}>{hidden("owner")}<button className="btn sm">Verify claim</button></form></div>}
               {ownerOk ? <p className="small" style={{ margin: 0 }}><b>Owner verified ✓</b> The creator's account can see their deals and payouts.</p>
-                : vcode ? <p className="small" style={{ margin: 0 }}>Bio code <code className="k">{vcode}</code> <form action={act} style={{ display: "inline" }}>{hidden("owner")}<button className="btn sm">Mark verified</button></form></p>
+                : vcode ? <div className="small" style={{ margin: 0 }}>Bio code <code className="k">{vcode}</code> <form action={act} style={{ display: "inline" }}>{hidden("owner")}<button className="btn sm">Mark verified</button></form></div>
                 : <p className="hint" style={{ margin: 0 }}>Ownership not verified yet.</p>}
               {review?.summary && <p className="small" style={{ margin: 0 }}><b>Latest review:</b> {review.summary}</p>}
               {c.bio ? <p className="muted" style={{ whiteSpace: "pre-line", margin: 0 }}>{c.bio}</p> : <p className="hint" style={{ margin: 0 }}>No bio yet.{ig ? " Refresh from Instagram to pull it." : ""}</p>}
