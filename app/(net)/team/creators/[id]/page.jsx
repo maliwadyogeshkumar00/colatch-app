@@ -173,16 +173,16 @@ export default async function Page({ params, searchParams }) {
 
           <div className="panel">
             <div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Deals</h2></div>
-            {deals.length ? <table className="tbl"><thead><tr><th>Brand</th><th>Stage</th><th className="num">Fee</th><th className="num">CPV</th></tr></thead><tbody>
+            {deals.length ? <div className="scroll-x"><table className="tbl"><thead><tr><th>Brand</th><th>Stage</th><th className="num">Fee</th><th className="num">CPV</th></tr></thead><tbody>
               {deals.map((d) => { const v = d.actual_views || d.expected_views; return <tr key={d.id}><td><a className="link" href={`/team/deals/${d.id}`}>{d.brand}</a><div className="hint">{d.deliverable}</div></td><td><span className="pill">{dealStepName(d)}</span></td><td className="num">{inr(d.fee)}</td><td className="num">{d.fee && v ? `₹${(d.fee / v).toFixed(2)}` : "—"}</td></tr>; })}
-            </tbody></table> : <p className="hint" style={{ padding: "0 20px 18px" }}>No deals yet.</p>}
+            </tbody></table></div> : <p className="hint" style={{ padding: "0 20px 18px" }}>No deals yet.</p>}
           </div>
 
           <div className="panel">
             <div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Applications</h2></div>
-            {apps.length ? <table className="tbl"><tbody>
+            {apps.length ? <div className="scroll-x"><table className="tbl"><tbody>
               {apps.map((a) => <tr key={a.id}><td><a className="link" href={`/team/campaigns/${a.cid}`}>{a.title}</a><div className="hint">{day(a.created_at)}</div></td><td className="num">{a.match_score ?? "—"}</td><td><span className="pill">{appStatusLabel(a.status)}</span></td></tr>)}
-            </tbody></table> : <p className="hint" style={{ padding: "0 20px 18px" }}>Hasn't applied to any opportunity.</p>}
+            </tbody></table></div> : <p className="hint" style={{ padding: "0 20px 18px" }}>Hasn't applied to any opportunity.</p>}
           </div>
         </div>
       </div>
