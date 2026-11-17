@@ -10,6 +10,8 @@ import { audit } from "@/lib/net/security";
 import { overLimit, clientIp } from "../reset/_lib";
 import { sendBrandVerify } from "./_lib";
 import { dayText } from "../_ui/dealState";
+import { Stat } from "@/components/dash/Parts";
+import { inrShort } from "@/lib/net/dashboard";
 
 export const metadata = { title: "My campaigns", robots: { index: false } };
 export const dynamic = "force-dynamic";
@@ -68,6 +70,16 @@ export default async function Page({ searchParams }) {
   const link = (cid) => byId[cid]?.share_token ? `/shortlist/${byId[cid].share_token}` : null;
   const mineCount = decide.length + mine.length;
 
+  // KPI row, from the rows already loaded: only deals the brand has paid for count as booked or committed,
+  // the same rule as the campaign receipt. Saved = each creator's market rate minus the fee agreed, never below zero.
+  const paidFor = deals.filter((d) => ["funded", "released", "paid"].includes(d.pay_status));
+  const kpi = {
+    live: campaigns.filter((k) => ["open", "shortlisting", "live"].includes(k.status)).length,
+    booked: new Set(paidFor.map((d) => d.creator_id)).size,
+    spend: paidFor.reduce((a, d) => a + (Number(d.fee) || 0), 0),
+    saved: paidFor.reduce((a, d) => a + Math.max(0, (Number(d.market_rate) || 0) - (Number(d.fee) || 0)), 0),
+  };
+
   const hero = (
     <Hero eyebrow={me.company || "Your brand"} title={`Hi ${String(me.name || "there").replace(/[<>&"]/g, "")}, <b>here's what needs you.</b>`}>
       <p>Approve creators, review drafts and see every payment you've made, across all your campaigns.</p>
@@ -85,6 +97,13 @@ export default async function Page({ searchParams }) {
           <button className="btn plum" style={{ minHeight: 44 }}>Send confirmation link</button>
         </form>
       )}
+
+      <div className="dsh"><div className="dsh-brand" aria-label="Your numbers">
+        <Stat label="Campaigns live" foot={`${campaigns.length} in all`}><div className="dsh-stat__value">{kpi.live}</div></Stat>
+        <Stat label="Creators booked" foot={`${paidFor.length} paid ${paidFor.length === 1 ? "deal" : "deals"}`}><div className="dsh-stat__value">{kpi.booked}</div></Stat>
+        <Stat label="Spend committed" foot="Creator fees on deals you've paid for"><div className="dsh-stat__value" title={`₹${kpi.spend.toLocaleString("en-IN")}`}>{inrShort(kpi.spend)}</div></Stat>
+        <Stat label="Money saved" foot="Vs each creator's market rate"><div className="dsh-stat__value gold" title={`₹${kpi.saved.toLocaleString("en-IN")}`}>{inrShort(kpi.saved)}</div></Stat>
+      </div></div>
 
       <section aria-labelledby="sheet-mine" style={{ marginBottom: 32 }}>
         <div className="sheet" style={{ marginBottom: 24 }}>
