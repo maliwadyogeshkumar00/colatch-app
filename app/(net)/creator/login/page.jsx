@@ -42,6 +42,7 @@ export default async function Page({ searchParams }) {
           </div>
           <button className="btn-foil" style={{ marginTop: 20, width: "100%", justifyContent: "center" }}>Log in</button>
           <p className="hint" style={{ margin: "16px 0 0" }}>New here? <a className="link" href={`/join${next ? `?next=${encodeURIComponent(next)}` : ""}`}>Join free</a> · <a className="link" href="/reset/request">Forgot your password?</a></p>
+          <p className="hint" style={{ margin: "8px 0 0" }}>Brand? <a className="link" href="/brand/login">Brand log in</a></p>
         </form>
       </div>
     </PublicShell>

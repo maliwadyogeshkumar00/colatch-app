@@ -5,7 +5,8 @@ import PublicShell from "../../_ui/PublicShell";
 import CreatorProfileFields from "../../_ui/CreatorProfileFields";
 import { env } from "@/lib/net/env";
 import { currentCreator } from "@/lib/net/creatorAuth";
-import { profileFromForm, saveProfile, compact, str } from "@/lib/net/creators";
+import { profileFromForm, saveProfile, compact, str, PLATFORMS, PLATFORM_LABEL, platformFromForm, creatorPlatforms } from "@/lib/net/creators";
+import { parseAudience, audienceFormValues, audienceSourceLabel, readAudience, AGE_BANDS, MAX_CITIES, ageField, cityField, cityPctField, genderField } from "@/lib/net/audience";
 import { lookupProfile, metaReady } from "@/lib/net/meta";
 import { profileGaps } from "@/lib/net/match";
 import { uploadsReady, uploadCreatorImage, deleteBlob, UPLOAD_MAX_FILES } from "@/lib/net/blob";
@@ -14,6 +15,9 @@ import { audit, logError } from "@/lib/net/security";
 export const metadata = { title: "Your profile", robots: { index: false } };
 
 const back = (tone, msg) => `/creator/profile?tone=${tone}&msg=${encodeURIComponent(msg)}`;
+// Messages for the audience and platform sections show inside that section, where the page lands.
+const backAt = (at, tone, msg) => `${back(tone, msg)}&at=${at}#${at}`;
+const SECTIONS = ["audience", "platforms"];
 
 async function savePayout(fd) {
   "use server";
@@ -111,6 +115,61 @@ async function deleteMedia(fd) {
   redirect(back("good", "Image removed from your media kit.") + "#media");
 }
 
+// ---- Audience split from Instagram Insights (creators.audience). Saving new numbers makes them self-reported again.
+async function saveAudience(fd) {
+  "use server";
+  const me = await currentCreator();
+  if (!me) redirect("/creator/login?next=/creator/profile");
+  if (me.claimPending) redirect("/creator/profile");
+  const { audience, errors } = parseAudience(fd);
+  if (!audience) redirect(backAt("audience", "bad", errors.slice(0, 3).join(" ")));
+  const json = JSON.stringify(audience);
+  // A split the team already checked stays checked only if the numbers did not change.
+  await env.DB.prepare(
+    "UPDATE creators SET audience_source = CASE WHEN audience_source = 'team_checked' AND audience = ?::jsonb THEN 'team_checked' ELSE 'self_reported' END, audience = ?::jsonb, audience_updated_at = now(), updated_at = datetime('now') WHERE id = ?"
+  ).bind(json, json, me.creator.id).run();
+  await audit({ kind: "creator", id: me.creator.id }, "audience.saved", "creator", me.creator.id, { cities: audience.cities.length, gender: !!audience.gender, age: !!audience.age });
+  redirect(backAt("audience", "good", "Audience saved. It now shows on your media kit."));
+}
+
+async function clearAudience() {
+  "use server";
+  const me = await currentCreator();
+  if (!me) redirect("/creator/login?next=/creator/profile");
+  if (me.claimPending) redirect("/creator/profile");
+  await env.DB.prepare("UPDATE creators SET audience = NULL, audience_source = NULL, audience_updated_at = NULL, updated_at = datetime('now') WHERE id = ?").bind(me.creator.id).run();
+  await audit({ kind: "creator", id: me.creator.id }, "audience.cleared", "creator", me.creator.id);
+  redirect(backAt("audience", "good", "Audience numbers removed."));
+}
+
+// ---- Other platforms (creator_platforms): one row per platform, saved again to update.
+async function savePlatform(fd) {
+  "use server";
+  const me = await currentCreator();
+  if (!me) redirect("/creator/login?next=/creator/profile");
+  if (me.claimPending) redirect("/creator/profile");
+  const { value: p, error } = platformFromForm(fd);
+  if (!p) redirect(backAt("platforms", "bad", error));
+  await env.DB.prepare(
+    `INSERT INTO creator_platforms (creator_id, platform, handle, url, followers, avg_views, updated_at) VALUES (?,?,?,?,?,?, now())
+     ON CONFLICT (creator_id, platform) DO UPDATE SET handle = excluded.handle, url = excluded.url, followers = excluded.followers, avg_views = excluded.avg_views, updated_at = now()`
+  ).bind(me.creator.id, p.platform, p.handle, p.url, p.followers, p.avg_views).run();
+  await audit({ kind: "creator", id: me.creator.id }, "platform.saved", "creator", me.creator.id, { platform: p.platform });
+  redirect(backAt("platforms", "good", `${PLATFORM_LABEL[p.platform]} saved.`));
+}
+
+async function deletePlatform(fd) {
+  "use server";
+  const me = await currentCreator();
+  if (!me) redirect("/creator/login?next=/creator/profile");
+  if (me.claimPending) redirect("/creator/profile");
+  // Owner check is in the WHERE clause.
+  const row = await env.DB.prepare("DELETE FROM creator_platforms WHERE creator_id = ? AND platform = ? RETURNING platform").bind(me.creator.id, String(fd.get("platform") ?? "")).first();
+  if (!row) redirect(backAt("platforms", "bad", "That platform was already removed."));
+  await audit({ kind: "creator", id: me.creator.id }, "platform.deleted", "creator", me.creator.id, { platform: row.platform });
+  redirect(backAt("platforms", "good", `${PLATFORM_LABEL[row.platform] || "Platform"} removed.`));
+}
+
 export default async function Page({ searchParams }) {
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/profile");
@@ -126,9 +185,16 @@ export default async function Page({ searchParams }) {
   const done = Math.round(((8 - gaps.length) / 8) * 100);
   const flash = searchParams?.msg || "";
   const tone = searchParams?.tone === "bad" ? "bad" : "good";
+  const at = SECTIONS.includes(searchParams?.at) ? searchParams.at : "";
+  const here = (sec) => (flash && at === sec ? <div className={`note ${tone}`} role={tone === "bad" ? "alert" : "status"} style={{ margin: "12px 0" }}>{flash}</div> : null);
   const origin = `https://${headers().get("host")}`;
   const media = (await env.DB.prepare("SELECT id, url, caption FROM creator_media WHERE creator_id=? ORDER BY created_at").bind(c.id).all().catch(() => ({ results: [] }))).results ?? [];
   const canUpload = uploadsReady();
+  const aud = audienceFormValues(c.audience);
+  const hasAudience = !!readAudience(c.audience);
+  const platforms = await creatorPlatforms(env, c.id);
+  const pfEdit = platforms.find((p) => p.platform === searchParams?.pf) || null;
+  const pfDefault = pfEdit?.platform || PLATFORMS.find((p) => !platforms.some((x) => x.platform === p.id))?.id || PLATFORMS[0].id;
   return (
     <PublicShell creatorName={c.name || c.handle} path="/creator/profile">
       <div className="wrap narrow" style={{ padding: 0 }}>
@@ -137,7 +203,7 @@ export default async function Page({ searchParams }) {
           <div className="row" style={{ gap: 12 }}><div className="score" style={{ "--v": done }}><i>{done}%</i></div><span className="small muted">complete</span></div>
         </div>
         <div className="note info" style={{ marginBottom: 16 }}>Your public media kit: <a className="link" href={`/m/${c.handle}`} target="_blank">{origin}/m/{c.handle}</a>. Put it in your Instagram bio so brands can book you through Colatch.</div>
-        {flash && <div className={`note ${tone}`} style={{ marginBottom: 16 }}>{flash} {tone === "good" && <a className="link" href="/creator">See matches →</a>}</div>}
+        {flash && !at && <div className={`note ${tone}`} style={{ marginBottom: 16 }}>{flash} {tone === "good" && <a className="link" href="/creator">See matches →</a>}</div>}
         {c.verified ? <div className="note info" style={{ marginBottom: 16 }}>✓ Your follower count ({compact(c.followers)}) comes from Instagram and updates automatically.</div> : null}
         {!c.owner_verified && <form className="panel pad" action={verifyBio} style={{ marginBottom: 18 }}>
           <h2>Prove this is your account</h2>
@@ -184,6 +250,64 @@ export default async function Page({ searchParams }) {
           <CreatorProfileFields v={c} />
           <button className="btn-foil" style={{ marginTop: 22 }}>Save profile</button>
         </form>
+
+        <form className="panel pad aud-form" action={saveAudience} id="audience" aria-labelledby="audience-h" style={{ marginTop: 18 }}>
+          <div className="spread"><h2 id="audience-h" style={{ margin: 0 }}>Your audience</h2>{hasAudience && <span className={`pill ${c.audience_source === "team_checked" ? "good" : "ok"}`}>{c.audience_source === "team_checked" ? "Checked by Colatch" : "Self-reported"}</span>}</div>
+          <p style={{ margin: "10px 0 4px", color: "var(--ink-2)" }}>Brands ask who watches you. Open Instagram → Professional dashboard → Total followers, and copy the numbers here. Fill in any part you have; each part should add up to about 100%.</p>
+          {hasAudience && <p className="hint" style={{ margin: "0 0 4px" }}>{audienceSourceLabel(c)}</p>}
+          {here("audience")}
+          <fieldset className="aud-group">
+            <legend>Top cities <span className="opt">— up to {MAX_CITIES}, % of followers</span></legend>
+            {Array.from({ length: MAX_CITIES }, (_, i) => i + 1).map((i) => (
+              <div className="aud-row" key={i}>
+                <div className="fld"><label htmlFor={`f-aud-city-${i}`}>City {i}</label><input id={`f-aud-city-${i}`} name={cityField(i)} list="pcities" maxLength={40} defaultValue={aud[cityField(i)] ?? ""} placeholder={i === 1 ? "Mumbai" : ""} /></div>
+                <div className="fld"><label htmlFor={`f-aud-city-pct-${i}`}>Share %</label><input id={`f-aud-city-pct-${i}`} name={cityPctField(i)} inputMode="decimal" maxLength={5} defaultValue={aud[cityPctField(i)] ?? ""} placeholder={i === 1 ? "31" : ""} /></div>
+              </div>
+            ))}
+          </fieldset>
+          <fieldset className="aud-group">
+            <legend>Gender <span className="opt">— % of followers</span></legend>
+            <div className="aud-nums">
+              {[["women", "Women"], ["men", "Men"], ["other", "Other"]].map(([k, l]) => <div className="fld" key={k}><label htmlFor={`f-aud-${k}`}>{l} %</label><input id={`f-aud-${k}`} name={genderField(k)} inputMode="decimal" maxLength={5} defaultValue={aud[genderField(k)] ?? ""} /></div>)}
+            </div>
+          </fieldset>
+          <fieldset className="aud-group">
+            <legend>Age <span className="opt">— % of followers</span></legend>
+            <div className="aud-nums">
+              {AGE_BANDS.map((b) => <div className="fld" key={b}><label htmlFor={`f-${ageField(b)}`}>{b} %</label><input id={`f-${ageField(b)}`} name={ageField(b)} inputMode="decimal" maxLength={5} defaultValue={aud[ageField(b)] ?? ""} /></div>)}
+            </div>
+          </fieldset>
+          <div className="row" style={{ marginTop: 18, gap: 10 }}>
+            <button className="btn plum">Save audience</button>
+            {hasAudience && <button className="btn ghost" formAction={clearAudience} formNoValidate>Remove audience numbers</button>}
+          </div>
+        </form>
+
+        <section className="panel pad" id="platforms" aria-labelledby="platforms-h" style={{ marginTop: 18 }}>
+          <h2 id="platforms-h">Other platforms</h2>
+          <p style={{ margin: "0 0 12px", color: "var(--ink-2)" }}>Add where else you post. Brands booking YouTube, Moj or ShareChat find you by this.</p>
+          {here("platforms")}
+          {platforms.length > 0 && <ul className="pf-list">
+            {platforms.map((p) => (
+              <li key={p.platform}>
+                <span className="pf-mark" aria-hidden="true">{PLATFORMS.find((x) => x.id === p.platform)?.mark}</span>
+                <div className="pf-txt"><b>{PLATFORM_LABEL[p.platform]}</b><span>@{p.handle}{p.followers != null ? ` · ${compact(p.followers)} followers` : ""}{p.avg_views != null ? ` · ${compact(p.avg_views)} avg views` : ""}</span></div>
+                <div className="pf-act">
+                  <a className="btn sm" href={`/creator/profile?pf=${p.platform}#platforms`}>Edit</a>
+                  <form action={deletePlatform}><input type="hidden" name="platform" value={p.platform} /><button className="btn sm" aria-label={`Remove ${PLATFORM_LABEL[p.platform]}`}>Remove</button></form>
+                </div>
+              </li>
+            ))}
+          </ul>}
+          <form action={savePlatform} className="form-grid" key={pfDefault}>
+            <div className="fld"><label htmlFor="f-pf-platform">Platform</label><select id="f-pf-platform" name="platform" defaultValue={pfDefault}>{PLATFORMS.map((p) => <option key={p.id} value={p.id}>{p.label}{platforms.some((x) => x.platform === p.id) ? " (added)" : ""}</option>)}</select></div>
+            <div className="fld"><label htmlFor="f-pf-handle">Handle or profile link</label><input id="f-pf-handle" name="handle" required maxLength={300} autoCapitalize="none" spellCheck={false} defaultValue={pfEdit?.handle ?? ""} placeholder="@yourname" /></div>
+            <div className="fld full"><label htmlFor="f-pf-url">Profile link <span className="opt">— optional, https:// only</span></label><input id="f-pf-url" name="url" type="url" inputMode="url" maxLength={300} defaultValue={pfEdit?.url ?? ""} placeholder="https://www.youtube.com/@yourname" /></div>
+            <div className="fld"><label htmlFor="f-pf-followers">Followers or subscribers</label><input id="f-pf-followers" name="followers" inputMode="numeric" defaultValue={pfEdit?.followers ?? ""} placeholder="e.g. 45K or 1.2L" /></div>
+            <div className="fld"><label htmlFor="f-pf-views">Avg views per video <span className="opt">— optional</span></label><input id="f-pf-views" name="avg_views" inputMode="numeric" defaultValue={pfEdit?.avg_views ?? ""} placeholder="e.g. 30K" /></div>
+            <div className="full"><button className="btn plum">{pfEdit ? `Update ${PLATFORM_LABEL[pfEdit.platform]}` : "Save platform"}</button>{pfEdit && <a className="btn ghost" href="/creator/profile#platforms" style={{ marginLeft: 8 }}>Cancel</a>}</div>
+          </form>
+        </section>
       </div>
     </PublicShell>
   );

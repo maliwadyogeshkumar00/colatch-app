@@ -15,6 +15,12 @@ import { transition, FlowError } from "@/lib/net/dealflow";
 import { notify } from "@/lib/net/notify";
 import { audit, logError } from "@/lib/net/security";
 import { REASONS, raiseDispute, DisputeError } from "@/lib/net/disputes";
+import { currentBrand } from "@/lib/net/creatorAuth";
+import DealThread from "@/components/deal/DealThread";
+import { UsageLine, ShipmentStatus, ShipPill } from "@/components/deal/DealExtras";
+import { postMessage, notifyMessage, messagesForCampaign, unreadForCampaign, markCampaignRead, MessageError } from "@/lib/net/messages";
+import { shipmentStatusForCampaign } from "@/lib/net/shipments";
+import { syncUsageStart, usageStatus } from "@/lib/net/usage";
 
 // Checked here as well as in the page: metadata runs before the page streams, so a bad link gets a real 404 status.
 export async function generateMetadata({ params }) {
@@ -91,6 +97,27 @@ async function rate(f) {
     ).bind(crypto.randomUUID(), dealId, "brand", stars, scrubContacts(String(f.get("note") ?? "")).text.slice(0, 300) || null).run();
   }
   redirect(back(token, "Rating saved. It helps other brands pick well."));
+}
+
+/** The brand messages the creator and the Colatch team on one booked deal of this campaign. Contact details are scrubbed. */
+async function brandMessage(f) {
+  "use server";
+  const { token, k, dealId, own } = await ownDeal(f);
+  const to = (msg, tone = "ok") => redirect(back(token, msg, tone) + `#deal-${encodeURIComponent(dealId)}`);
+  if (!own) to("That creator isn't booked on this campaign.", "err");
+  const d = await env.DB.prepare("SELECT stage, pay_status FROM creator_deals WHERE id=?").bind(dealId).first();
+  if (!d || d.stage === "cancelled" || d.pay_status === "refunded") to("This deal is closed, so messages are off. Reply to the Colatch team by email if you need anything.", "err");
+  const sender = { kind: "brand", id: k.id };
+  let r;
+  try {
+    r = await postMessage(dealId, sender, f.get("body"), f.get("mid"));
+  } catch (e) {
+    if (e instanceof MessageError) to(e.message, "err");
+    await logError("shortlist.message", e, { deal: dealId });
+    to("Something went wrong, your message wasn't sent. Try again.", "err");
+  }
+  if (r.created) await notifyMessage(dealId, r.id, sender);
+  to(!r.created ? "That message was already sent." : r.scrubbed ? "Message sent. Contact details were hidden: keep the deal on Colatch." : "Message sent.");
 }
 
 /** The brand raises a dispute on one booked deal of this campaign. Ownership is checked in raiseDispute. */
@@ -242,6 +269,16 @@ export default async function Page({ params, searchParams }) {
   const origin = `https://${headers().get("host")}`;
   const darkTag = { background: "rgba(255,255,255,.1)", color: "#F4EFE3" };
   const lblDim = { color: "rgba(244,239,227,.6)" };
+  // Header only: a signed-in brand keeps its own nav here. Access to this page is still the share link.
+  const signedIn = await currentBrand().catch(() => null);
+  // Deal room per booked creator: messages, shipment status (never the address) and usage rights.
+  const brandReader = { kind: "brand", id: k.id };
+  for (const d of deals) await syncUsageStart(d).catch(() => false);
+  const threads = deals.length ? await messagesForCampaign(k.id).catch(() => ({})) : {};
+  const unreadBy = deals.length ? await unreadForCampaign(k.id, brandReader).catch(() => ({})) : {};
+  if (Object.keys(threads).length) await markCampaignRead(k.id, brandReader).catch(() => {});
+  const shipBy = deals.length ? await shipmentStatusForCampaign(k.id).catch(() => ({})) : {};
+  const roomDeals = deals.filter((d) => d.stage !== "cancelled" || (threads[d.id] || []).length);
 
   const hero = (
     <Hero eyebrow={`Your Colatch shortlist · ${k.brand || k.client_company || ""}`} title={escapeHtml(k.title)}>
@@ -251,7 +288,7 @@ export default async function Page({ params, searchParams }) {
   );
 
   return (
-    <PublicShell mode="client" hero={hero}>
+    <PublicShell mode="client" brandName={signedIn ? signedIn.name || signedIn.email : null} hero={hero}>
       <div className="pg-shortlist">
         <style dangerouslySetInnerHTML={{ __html: CSS }} />
         <div style={{ marginBottom: 16 }}><Flash sp={searchParams} /></div>
@@ -323,7 +360,7 @@ export default async function Page({ params, searchParams }) {
                   : <form action={approve} className="row" style={{ marginTop: 16 }}>
                   <input type="hidden" name="token" value={token} />
                   <input type="hidden" name="app" value={r.id} />
-                  <input className="in" name="note" style={{ flex: 1, minWidth: 200 }} placeholder="Comment for the Colatch team (optional)" defaultValue={r.client_note ?? ""} />
+                  <input className="in" name="note" style={{ flex: 1, minWidth: 200 }} placeholder="Note for the Colatch team" aria-label="Note for the Colatch team (optional)" defaultValue={r.client_note ?? ""} />
                   <button className="btn" formAction={decline}>Not for us</button>
                   {r.rate_quote ? <button className="btn plum">Approve</button> : <span className="hint">Fee being confirmed by the Colatch team</span>}
                 </form>}
@@ -343,7 +380,7 @@ export default async function Page({ params, searchParams }) {
             <div className="panel kpi"><div className="k">Link clicks</div><div className="v">{compact(tClicks)}</div><div className="s">from tracked creator links</div></div>
             <div className="panel kpi"><div className="k">Orders</div><div className="v">{tOrders || "—"}</div><div className="s">from creator codes</div></div>
           </div>
-          <div className="panel scroll-x" style={{ marginTop: 14 }}><table className="tbl">
+          <div className="panel scroll-x" style={{ marginTop: 14 }}><table className="tbl stack-sm">
             <thead><tr><th>Creator</th><th>Progress</th><th className="num">Views</th><th className="num">CPV</th><th className="num">Clicks</th><th>Post</th></tr></thead>
             <tbody>{deals.map((d) => {
               const done = railDone(d);
@@ -351,12 +388,12 @@ export default async function Page({ params, searchParams }) {
               const post = d.live_at ? safeUrl(d.post_url) : null;
               return (
                 <tr key={d.id}>
-                  <td><div className="who"><div className="ava" style={{ width: 32, height: 32, fontSize: 11 }}>{safeUrl(d.profile_pic) ? <img src={safeUrl(d.profile_pic)} alt="" /> : initials(d.name || d.handle)}</div><div><b>{d.name || d.handle}</b><span>{d.deliverable}</span></div></div></td>
-                  <td><span className="dots">{RAIL.map((r, i) => <i key={r.key} className={done[i] ? "on" : ""} title={r.label} />)}</span><div className="hint">{d.stage === "cancelled" ? "Cancelled" : at < 0 ? "Waiting for the creator to accept terms" : RAIL[at].label}</div>{priced[d.id] && <div className="hint">All-in {inr(priced[d.id].total)}{priced[d.id].frozen ? " (as paid)" : ""}</div>}</td>
-                  <td className="num">{compact(d.actual_views)}</td>
-                  <td className="num">{d.fee && d.actual_views ? "₹" + (d.fee / d.actual_views).toFixed(2) : "—"}</td>
-                  <td className="num">{d.clicks}</td>
-                  <td>
+                  <td data-label="Creator"><div className="who"><div className="ava" style={{ width: 32, height: 32, fontSize: 11 }}>{safeUrl(d.profile_pic) ? <img src={safeUrl(d.profile_pic)} alt="" /> : initials(d.name || d.handle)}</div><div><b>{d.name || d.handle}</b><span>{d.deliverable}</span></div></div></td>
+                  <td data-label="Progress"><span className="dots">{RAIL.map((r, i) => <i key={r.key} className={done[i] ? "on" : ""} title={r.label} />)}</span><div className="hint">{d.stage === "cancelled" ? "Cancelled" : at < 0 ? "Waiting for the creator to accept terms" : RAIL[at].label}</div>{priced[d.id] && <div className="hint">All-in {inr(priced[d.id].total)}{priced[d.id].frozen ? " (as paid)" : ""}</div>}</td>
+                  <td className="num" data-label="Views">{compact(d.actual_views)}</td>
+                  <td className="num" data-label="CPV">{d.fee && d.actual_views ? "₹" + (d.fee / d.actual_views).toFixed(2) : "—"}</td>
+                  <td className="num" data-label="Clicks">{d.clicks}</td>
+                  <td className="wide" data-label="Post">
                     {post ? <a className="link" href={post} {...EXT}>View ↗</a> : d.live_at && d.post_url ? <span className="hint">{String(d.post_url).slice(0, 60)}</span> : <span className="hint">Not live yet</span>}
                     {d.live_at && !d.brand_signoff_at && <form action={signoff} style={{ marginTop: 6 }}><input type="hidden" name="token" value={token} /><input type="hidden" name="deal" value={d.id} /><label className="hint" style={{ display: "block" }}><input type="checkbox" name="public" value="1" defaultChecked /> creator may show it as proof</label><button className="btn sm plum">Sign off work</button></form>}
                     {d.brand_signoff_at && <div className="hint" style={{ color: "var(--good)" }}>Signed off ✓</div>}
@@ -383,13 +420,43 @@ export default async function Page({ params, searchParams }) {
           {ranked.length > 1 && <p className="hint" style={{ margin: "10px 0 0" }}>Best value so far: <b>{ranked[0].name || ranked[0].handle}</b> at ₹{(ranked[0].fee / ranked[0].actual_views).toFixed(2)} per view.</p>}
         </div>}
 
+        {roomDeals.length > 0 && <section aria-labelledby="room-h" style={{ marginBottom: 34 }} className="dr-room">
+          <div className="sheet__h"><h2 id="room-h">Messages, products and usage</h2><span className="n">{roomDeals.length}</span></div>
+          <div className="stack">{roomDeals.map((d) => {
+            const unread = unreadBy[d.id] || 0;
+            const ships = shipBy[d.id] || [];
+            const u = usageStatus(d);
+            const closedDeal = d.stage === "cancelled" || d.pay_status === "refunded";
+            return (
+              <details key={d.id} id={`deal-${d.id}`} className="panel pad dr-panel" open={unread > 0}>
+                <summary className="dr-sum">
+                  <span className="dr-sum-who"><b>{d.name || d.handle}</b><span className="hint">{d.deliverable}</span></span>
+                  <span className="row" style={{ gap: 6 }}>
+                    {unread > 0 && <span className="pill dr-new">{unread} new</span>}
+                    {ships.length > 0 && <ShipPill status={ships[ships.length - 1].status} />}
+                    {u.state === "expired" && <span className="dr-ship dr-ship-returned">Usage expired</span>}
+                  </span>
+                </summary>
+                <div className="dr-room-body">
+                  {(ships.length > 0 || u.state !== "none") && <div className="dr-room-side">
+                    <ShipmentStatus shipments={ships} showCarrier={false} title={ships.length ? "Product" : ""} />
+                    {u.state !== "none" && <UsageLine d={d} style={{ marginTop: ships.length ? 12 : 0 }} />}
+                  </div>}
+                  <DealThread id={`thread-${d.id}`} messages={threads[d.id] || []} me="brand" unread={unread} action={brandMessage} canPost={!closedDeal} compact
+                    hidden={[["token", token], ["deal", d.id]]} mid={crypto.randomUUID()} names={{ creator: d.name || d.handle }} readOnlyNote="This deal is closed, so messages are off." />
+                </div>
+              </details>
+            );
+          })}</div>
+        </section>}
+
         <div className="grid3" style={{ marginBottom: 22 }}>
           <div className="panel kpi"><div className="k">Approved</div><div className="v">{approvedOrBooked.length} / {k.creators_needed || rows.length}</div><div className="s">creators, including booked</div></div>
           <div className="panel kpi"><div className="k">Creator fees committed</div><div className="v">{inr(spend)}</div><div className="s">before Colatch fee + GST</div></div>
           <div className="panel kpi"><div className="k">Expected views</div><div className="v">{compact(views)}</div><div className="s">{spend && views ? `≈ ₹${(spend / views).toFixed(2)} per view` : "from avg reel views"}</div></div>
         </div>
 
-        {deals.some((d) => d.live_at) && <div className="panel pad" style={{ marginBottom: 22, background: "linear-gradient(135deg,#2E1B36,#1E1128)", color: "#F4EFE3", border: 0 }}>
+        {deals.some((d) => d.live_at) && <div className="panel pad" style={{ marginBottom: 22, background: "linear-gradient(135deg,#1B1342,#1B1342)", color: "#F4EFE3", border: 0 }}>
           <div className="lbl" style={{ color: "var(--gold-2)" }}>Value delivered by Colatch</div>
           <div style={{ fontSize: 34, fontWeight: 300, marginTop: 6 }}>{inr(tot.saved + tot.adsEquivalent + tot.sales)}</div>
           <div className="grid4" style={{ marginTop: 14 }}>

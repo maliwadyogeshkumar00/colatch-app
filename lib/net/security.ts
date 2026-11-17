@@ -104,6 +104,11 @@ export async function audit(
   await database.prepare('INSERT INTO audit_log (actor_kind, actor_id, action, entity, entity_id, detail) VALUES (?, ?, ?, ?, ?, ?)')
     .bind(actor.kind, actor.id ?? null, action, entity ?? null, entityId ?? null, detail ? JSON.stringify(detail) : null)
     .run();
+  // Outgoing webhooks for the few audited actions that are events (deal.create, application.create). Only
+  // outside a transaction: inside one the rows aren't committed yet, and the cron catch-up sweep covers them.
+  if (database === env.DB && (action === 'deal.create' || action === 'application.create')) {
+    await import('./webhooks').then((w) => w.emitFromAudit(action, entityId)).catch(() => {});
+  }
 }
 
 // ------------------------------------------------------------------ input helpers

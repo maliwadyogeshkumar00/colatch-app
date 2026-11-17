@@ -8,9 +8,11 @@ import { audit, createVerifyToken } from "@/lib/net/security";
 import { checkLogin, setPassword, overLimit, mailBase, clientIp, TOO_MANY } from "../../reset/_lib";
 import { notify } from "@/lib/net/notify";
 import { claimStatus, ClaimNote } from "../../join/_claim";
+import { addressFromForm } from "@/lib/net/creators";
 
 export const metadata = { title: "Account settings", robots: { index: false } };
 const BACK = "/creator/settings";
+const SHIP = "/creator/settings?at=shipping"; // the message then shows inside the shipping form, where the page lands
 
 async function changePassword(fd) {
   "use server";
@@ -53,15 +55,49 @@ async function resendVerify() {
   redirect(flashUrl(BACK, status === "sent" ? "ok" : "err", status === "sent" ? `We sent a confirmation link to ${row.email}.` : "Email isn't set up on Colatch yet, so the link could not be sent. The Colatch team can confirm your email for you."));
 }
 
+// ---- Shipping address for product seeding (creator_addresses). Team-only: never shown to brands.
+// Only an account that owns its creator profile can save one (a pending claim can't write to that creator).
+async function ownCreator(next) {
+  const me = await currentCreator();
+  if (!me) redirect(`/creator/login?next=${next}`);
+  if (me.claimPending || !me.creator?.id || (await claimStatus(me.accountId)) !== "own") redirect(flashUrl(BACK, "err", "You can add a shipping address once your profile is verified."));
+  return me;
+}
+
+async function saveAddress(fd) {
+  "use server";
+  const me = await ownCreator("/creator/settings");
+  const { value: a, error } = addressFromForm(fd);
+  if (!a) redirect(flashUrl(SHIP, "err", error) + "#shipping");
+  await env.DB.prepare(
+    `INSERT INTO creator_addresses (creator_id, name, line1, line2, city, state, pincode, phone, updated_at) VALUES (?,?,?,?,?,?,?,?, now())
+     ON CONFLICT (creator_id) DO UPDATE SET name = excluded.name, line1 = excluded.line1, line2 = excluded.line2, city = excluded.city,
+       state = excluded.state, pincode = excluded.pincode, phone = excluded.phone, updated_at = now()`
+  ).bind(me.creator.id, a.name, a.line1, a.line2, a.city, a.state, a.pincode, a.phone).run();
+  // The audit log records that it changed, never the address itself.
+  await audit({ kind: "creator", id: me.accountId }, "creator.address_saved", "creator", me.creator.id);
+  redirect(flashUrl(SHIP, "ok", "Shipping address saved. Only the Colatch team can see it.") + "#shipping");
+}
+
+async function deleteAddress() {
+  "use server";
+  const me = await ownCreator("/creator/settings");
+  const r = await env.DB.prepare("DELETE FROM creator_addresses WHERE creator_id = ?").bind(me.creator.id).run();
+  await audit({ kind: "creator", id: me.accountId }, "creator.address_deleted", "creator", me.creator.id);
+  redirect(flashUrl(SHIP, "ok", r.meta?.changes ? "Shipping address deleted." : "There was no shipping address to delete.") + "#shipping");
+}
+
 export default async function Page({ searchParams }) {
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/settings");
   const status = await claimStatus(me.accountId);
   const verified = !!(await env.DB.prepare("SELECT email_verified_at FROM creator_accounts WHERE id=?").bind(me.accountId).first())?.email_verified_at;
+  const own = status === "own" && !me.claimPending && me.creator?.id;
+  const addr = own ? await env.DB.prepare("SELECT name, line1, line2, city, state, pincode, phone FROM creator_addresses WHERE creator_id = ?").bind(me.creator.id).first() : null;
   return (
     <PublicShell path="/creator/settings" creatorName={status === "own" ? me.creator?.name : null}>
       <div className="wrap narrow" style={{ maxWidth: 520, padding: "20px 0 0" }}>
-        <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
+        {searchParams?.at !== "shipping" && <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>}
         {status !== "own" && <div style={{ marginBottom: 18 }}><ClaimNote status={status} /></div>}
         <form className="panel pad" action={resendVerify} style={{ marginBottom: 18 }}>
           <div className="spread"><h2 style={{ margin: 0 }}>Email</h2>{verified ? <span className="pill good">Confirmed</span> : <span className="pill ok">Not confirmed</span>}</div>
@@ -78,6 +114,24 @@ export default async function Page({ searchParams }) {
           </div>
           <button className="btn-foil" style={{ marginTop: 20 }}>Change password</button>
         </form>
+        {own && <form className="panel pad ship-form" action={saveAddress} id="shipping" aria-labelledby="shipping-h" style={{ marginTop: 18 }}>
+          <div className="spread"><h2 id="shipping-h" style={{ margin: 0 }}>Shipping address for product seeding</h2>{addr ? <span className="pill good">Saved</span> : <span className="pill ok">Not added</span>}</div>
+          {searchParams?.at === "shipping" && <div style={{ marginTop: 12 }}><Flash sp={searchParams} /></div>}
+          <p className="note info ship-private" style={{ margin: "12px 0 16px" }}><b>Only the Colatch team sees this. Brands never do.</b> We use it to send you products for gifting and seeding deals you accept.</p>
+          <div className="form-grid">
+            <div className="fld full"><label htmlFor="f-ship-name">Name on the parcel</label><input id="f-ship-name" name="ship_name" required maxLength={80} autoComplete="shipping name" defaultValue={addr?.name ?? me.creator?.name ?? ""} /></div>
+            <div className="fld full"><label htmlFor="f-ship-line1">House or flat, building, street</label><input id="f-ship-line1" name="line1" required maxLength={120} autoComplete="shipping address-line1" defaultValue={addr?.line1 ?? ""} /></div>
+            <div className="fld full"><label htmlFor="f-ship-line2">Area or landmark <span className="opt">— optional</span></label><input id="f-ship-line2" name="line2" maxLength={120} autoComplete="shipping address-line2" defaultValue={addr?.line2 ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-ship-city">City</label><input id="f-ship-city" name="ship_city" required maxLength={60} autoComplete="shipping address-level2" defaultValue={addr?.city ?? me.creator?.city ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-ship-state">State <span className="opt">— optional</span></label><input id="f-ship-state" name="ship_state" maxLength={60} autoComplete="shipping address-level1" defaultValue={addr?.state ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-ship-pin">PIN code</label><input id="f-ship-pin" name="pincode" required inputMode="numeric" maxLength={7} pattern="[1-9][0-9]{2} ?[0-9]{3}" autoComplete="shipping postal-code" defaultValue={addr?.pincode ?? ""} placeholder="110001" /><span className="hint">6 digits</span></div>
+            <div className="fld"><label htmlFor="f-ship-phone">Phone for the courier <span className="opt">— optional</span></label><input id="f-ship-phone" name="ship_phone" type="tel" inputMode="tel" maxLength={16} autoComplete="shipping tel-national" defaultValue={addr?.phone ?? ""} placeholder="98XXXXXXXX" /></div>
+          </div>
+          <div className="row" style={{ marginTop: 18, gap: 10 }}>
+            <button className="btn plum">{addr ? "Update address" : "Save address"}</button>
+            {addr && <button className="btn ghost" formAction={deleteAddress} formNoValidate>Delete address</button>}
+          </div>
+        </form>}
         <form className="panel pad" action={signOutEverywhere} style={{ marginTop: 18 }}>
           <h2>Sign out everywhere</h2>
           <p className="muted" style={{ margin: "-4px 0 14px" }}>Lost a phone, or logged in on someone else's laptop? This signs your account out on every device, including this one.</p>

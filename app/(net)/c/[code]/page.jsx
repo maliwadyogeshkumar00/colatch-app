@@ -20,7 +20,7 @@ export async function generateMetadata({ params }) {
 
 const CSS = `
 .pg-flex .wrapx{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:40px;align-items:start}
-.pg-flex .card{width:100%;aspect-ratio:9/16;border-radius:22px;box-shadow:0 30px 60px -30px rgba(31,21,36,.55);display:block;background:#1E1128}
+.pg-flex .card{width:100%;aspect-ratio:9/16;border-radius:22px;box-shadow:0 30px 60px -30px rgba(31,21,36,.55);display:block;background:#1B1342}
 .pg-flex .gets{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin-top:22px}
 .pg-flex .get{padding:18px;border-radius:14px;background:var(--paper);border:1px solid var(--line)}
 .pg-flex .get b{display:block;color:var(--head);font-size:15px}

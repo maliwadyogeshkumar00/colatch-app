@@ -3,6 +3,7 @@ import { requireTeam } from "../_guard";
 import { env } from "@/lib/net/env";
 import { inr } from "@/lib/net/creators";
 import { list } from "@/lib/net/match";
+import { inrKpi, inrFull } from "@/components/team/labels";
 
 export const metadata = { title: "Marketplace health", robots: { index: false, follow: false } };
 
@@ -10,9 +11,11 @@ export default async function Page() {
   const me = await requireTeam();
   const q = async (sql, ...b) => (await env.DB.prepare(sql).bind(...b).all().catch(() => ({ results: [] }))).results ?? [];
   const camps = await q("SELECT id, title, talent_types, city, status, created_at, creators_needed, promised_cpv, brand, client_company, source FROM campaigns WHERE status <> 'rejected'");
-  const apps = await q("SELECT campaign_id, created_at, status FROM campaign_applications");
-  const deals = await q("SELECT d.campaign_id, d.fee, d.actual_views, d.live_at, d.paid_at, d.pay_status, k.payment_days FROM creator_deals d LEFT JOIN campaigns k ON k.id=d.campaign_id");
+  const apps = await q("SELECT id, campaign_id, created_at, status FROM campaign_applications");
+  const deals = await q("SELECT d.id, d.application_id, d.campaign_id, d.fee, d.actual_views, d.live_at, d.paid_at, d.pay_status, k.payment_days FROM creator_deals d LEFT JOIN campaigns k ON k.id=d.campaign_id");
   const creators = await q("SELECT skills, city, verified, owner_verified, created_at, source FROM creators WHERE status <> 'blacklisted'");
+  // Deals with a brand payment in the ledger: the rule Money and ledger reconciles against.
+  const fundedIds = new Set((await q("SELECT DISTINCT deal_id FROM finance_ledger WHERE kind='brand_payment_received' AND deal_id IS NOT NULL")).map((r) => r.deal_id));
   const accounts = (await q("SELECT COUNT(*) n FROM creator_accounts"))[0]?.n ?? 0;
 
   const ms = (s) => { s = String(s); return Date.parse(s.replace(" ", "T") + (s.includes("Z") || s.includes("+") ? "" : "Z")); };
@@ -58,10 +61,14 @@ export default async function Page() {
   const cities = [...cityCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
   // funnel
   const verified = creators.filter((c) => c.verified || c.owner_verified).length;
-  const applied = new Set(apps.map((a) => a.campaign_id + a.created_at)).size;
-  const selected = apps.filter((a) => ["shortlisted", "accepted"].includes(a.status)).length;
-  const paidCount = deals.filter((d) => d.pay_status === "paid").length;
-  const gmv = deals.filter((d) => ["funded", "released", "paid"].includes(d.pay_status)).reduce((s, d) => s + (d.fee || 0), 0);
+  // One population for every stage: applications. Selected and paid are subsets of it, so the funnel can't grow.
+  const SELECTED = ["shortlisted", "accepted"];
+  const paidApps = new Set(deals.filter((d) => d.pay_status === "paid" && d.application_id).map((d) => d.application_id));
+  const applied = apps.length;
+  const selected = apps.filter((a) => SELECTED.includes(a.status)).length;
+  const paidCount = apps.filter((a) => SELECTED.includes(a.status) && paidApps.has(a.id)).length;
+  const fundedDeals = deals.filter((d) => ["funded", "released", "paid"].includes(d.pay_status) && fundedIds.has(d.id));
+  const gmv = fundedDeals.reduce((s, d) => s + (d.fee || 0), 0);
   const fmt = (n, suf = "") => (n == null ? "—" : (Math.round(n * 10) / 10) + suf);
 
   return (
@@ -73,10 +80,10 @@ export default async function Page() {
         <div className="panel kpi"><div className="k">First application</div><div className="v">{fmt(median(firstHrs), "h")}</div><div className="s">median after a brief goes live</div></div>
         <div className="panel kpi"><div className="k">Days to pay</div><div className="v">{fmt(median(payDays), "d")}</div><div className="s">median, live → paid · target ≤7</div></div>
         <div className="panel kpi"><div className="k">Paid on time</div><div className="v">{fmt(pct(onTime, paid.length), "%")}</div><div className="s">{overdue ? overdue + " payouts overdue now" : "none overdue"}</div></div>
-        <div className="panel kpi"><div className="k">Funded deal value</div><div className="v">{inr(gmv)}</div><div className="s">creator fees funded or paid</div></div>
+        <div className="panel kpi"><div className="k">Funded deal value</div><div className="v" title={inrFull(gmv)}>{inrKpi(gmv)}</div><div className="s">creator fees on {fundedDeals.length} {fundedDeals.length === 1 ? "deal" : "deals"} with a brand payment in the ledger</div></div>
         <div className="panel kpi"><div className="k">Repeat brands</div><div className="v">{repeat}</div><div className="s">of {brandCount.size} brands with 2+ briefs</div></div>
         <div className="panel kpi"><div className="k">Creators</div><div className="v">{creators.length}</div><div className="s">{accounts} with a login · {fmt(pct(verified, creators.length), "%")} verified</div></div>
-        <div className="panel kpi"><div className="k">Creator funnel</div><div className="v" style={{ fontSize: 20 }}>{applied} → {selected} → {paidCount}</div><div className="s">applications → selected → paid</div></div>
+        <div className="panel kpi"><div className="k">Creator funnel</div><div className="v" style={{ fontSize: 20 }}>{applied} → {selected} → {paidCount}</div><div className="s">applications → selected → paid, from applications only</div></div>
       </div>
 
       <div className="grid2 sec" style={{ alignItems: "start" }}>

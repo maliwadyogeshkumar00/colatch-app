@@ -10,6 +10,7 @@ import { audit } from "@/lib/net/security";
 import { inr } from "@/lib/net/creators";
 import { formatIST } from "@/lib/net/brief";
 import { DEMO_INSERTS, DEMO_DELETES } from "./demo";
+import { inrKpi, inrFull } from "@/components/team/labels";
 
 export const metadata = { title: "Network overview", robots: { index: false, follow: false } };
 
@@ -37,7 +38,9 @@ export default async function Page({ searchParams }) {
   const me = await requireTeam();
   const one = async (sql, ...b) => (await env.DB.prepare(sql).bind(...b).first().catch(() => null)) ?? {};
   const many = async (sql, ...b) => (await env.DB.prepare(sql).bind(...b).all().catch(() => ({ results: [] }))).results ?? [];
-  const monthStart = new Date().toISOString().slice(0, 8) + "01";
+  // Start of this calendar month in Indian time, as a UTC instant (1 Nov 00:00 IST = 31 Oct 18:30 UTC).
+  const ist = new Date(Date.now() + 5.5 * 36e5);
+  const monthStart = new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth(), 1) - 5.5 * 36e5).toISOString();
 
   const k = await one(`SELECT
       (SELECT COUNT(*) FROM campaigns WHERE status='open') open_n,
@@ -46,7 +49,7 @@ export default async function Page({ searchParams }) {
       (SELECT COUNT(*) FROM creator_deals WHERE stage='live') live_n,
       (SELECT COUNT(*) FROM creators WHERE status <> 'blacklisted') creators_n,
       (SELECT COUNT(*) FROM creator_accounts) accounts_n,
-      (SELECT COALESCE(SUM(fee),0) FROM creator_deals WHERE pay_status='paid' AND paid_at >= ?) paid_month,
+      (SELECT COALESCE(SUM(amount_paise),0) FROM finance_ledger WHERE kind='creator_payout_sent' AND at >= ?::timestamptz) paid_month_paise,
       (SELECT COUNT(*) FROM creators WHERE id LIKE 'demo-%') demo_n,
       (SELECT COUNT(*) FROM bypass_reports WHERE status='open') reports_n`, monthStart);
 
@@ -105,7 +108,7 @@ export default async function Page({ searchParams }) {
             <table className="tbl"><tbody>{owed.slice(0, 5).map((w) => {
               const late = w.shortlist_due && Date.parse(w.shortlist_due) < now;
               return <tr key={w.id}><td><a className="link" href={`/team/campaigns/${w.id}`}>{w.title}</a><div className="hint">{w.client_company || w.brand || "Brand"} · {w.status === "pending" ? "needs approval" : "open"}</div></td>
-                <td className="num">{w.shortlist_due ? <span className={`pill ${late ? "low" : "ok"}`}>{late ? "Late · " : "Due "}{formatIST(w.shortlist_due)}</span> : <span className="hint">no promise</span>}</td></tr>;
+                <td className="num">{w.shortlist_due ? <span className={`pill ${late ? "low" : "ok"}`}>{late ? "Late · " : "Due "}{formatIST(w.shortlist_due)}</span> : <span className="hint">no deadline set</span>}</td></tr>;
             })}</tbody></table>{owed.length > 5 && <div className="pad" style={{ padding: "10px 16px" }}><a className="link small" href="/team/campaigns">See all {owed.length} briefs owed a shortlist</a></div>}</div>}
           {pitchReqs.length > 0 && <div className="panel"><div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Pitch requests from the idea board</h2></div>
             <table className="tbl"><tbody>{pitchReqs.slice(0, 5).map((r) => <tr key={r.id}><td><a className="link" href={`/team/campaigns/${r.id}`}>{r.title}</a><div className="hint">{r.client_company || "Brand"} wants this idea · confirm the creator's dates</div></td>
@@ -115,11 +118,11 @@ export default async function Page({ searchParams }) {
 
       <div className="grid3 sec">
         <div className="panel kpi"><div className="k">Open campaigns</div><div className="v">{k.open_n ?? 0}</div><div className="s">{k.pending_n ?? 0} waiting for approval</div></div>
-        <div className="panel kpi"><div className="k">Shortlists owed</div><div className="v">{owed.length}</div><div className="s">{owed[0]?.shortlist_due ? `Next due ${formatIST(owed[0].shortlist_due)}` : "No promise pending"}</div></div>
+        <div className="panel kpi"><div className="k">Shortlists owed</div><div className="v">{owed.length}</div><div className="s">{owed[0]?.shortlist_due ? `Next due ${formatIST(owed[0].shortlist_due)}` : "No deadline set"}</div></div>
         <div className="panel kpi"><div className="k">Applicants this week</div><div className="v">{k.apps_week ?? 0}</div><div className="s">across all briefs</div></div>
         <div className="panel kpi"><div className="k">Live deals</div><div className="v">{k.live_n ?? 0}</div><div className="s">posts up, payout pending</div></div>
         <div className="panel kpi"><div className="k">Creators</div><div className="v">{k.creators_n ?? 0}</div><div className="s">{k.accounts_n ?? 0} with a portal login</div></div>
-        <div className="panel kpi"><div className="k">Paid this month</div><div className="v">{inr(k.paid_month ?? 0)}</div><div className="s">creator fees cleared</div></div>
+        <div className="panel kpi"><div className="k">Paid this month</div><div className="v" title={inrFull(Number(k.paid_month_paise ?? 0) / 100)}>{inrKpi(Number(k.paid_month_paise ?? 0) / 100)}</div><div className="s">sent to creators, from the ledger</div></div>
       </div>
 
       <div className="grid2 sec" style={{ alignItems: "start" }}>

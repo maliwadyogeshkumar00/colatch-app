@@ -4,8 +4,11 @@ import { flashUrl } from "../../_ui/flash";
 import { requireTeam } from "../_guard";
 import { env } from "@/lib/net/env";
 import { lookupProfile, metaReady, cleanHandle } from "@/lib/net/meta";
-import { upsertFromInstagram, compact, erBand, tierFor, int, str, parseCsv, mapCsvRows, NICHES, CREATOR_STATUSES, STAGE_LABEL } from "@/lib/net/creators";
+import { upsertFromInstagram, compact, erBand, tierFor, int, str, parseCsv, mapCsvRows, NICHES, CREATOR_STATUSES, STAGE_LABEL, PLATFORMS, PLATFORM_IDS, PLATFORM_LABEL, platformsFor } from "@/lib/net/creators";
+import { AGE_BANDS, audienceSummary } from "@/lib/net/audience";
+import { findSimilar } from "@/lib/net/lookalike";
 import { SKILLS, LANGUAGES, CITIES } from "@/lib/net/match";
+import { creatorStatusLabel, nicheLabel, inrFull } from "@/components/team/labels";
 
 export const metadata = { title: "Influencer finder", robots: { index: false, follow: false } };
 
@@ -116,15 +119,36 @@ export default async function Page({ searchParams }) {
   if (fMax != null) { where.push("followers <= ?"); args.push(fMax); }
   if (fEr != null && !isNaN(fEr)) { where.push("engagement_rate >= ?"); args.push(fEr); }
   if (fStatus === "blacklisted") { where[0] = "status = 'blacklisted'"; } else if (fStatus) { where.push("status = ?"); args.push(fStatus); }
+  // Audience filters read the creator's self-reported split (creators.audience, see lib/net/audience.ts).
+  const fAud = ["women", "men"].includes(u.aud) ? u.aud : "";
+  const fACity = String(u.acity ?? "").trim().slice(0, 40);
+  const fAge = AGE_BANDS.includes(u.aage) ? u.aage : "";
+  const fPf = [].concat(u.pf ?? []).map(String).filter((x) => PLATFORM_IDS.includes(x));
+  const fLike = cleanHandle(String(u.like ?? ""));
+  if (fAud) where.push(`COALESCE((audience->'gender'->>'${fAud}')::numeric, 0) >= 60`);
+  if (fACity) { where.push("EXISTS (SELECT 1 FROM jsonb_array_elements(CASE WHEN jsonb_typeof(audience->'cities') = 'array' THEN audience->'cities' ELSE '[]'::jsonb END) e WHERE e->>'name' LIKE ?)"); args.push(`%${fACity}%`); }
+  if (fAge) { where.push("audience->>'core_age' = ?"); args.push(fAge); }
+  // Every ticked platform must be on the creator's profile.
+  for (const plat of fPf) { where.push("EXISTS (SELECT 1 FROM creator_platforms p WHERE p.creator_id = creators.id AND p.platform = ?)"); args.push(plat); }
   const order = sort === "er" ? "engagement_rate DESC NULLS LAST" : sort === "quality" ? "quality_score DESC NULLS LAST" : sort === "new" ? "created_at DESC" : "followers DESC NULLS LAST";
   let rows = [];
   let total = 0;
   let dbErr = "";
+  let extraStatuses = [];
+  let seed = null;
+  let pf = {};
   try {
-    rows = (await env.DB.prepare(`SELECT * FROM creators WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT 200`).bind(...args).all()).results ?? [];
+    if (fLike) {
+      // Lookalike mode: rank creators like @handle (lib/net/lookalike.ts); the other filters still apply.
+      seed = await env.DB.prepare("SELECT * FROM creators WHERE handle = ?").bind(fLike).first();
+      if (seed) rows = (await findSimilar(env, seed, { limit: 200, where: where.slice(1), args })).map((r) => ({ ...r.creator, _score: r.score, _why: r.why }));
+    } else rows = (await env.DB.prepare(`SELECT * FROM creators WHERE ${where.join(" AND ")} ORDER BY ${order} LIMIT 200`).bind(...args).all()).results ?? [];
+    pf = await platformsFor(env, rows.map((r) => r.id));
     total = (await env.DB.prepare("SELECT COUNT(*) n FROM creators").first())?.n ?? 0;
+    // Stored statuses outside the standard list (e.g. "active") still get a filter option.
+    extraStatuses = ((await env.DB.prepare("SELECT DISTINCT status FROM creators WHERE status IS NOT NULL").all().catch(() => ({ results: [] }))).results ?? []).map((r) => r.status).filter((x) => x && !CREATOR_STATUSES.includes(x));
   } catch (e) { dbErr = e instanceof Error ? e.message : String(e); }
-  const filtered = Boolean(q || fSkill || fNiche || fCity || fLang || fGender || fMin != null || fMax != null || fEr != null || fStatus);
+  const filtered = Boolean(q || fSkill || fNiche || fCity || fLang || fGender || fMin != null || fMax != null || fEr != null || fStatus || fAud || fACity || fAge || fPf.length || fLike);
   const initials = (s) => String(s).replace(/[^a-z0-9]/gi, " ").trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
   const flash = u.err || u.ok;
   const lb = lookup ? erBand(lookup.engagement_rate, lookup.followers) : null;
@@ -173,27 +197,41 @@ export default async function Page({ searchParams }) {
         <button className="btn plum" type="submit">Search</button>
         <div className="fld"><label htmlFor="f-team-creators-gender-6">Gender</label><select id="f-team-creators-gender-6" name="gender" defaultValue={fGender}><option value="">Any</option>{["Female", "Male", "Other"].map((s) => <option key={s}>{s}</option>)}</select></div>
         <div className="fld"><label htmlFor="f-team-creators-er-7">Min engagement %</label><input id="f-team-creators-er-7" name="er" defaultValue={u.er ?? ""} placeholder="e.g. 2" /></div>
-        <div className="fld"><label htmlFor="f-team-creators-status-8">Status</label><select id="f-team-creators-status-8" name="status" defaultValue={fStatus}><option value="">Any</option>{CREATOR_STATUSES.map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}</select></div>
+        <div className="fld"><label htmlFor="f-team-creators-status-8">Status</label><select id="f-team-creators-status-8" name="status" defaultValue={fStatus}><option value="">Any</option>{[...CREATOR_STATUSES, ...extraStatuses].map((s) => <option key={s} value={s}>{creatorStatusLabel(s)}</option>)}</select></div>
         <div className="fld"><label htmlFor="f-team-creators-sort-9">Sort</label><select id="f-team-creators-sort-9" name="sort" defaultValue={sort}>{[["followers", "Biggest first"], ["er", "Best engagement"], ["quality", "Best quality score"], ["new", "Newest"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></div>
         {filtered && <a className="btn ghost" href="/team/creators">Clear</a>}
+        <div className="finder-more">
+          <div className="fld"><label htmlFor="f-team-creators-like">Find creators like</label><input id="f-team-creators-like" name="like" defaultValue={u.like ?? ""} placeholder="@handle" autoCapitalize="none" spellCheck={false} /></div>
+          <div className="fld"><label htmlFor="f-team-creators-aud">Audience mostly</label><select id="f-team-creators-aud" name="aud" defaultValue={fAud}><option value="">Any</option><option value="women">Women (60%+)</option><option value="men">Men (60%+)</option></select></div>
+          <div className="fld"><label htmlFor="f-team-creators-acity">Audience city</label><input id="f-team-creators-acity" name="acity" list="cities" defaultValue={fACity} placeholder="In their top cities" /></div>
+          <div className="fld"><label htmlFor="f-team-creators-aage">Core audience age</label><select id="f-team-creators-aage" name="aage" defaultValue={fAge}><option value="">Any</option>{AGE_BANDS.map((b) => <option key={b} value={b}>{b}</option>)}</select></div>
+          <fieldset className="fld pf-filter">
+            <legend>Also on <span className="opt">— all ticked</span></legend>
+            <div className="chips">{PLATFORMS.map((p) => <label key={p.id} className="chip"><input type="checkbox" name="pf" value={p.id} defaultChecked={fPf.includes(p.id)} /><span>{p.label}</span></label>)}</div>
+          </fieldset>
+        </div>
       </form>
       <datalist id="cities">{CITIES.map((c) => <option key={c} value={c} />)}</datalist>
 
       <div className="sec">
-        <div className="spread" style={{ marginBottom: 12 }}><div className="h2" style={{ margin: 0 }}>{filtered ? `${rows.length} matching creators` : `${total} creators in the database`}</div>{rows.length === 200 && <span className="hint">Showing the first 200. Narrow the filters.</span>}</div>
+        {fLike && !seed && !dbErr && <div className="note bad" style={{ marginBottom: 12 }}>No creator @{fLike} in the database yet. Look them up on Instagram above, then search again.</div>}
+        <div className="spread" style={{ marginBottom: 12 }}><div className="h2" style={{ margin: 0 }}>{seed ? `${rows.length} creators like @${seed.handle}` : filtered ? `${rows.length} matching creators` : `${total} creators in the database`}</div>{rows.length === 200 && <span className="hint">Showing the first 200. Narrow the filters.</span>}</div>
+        {seed && <p className="hint" style={{ margin: "-4px 0 12px" }}>Ranked by shared talent and niche, size, city, languages, engagement, audience and platforms. <a className="link" href={`/team/creators/${seed.id}`}>Open @{seed.handle}</a></p>}
         {rows.length ? (
-          <div className="panel scroll-x"><table className="tbl">
-            <thead><tr><th>Creator</th><th>Talent · niche</th><th>City</th><th className="num">Followers</th><th className="num">Engagement</th><th className="num">Quality</th><th className="num">Reel rate</th><th>Status</th></tr></thead>
+          <div className="panel scroll-x"><table className="tbl stack">
+            <thead><tr><th>Creator</th>{seed && <th>Why similar</th>}<th>Talent · niche</th><th>City</th><th className="num">Followers</th><th className="num">Engagement</th><th className="num">Quality</th><th className="num">Reel rate</th><th>Status</th></tr></thead>
             <tbody>{rows.map((c) => { const b = erBand(c.engagement_rate, c.followers); return (
               <tr key={c.id}>
                 <td><a className="who" href={`/team/creators/${c.id}`}><div className="ava">{c.profile_pic ? <img src={c.profile_pic} alt="" loading="lazy" /> : initials(c.name || c.handle)}</div><div><b>{c.name || c.handle}{c.verified ? " ✓" : ""}</b><span>@{c.handle}</span></div></a></td>
-                <td>{(c.skills || "").split(",").filter(Boolean).slice(0, 2).map((s) => <span key={s} className="tag">{s.trim()}</span>)}{c.niche && <span className="tag">{c.niche.split(",")[0]}</span>}</td>
-                <td>{c.city || <span className="muted">—</span>}</td>
-                <td className="num">{compact(c.followers)}</td>
-                <td className="num">{c.engagement_rate != null ? <span className={`pill ${b.tone}`}>{c.engagement_rate}%</span> : <span className="muted">—</span>}</td>
-                <td className="num">{c.quality_score ?? <span className="muted">—</span>}</td>
-                <td className="num">{c.rate_reel ? `₹${compact(c.rate_reel)}` : <span className="muted">—</span>}</td>
-                <td><span className="pill">{STAGE_LABEL[c.status] || c.status}</span></td>
+                {seed && <td data-label="Why similar"><span className="sim-score sm">{c._score}<small>/100</small></span> <span className="small">{c._why}</span></td>}
+                <td data-label="Talent · niche">{(c.skills || "").split(",").filter(Boolean).slice(0, 2).map((s) => <span key={s} className="tag">{s.trim()}</span>)}{c.niche && <span className="tag">{nicheLabel(c.niche.split(",")[0])}</span>}
+                  {(pf[c.id]?.length > 0 || audienceSummary(c)) && <div className="finder-meta">{(pf[c.id] ?? []).map((p) => <span key={p.platform} className="pf-chip" title={PLATFORM_LABEL[p.platform]}>{PLATFORM_LABEL[p.platform]}{p.followers != null ? ` ${compact(p.followers)}` : ""}</span>)}{audienceSummary(c) && <span className="aud-line">Audience: {audienceSummary(c)}</span>}</div>}</td>
+                <td data-label="City">{c.city || <span className="muted">—</span>}</td>
+                <td data-label="Followers" className="num">{compact(c.followers)}</td>
+                <td data-label="Engagement" className="num">{c.engagement_rate != null ? <span className={`pill ${b.tone}`}>{c.engagement_rate}%</span> : <span className="muted">—</span>}</td>
+                <td data-label="Quality" className="num">{c.quality_score ?? <span className="muted" title="Not reviewed yet">—</span>}</td>
+                <td data-label="Reel rate" className="num">{c.rate_reel ? inrFull(c.rate_reel) : <span className="muted">—</span>}</td>
+                <td data-label="Status"><span className="pill">{creatorStatusLabel(c.status)}</span></td>
               </tr>); })}</tbody>
           </table></div>
         ) : (

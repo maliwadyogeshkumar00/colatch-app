@@ -271,3 +271,130 @@ export async function saveProfile(env: Env, creatorId: string, p: ReturnType<typ
   ).bind(p.skills, p.niche, p.city, p.gender, p.language, p.followers, p.avg_views, p.rate_reel, p.rate_story, p.bio_pitch, p.portfolio_links,
     p.phone, p.open_to_barter, p.tier, creatorId).run();
 }
+
+/* ───────────── Other platforms (schema v6: creator_platforms) ───────────── */
+
+/** Platforms creators can add beside Instagram, in the order they are shown. `mark` is the short badge text. */
+export const PLATFORMS: Array<{ id: string; label: string; mark: string; host: RegExp }> = [
+  { id: 'youtube', label: 'YouTube', mark: 'YT', host: /(^|\.)(youtube\.com|youtu\.be)$/ },
+  { id: 'moj', label: 'Moj', mark: 'Mj', host: /(^|\.)(mojapp\.in|moj\.app)$/ },
+  { id: 'josh', label: 'Josh', mark: 'Js', host: /(^|\.)(myjosh\.in|joshapp\.in)$/ },
+  { id: 'sharechat', label: 'ShareChat', mark: 'SC', host: /(^|\.)sharechat\.com$/ },
+  { id: 'snapchat', label: 'Snapchat', mark: 'Sn', host: /(^|\.)snapchat\.com$/ },
+  { id: 'linkedin', label: 'LinkedIn', mark: 'in', host: /(^|\.)linkedin\.com$/ },
+  { id: 'x', label: 'X', mark: 'X', host: /(^|\.)(x\.com|twitter\.com)$/ },
+  { id: 'facebook', label: 'Facebook', mark: 'f', host: /(^|\.)(facebook\.com|fb\.com)$/ },
+  { id: 'threads', label: 'Threads', mark: 'Th', host: /(^|\.)threads\.(net|com)$/ },
+];
+export const PLATFORM_IDS = PLATFORMS.map((p) => p.id);
+export const PLATFORM_LABEL: Record<string, string> = Object.fromEntries(PLATFORMS.map((p) => [p.id, p.label]));
+export const platformInfo = (id: string) => PLATFORMS.find((p) => p.id === id) || null;
+
+export interface PlatformRow { platform: string; handle: string; url: string | null; followers: number | null; avg_views: number | null }
+
+/** http(s) links only, no spaces or quotes, at most 300 characters. Returns the normalised URL or null. */
+export function httpUrl(raw: unknown): string | null {
+  const s = String(raw ?? '').trim();
+  if (!s || s.length > 300 || !/^https?:\/\/[^\s<>"'`]+$/i.test(s)) return null;
+  try { const u = new URL(s); return (u.protocol === 'https:' || u.protocol === 'http:') && u.hostname.includes('.') ? u.toString() : null; } catch { return null; }
+}
+
+/** A handle: letters, numbers, dot, underscore, hyphen; 1–60 characters; leading @ dropped. null when invalid. */
+export function cleanPlatformHandle(raw: unknown): string | null {
+  const h = String(raw ?? '').trim().replace(/^@+/, '');
+  return /^[A-Za-z0-9._-]{1,60}$/.test(h) ? h : null;
+}
+
+/** Last useful path segment of a profile link, e.g. youtube.com/@priya → "priya", linkedin.com/in/priya-s → "priya-s". */
+function handleFromUrl(u: string): string | null {
+  try {
+    const segs = new URL(u).pathname.split('/').filter(Boolean).filter((s) => !['in', 'c', 'channel', 'user', 'add', 'profile', 'u'].includes(s.toLowerCase()));
+    return segs.length ? cleanPlatformHandle(decodeURIComponent(segs[segs.length - 1])) : null;
+  } catch { return null; }
+}
+
+/**
+ * Read one "add a platform" form. The handle box also accepts a pasted profile link.
+ * Numbers accept 45K / 1.2L / 2M like the rest of the profile.
+ */
+export function platformFromForm(src: { get(k: string): unknown }): { value: PlatformRow | null; error: string | null } {
+  const platform = String(src.get('platform') ?? '').trim().toLowerCase();
+  const info = platformInfo(platform);
+  if (!info) return { value: null, error: 'Pick a platform from the list.' };
+  let rawHandle = String(src.get('handle') ?? '').trim();
+  let rawUrl = String(src.get('url') ?? '').trim();
+  if (/^[a-z]+:\/\//i.test(rawHandle) || /^www\./i.test(rawHandle)) { if (!rawUrl) rawUrl = rawHandle.replace(/^www\./i, 'https://www.'); rawHandle = ''; }
+  let url: string | null = null;
+  if (rawUrl) {
+    url = httpUrl(rawUrl);
+    if (!url) return { value: null, error: 'The link must start with https:// (or http://) and have no spaces.' };
+    const host = new URL(url).hostname.toLowerCase();
+    if (!info.host.test(host)) return { value: null, error: `That link isn't a ${info.label} link.` };
+  }
+  const handle = rawHandle ? cleanPlatformHandle(rawHandle) : url ? handleFromUrl(url) : null;
+  if (!handle) return { value: null, error: rawHandle ? 'A handle can use letters, numbers, dots, underscores and hyphens, up to 60 characters.' : `Add your ${info.label} handle or profile link.` };
+  const followers = int(src.get('followers'));
+  const avg = int(src.get('avg_views'));
+  const tooBig = (n: number | null) => n != null && (n < 0 || n > 2_000_000_000);
+  if (String(src.get('followers') ?? '').trim() && followers == null) return { value: null, error: 'Followers should be a number, like 45K or 1.2L.' };
+  if (String(src.get('avg_views') ?? '').trim() && avg == null) return { value: null, error: 'Average views should be a number, like 30K.' };
+  if (tooBig(followers) || tooBig(avg)) return { value: null, error: 'That number is too big. Check it and try again.' };
+  return { value: { platform, handle, url, followers, avg_views: avg }, error: null };
+}
+
+/** Platforms for one creator, in display order. */
+export async function creatorPlatforms(env: Env, creatorId: string): Promise<PlatformRow[]> {
+  const r = await env.DB.prepare('SELECT platform, handle, url, followers, avg_views FROM creator_platforms WHERE creator_id=?').bind(creatorId).all().catch(() => ({ results: [] as PlatformRow[] }));
+  return sortPlatforms(r.results ?? []);
+}
+export const sortPlatforms = <T extends { platform: string }>(rows: T[]): T[] =>
+  [...rows].filter((r) => PLATFORM_IDS.includes(r.platform)).sort((a, b) => PLATFORM_IDS.indexOf(a.platform) - PLATFORM_IDS.indexOf(b.platform));
+
+/** Platforms for many creators at once: { creatorId: ['youtube', ...] }. */
+export async function platformsFor(env: Env, ids: string[]): Promise<Record<string, PlatformRow[]>> {
+  const out: Record<string, PlatformRow[]> = {};
+  if (!ids.length) return out;
+  // One placeholder per id (not an array parameter), so it works the same with every Postgres driver.
+  const r = await env.DB.prepare(`SELECT creator_id, platform, handle, url, followers, avg_views FROM creator_platforms WHERE creator_id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all().catch(() => ({ results: [] as any[] }));
+  for (const row of r.results ?? []) (out[row.creator_id] ||= []).push(row);
+  for (const k of Object.keys(out)) out[k] = sortPlatforms(out[k]);
+  return out;
+}
+
+/* ───────────── Shipping address for product seeding (schema v6: creator_addresses) ───────────── */
+
+/** Indian PIN code: 6 digits, never starting with 0. Spaces are ignored ("110 001"). */
+export function validPincode(raw: unknown): string | null {
+  const s = String(raw ?? '').replace(/\s/g, '');
+  return /^[1-9][0-9]{5}$/.test(s) ? s : null;
+}
+
+/** Indian mobile number as 10 digits (drops +91, 91 or a leading 0). null when it isn't one. */
+export function indianMobile(raw: unknown): string | null {
+  let d = String(raw ?? '').replace(/[\s\-().]/g, '');
+  if (!/^\+?\d+$/.test(d)) return null;
+  d = d.replace(/^\+/, '');
+  if (d.length === 12 && d.startsWith('91')) d = d.slice(2);
+  else if (d.length === 11 && d.startsWith('0')) d = d.slice(1);
+  return /^[6-9]\d{9}$/.test(d) ? d : null;
+}
+
+export interface ShippingAddress { name: string; line1: string; line2: string | null; city: string; state: string | null; pincode: string; phone: string | null }
+
+/** Read and check the shipping address form. */
+export function addressFromForm(src: { get(k: string): unknown }): { value: ShippingAddress | null; error: string | null } {
+  const t = (k: string, max: number) => String(src.get(k) ?? '').replace(/[<>]/g, '').replace(/\s+/g, ' ').trim().slice(0, max);
+  const name = t('ship_name', 80), line1 = t('line1', 120), line2 = t('line2', 120), city = t('ship_city', 60), state = t('ship_state', 60);
+  if (!name) return { value: null, error: 'Add the name the parcel should be addressed to.' };
+  if (!line1) return { value: null, error: 'Add the first line of the address (house or flat, building, street).' };
+  if (!city) return { value: null, error: 'Add the city.' };
+  const pincode = validPincode(src.get('pincode'));
+  if (!pincode) return { value: null, error: 'The PIN code should be 6 digits, like 110001.' };
+  const rawPhone = String(src.get('ship_phone') ?? '').trim();
+  const phone = rawPhone ? indianMobile(rawPhone) : null;
+  if (rawPhone && !phone) return { value: null, error: 'The phone number should be a 10-digit Indian mobile number.' };
+  return { value: { name, line1, line2: line2 || null, city, state: state || null, pincode, phone }, error: null };
+}
+
+/** A stored link that is safe to put in an href (http/https only), or null. */
+export const safeHref = (u: unknown): string | null => httpUrl(u);

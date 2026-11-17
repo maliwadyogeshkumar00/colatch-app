@@ -14,6 +14,11 @@ import { scrubContacts, safeUrl } from "@/lib/net/guard";
 import { goingDirectLosses } from "@/lib/net/trust";
 import { REASONS, raiseDispute, DisputeError, openDispute, lastClosedDispute } from "@/lib/net/disputes";
 import { logError } from "@/lib/net/security";
+import DealThread from "@/components/deal/DealThread";
+import { UsageLine, ShipmentStatus } from "@/components/deal/DealExtras";
+import { listMessages, unreadCount, markRead, postMessage, notifyMessage, MessageError } from "@/lib/net/messages";
+import { listShipments } from "@/lib/net/shipments";
+import { syncUsageStart } from "@/lib/net/usage";
 
 export const metadata = { title: "Deal", robots: { index: false } };
 
@@ -116,6 +121,23 @@ async function dispute(fd) {
   redirect(err ? back(d.id, "bad", err) : back(d.id, "good", "Dispute sent. The Colatch team will look into it and reply here and by email."));
 }
 
+/** A message to the brand and the Colatch team on this deal. Contact details are scrubbed before it is stored. */
+async function sendMessage(fd) {
+  "use server";
+  const { d, me } = await ctx(fd);
+  if (isClosed(d)) redirect(back(d.id, "bad", "This deal is closed, so messages are off. WhatsApp the Colatch team if you need anything.") + "#messages");
+  let r;
+  try {
+    r = await postMessage(d.id, { kind: "creator", id: me.creator.id }, fd.get("body"), fd.get("mid"));
+  } catch (e) {
+    if (e instanceof MessageError) redirect(back(d.id, "bad", e.message) + "#messages");
+    await logError("creator/deal.message", e, { deal: d.id });
+    redirect(back(d.id, "bad", "Something went wrong, your message wasn't sent. Try again.") + "#messages");
+  }
+  if (r.created) await notifyMessage(d.id, r.id, { kind: "creator", id: me.creator.id });
+  redirect(back(d.id, "good", !r.created ? "That message was already sent." : r.scrubbed ? "Message sent. Contact details were hidden: keep the deal on Colatch." : "Message sent.") + "#messages");
+}
+
 export default async function Page({ params, searchParams }) {
   const me = await currentCreator();
   if (!me) redirect(`/creator/login?next=${encodeURIComponent(`/creator/deals/${params.id}`)}`);
@@ -148,12 +170,24 @@ export default async function Page({ params, searchParams }) {
   const origin = `https://${headers().get("host")}`;
   const hid = <input type="hidden" name="id" value={d.id} />;
   const myDispute = await openDispute(d.id, "creator").catch(() => null);
+  // A dispute the brand or the Colatch team opened on this deal shows here too (reason only, not their notes).
+  const brandDispute = myDispute ? null : await openDispute(d.id, "brand").catch(() => null);
+  const teamDispute = myDispute || brandDispute ? null : await openDispute(d.id, "team").catch(() => null);
+  const otherDispute = brandDispute || teamDispute;
+  const otherBy = brandDispute ? "The brand" : "The Colatch team";
   const lastDispute = myDispute ? null : await lastClosedDispute(d.id, "creator").catch(() => null);
+  // Deal room: messages, product shipment and usage rights. Each part is optional so the page never breaks on it.
+  await syncUsageStart(d).catch(() => false);
+  const reader = { kind: "creator", id: me.creator.id };
+  const thread = await listMessages(d.id).catch(() => []);
+  const unread = await unreadCount(d.id, reader).catch(() => 0);
+  if (thread.length) await markRead(d.id, reader).catch(() => {});
+  const shipments = await listShipments(d.id).catch(() => []);
 
   return (
     <PublicShell creatorName={me.creator.name || me.creator.handle} path="/creator/applications">
       <div className="spread" style={{ marginBottom: 16 }}>
-        <div><div className="lbl">{PAY_LABEL[k?.pay_type || "cash"]} deal</div><h1 style={{ margin: "6px 0 0", fontWeight: 300, fontSize: 30, color: "var(--head)" }}>{d.sow_accepted_at ? d.brand || "Brand" : "Brand revealed after you accept"} · <b style={{ fontWeight: 600 }}>{d.deliverable || "Deliverables"}</b></h1></div>
+        <div><div className="lbl">{PAY_LABEL[k?.pay_type || "cash"]}</div><h1 style={{ margin: "6px 0 0", fontWeight: 300, fontSize: 30, color: "var(--head)" }}>{d.sow_accepted_at ? d.brand || "Brand" : "Brand revealed after you accept"} · <b style={{ fontWeight: 600 }}>{d.deliverable || "Deliverables"}</b></h1></div>
         {k?.slug && <a className="btn" href={`/creator/o/${k.slug}`}>See the brief</a>}
       </div>
       {flash && <div className={`note ${tone}`} style={{ marginBottom: 16 }}>{flash}</div>}
@@ -226,9 +260,18 @@ export default async function Page({ params, searchParams }) {
             ) : <p className="hint" style={{ margin: "10px 0 0" }}>You rated this brand {"★".repeat(myRating.stars)}.</p>}
             {!me.creator.upi_id && <p className="hint" style={{ margin: "10px 0 0" }}>Add your UPI ID in <a className="link" href="/creator/profile#payout">your payout details</a> so we can pay you.</p>}
           </div>}
+
+          <div className="panel pad dr-panel">
+            <DealThread id="messages" messages={thread} me="creator" unread={unread} action={sendMessage} canPost={!closed} hidden={[["id", d.id]]} mid={crypto.randomUUID()}
+              names={{ brand: d.sow_accepted_at ? d.brand || "Brand" : "Brand" }} readOnlyNote="This deal is closed, so messages are off." />
+          </div>
         </div>
 
         <div className="stack">
+          {(shipments.length > 0 || d.usage_channels) && <div className="panel pad dr-panel">
+            <ShipmentStatus shipments={shipments} showCarrier title={shipments.length === 1 ? "Product shipment" : "Product shipments"} />
+            {d.usage_channels && <><h2 style={{ marginTop: shipments.length ? 18 : 0 }}>Usage rights</h2><UsageLine d={d} /></>}
+          </div>}
           {th && <div className="panel pad">
             <h2>What you take home</h2>
             <table className="tbl"><tbody>
@@ -258,6 +301,9 @@ export default async function Page({ params, searchParams }) {
           {myDispute ? (
             <div className="panel pad"><span className="pill mine">Dispute open</span>
               <p className="small" style={{ margin: "10px 0 0" }}>You raised a dispute about <b>{(REASONS[myDispute.reason] || myDispute.reason).toLowerCase()}</b>. The Colatch team is looking into it and will reply here and by email.</p></div>
+          ) : otherDispute ? (
+            <div className="panel pad"><span className="pill mine">Dispute open</span>
+              <p className="small" style={{ margin: "10px 0 0" }}>{otherBy} raised a dispute on this deal about <b>{(REASONS[otherDispute.reason] || otherDispute.reason).toLowerCase()}</b>. The Colatch team is looking into it and will reply here and by email. Raising a dispute doesn't move or hold any money by itself.</p></div>
           ) : (
             <details className="panel pad">
               <summary style={{ cursor: "pointer", fontWeight: 600, minHeight: 44, display: "flex", alignItems: "center" }}>Something wrong? Raise a dispute</summary>

@@ -16,6 +16,7 @@ import { marketRate } from "@/lib/net/value";
 import { colatchScore } from "@/lib/net/score";
 import { notify } from "@/lib/net/notify";
 import { audit, logError } from "@/lib/net/security";
+import { APP_STATUS_OPTIONS, appStatusLabel, plural, day } from "@/components/team/labels";
 
 export const metadata = { title: "Campaign", robots: { index: false, follow: false } };
 
@@ -41,6 +42,8 @@ async function handle(fd, forced) {
          creators_needed=?, budget_note=?, budget_total=?, deadline=?, shoot_date=?, pay_type=?, revisions=?, usage_rights=?, payment_days=?, approve_hours=?, mandatories=?, exclusions=?, brand_url=?, promised_cpv=?, brand_category=?, reward_value=?, commission_pct=?, funded=? ${action === "approve" ? ", status='open', is_open=CASE WHEN pitch_id IS NULL THEN 1 ELSE 0 END" : ""} WHERE id=?`
       ).bind(v.title, v.brand, v.brief, v.deliverables, v.talent_types, v.niche, v.city, v.languages, v.gender, v.min_followers, v.max_followers,
         v.creators_needed, v.budget_note, v.budget_total, v.deadline, v.shoot_date, v.pay_type, v.revisions, v.usage_rights, v.payment_days, v.approve_hours, v.mandatories, v.exclusions, v.brand_url, v.promised_cpv, v.brand_category, v.reward_value, v.commission_pct, v.funded, id).run();
+      // Recorded so Icon early access counts its 24 hours from publication, not from when the brief was written.
+      if (action === "approve") await audit(actor, "campaign.approve", "campaign", id, null);
       msg = (action === "approve" ? "Published. Matching creators can see it now." : "Saved.") + (sb.found ? ` ${sb.found} contact detail(s) were hidden from the creator brief.` : "");
     } else if (["close", "reject", "reopen"].includes(action)) {
       const st = action === "close" ? "closed" : action === "reject" ? "rejected" : "open";
@@ -179,12 +182,12 @@ export default async function Page({ params, searchParams }) {
         {Number(k.rush) === 1 && <span className="pill bad">Rush: shortlist in 6 working hours (+5% fee)</span>}
         {k.brief_score != null && <span className="pill">Brief strength {k.brief_score}/100</span>}
         {k.featured_until && k.featured_until > nowTs
-          ? <><span className="pill ok">Featured until {String(k.featured_until).slice(0, 10)}</span><form action={act}>{hidden("unfeature")}<button className="btn sm">Stop featuring</button></form></>
+          ? <><span className="pill ok">Featured until {day(k.featured_until)}</span><form action={act}>{hidden("unfeature")}<button className="btn sm">Stop featuring</button></form></>
           : <>{ai.featured_request && <span className="pill ok">Client asked to feature (₹1,999)</span>}<form action={act}>{hidden("feature")}<button className="btn sm">Feature for 7 days</button></form></>}
       </div>
 
       <div className="grid4">
-        <div className="panel kpi"><div className="k">Applicants</div><div className="v">{apps.length}</div><div className="s">{eligibleN} meet every requirement</div></div>
+        <div className="panel kpi"><div className="k">Applicants</div><div className="v">{apps.length}</div><div className="s">{eligibleN} {eligibleN === 1 ? "meets" : "meet"} every requirement</div></div>
         <div className="panel kpi"><div className="k">Matching creators</div><div className="v">{pool.length + eligibleN}{pool.length === 40 ? "+" : ""}</div><div className="s">in the database who can see this</div></div>
         <div className="panel kpi"><div className="k">Needed</div><div className="v">{k.creators_needed ?? "—"}</div><div className="s">{k.deliverables || "Deliverables not set"}</div></div>
         <div className="panel kpi"><div className="k">Client budget</div><div className="v">{k.budget_total ? inr(k.budget_total) : "—"}</div><div className="s">{k.creators_needed && k.budget_total ? `${inr(k.budget_total / k.creators_needed)} per creator` : "team only"}</div></div>
@@ -228,24 +231,25 @@ export default async function Page({ params, searchParams }) {
       <div className="sec">
         <div className="h2">Applicants, best match first</div>
         {ranked.length ? (
-          <div className="panel scroll-x"><table className="tbl">
+          <div className="panel scroll-x"><table className="tbl stack">
             <thead><tr><th>Match</th><th>Creator</th><th className="num">Followers</th><th className="num">ER</th><th className="num">Quote</th><th>Why</th><th>Status</th></tr></thead>
             <tbody>{ranked.map(({ a, m }) => (
               <tr key={a.id}>
-                <td><div className="score sm" style={{ "--v": a.match_score ?? m.score }} title="Score saved when they applied: the one the brand sees"><i>{a.match_score ?? m.score}</i></div></td>
-                <td><a className="who" href={a.creator_id ? `/team/creators/${a.creator_id}` : `https://instagram.com/${a.handle}`}><div className="ava">{a.profile_pic ? <img src={a.profile_pic} alt="" /> : initials(a.name || a.handle)}</div><div><b>{a.name || a.handle}{a.verified ? " ✓" : ""}{a.creator_id && tiers.get(a.creator_id) && tiers.get(a.creator_id) !== "Rising" ? <span className="pill good" style={{ marginLeft: 6 }}>{tiers.get(a.creator_id)}</span> : null}</b><span>@{a.handle}{a.ccity || a.city ? ` · ${a.ccity || a.city}` : ""}</span></div></a>
+                <td data-label="Match"><div className="score sm" style={{ "--v": a.match_score ?? m.score }} title="Score saved when they applied: the one the brand sees"><i>{a.match_score ?? m.score}</i></div></td>
+                <td className="first"><a className="who" href={a.creator_id ? `/team/creators/${a.creator_id}` : `https://instagram.com/${a.handle}`}><div className="ava">{a.profile_pic ? <img src={a.profile_pic} alt="" /> : initials(a.name || a.handle)}</div><div><b>{a.name || a.handle}{a.verified ? " ✓" : ""}{a.creator_id && tiers.get(a.creator_id) && tiers.get(a.creator_id) !== "Rising" ? <span className="pill good" style={{ marginLeft: 6 }}>{tiers.get(a.creator_id)}</span> : null}</b><span>@{a.handle}{a.ccity || a.city ? ` · ${a.ccity || a.city}` : ""}</span></div></a>
                   {a.pitch && <div className="hint" style={{ maxWidth: 360, marginTop: 6 }}>"{a.pitch}"</div>}</td>
-                <td className="num">{compact(a.cf ?? a.followers)}</td>
-                <td className="num">{a.engagement_rate != null ? `${a.engagement_rate}%` : "—"}</td>
-                <td className="num">{a.rate_quote ? inr(a.rate_quote) : "—"}</td>
-                <td style={{ maxWidth: 260 }}>{m.reasons.slice(0, 2).map((r) => <span key={r} className="tag">{r}</span>)}{m.blockers.map((b) => <span key={b} className="tag" style={{ background: "transparent", boxShadow: "inset 0 0 0 1px var(--line-3)", color: "var(--ink-3)" }}>✕ {b}</span>)}</td>
-                <td>{a.client_decision && <span className={`pill ${a.client_decision === "approved" ? "good" : "low"}`} style={{ marginBottom: 6 }}>Client {a.client_decision}</span>}{a.client_note && <div className="hint" style={{ maxWidth: 200 }}>"{a.client_note}"</div>}
+                <td data-label="Followers" className="num">{compact(a.cf ?? a.followers)}</td>
+                <td data-label="ER" className="num">{a.engagement_rate != null ? `${a.engagement_rate}%` : "—"}</td>
+                <td data-label="Quote" className="num key">{a.rate_quote ? inr(a.rate_quote) : "—"}</td>
+                <td data-label="Why" style={{ maxWidth: 260 }}>{m.reasons.slice(0, 2).map((r) => <span key={r} className="tag">{r}</span>)}{m.blockers.map((b) => <span key={b} className="tag" style={{ background: "transparent", boxShadow: "inset 0 0 0 1px var(--line-3)", color: "var(--ink-3)" }}>✕ {b}</span>)}</td>
+                <td data-label="Status" className="key cell-stack">{a.client_decision && <span className={`pill ${a.client_decision === "approved" ? "good" : "low"}`} style={{ marginBottom: 6 }}>Client {a.client_decision}</span>}{a.client_note && <div className="hint" style={{ maxWidth: 200 }}>"{a.client_note}"</div>}
                   {["shortlisted", "accepted"].includes(a.status) && <form action={act} className="row" style={{ margin: "6px 0", gap: 6, flexWrap: "nowrap" }}>{hidden("note")}<input type="hidden" name="app" value={a.id} /><input className="in" name="team_note" defaultValue={a.team_note ?? ""} placeholder="Why we picked them" style={{ padding: "6px 8px", fontSize: 12.5, minWidth: 180 }} /><button className="btn sm">Save</button></form>}
                   {deals.get(a.id) ? <a className="btn sm" href={`/team/deals/${deals.get(a.id)}`} style={{ marginBottom: 6 }}>Open deal</a>
                     : ["shortlisted", "accepted"].includes(a.status) && a.creator_id && <form action={act} style={{ marginBottom: 6 }}>{hidden("deal")}<input type="hidden" name="app" value={a.id} /><button className="btn sm">Create deal</button></form>}
                   <form action={act}>{hidden("app")}<input type="hidden" name="app" value={a.id} />
-                    <select className="in" name="reason" defaultValue={a.reject_reason ?? ""} style={{ width: "auto", padding: "6px 8px", fontSize: 12, marginBottom: 4 }}><option value="">Reason if rejecting…</option>{Object.entries(REJECT_REASONS).map(([key, val]) => <option key={key} value={key}>{val[0]}</option>)}</select>
-                    <AutoSelect className="in" name="status" defaultValue={a.status} style={{ width: "auto", padding: "6px 8px", fontSize: 12.5 }}>{[["new", "New"], ["shortlisted", "Shortlisted"], ["accepted", "Selected"], ["rejected", "Not selected"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</AutoSelect></form></td>
+                    {/* A creator with a deal can't be rejected (the server refuses it), so the reason picker only shows when it can be used. */}
+                    {!deals.get(a.id) && <select className="in" name="reason" defaultValue={a.reject_reason ?? ""} aria-label="Reason if not selecting" style={{ width: "auto", padding: "6px 8px", fontSize: 12, marginBottom: 4 }}><option value="">Reason if not selecting…</option>{Object.entries(REJECT_REASONS).map(([key, val]) => <option key={key} value={key}>{val[0]}</option>)}</select>}
+                    <AutoSelect className="in" name="status" defaultValue={a.status} aria-label={`Status: ${appStatusLabel(a.status)}`} style={{ width: "auto", padding: "6px 8px", fontSize: 12.5 }}>{APP_STATUS_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</AutoSelect></form></td>
               </tr>
             ))}</tbody>
           </table></div>
