@@ -560,4 +560,6 @@ html:has(.net){scroll-padding-top:80px}
 @media (prefers-color-scheme:dark){.net input:not([type=checkbox]):not([type=radio]):focus,.net select:focus,.net textarea:focus{border-color:var(--p300);box-shadow:0 0 0 3px rgba(164,157,203,.25)}}
 .net input[type=checkbox]{accent-color:var(--purple)}
 .net ::selection{background:var(--gold-tint);color:#1B1342}
+.net .top{background:rgba(27,19,66,.97);border-bottom:1px solid rgba(214,162,86,.16)}
+@supports (backdrop-filter:blur(10px)){.net .top{background:rgba(27,19,66,.9)}}
 /* end Colatch design 669 */
