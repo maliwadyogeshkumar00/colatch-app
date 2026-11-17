@@ -111,7 +111,7 @@ export default async function Page() {
             <div className="fld" style={{ marginTop: 16 }}><label>Caption, ready to paste</label><textarea readOnly rows={3} defaultValue={caption} style={{ width: "100%", fontSize: 13.5 }} /></div>
           </div>
           <a href={cardUrl} target="_blank" rel="noopener" style={{ display: "block" }}>
-            <img src={cardUrl} alt="Your Colatch flex card" width={1080} height={1920} style={{ width: "100%", height: "auto", borderRadius: 18, boxShadow: "0 24px 48px -26px rgba(31,21,36,.6)", background: "#1E1128", aspectRatio: "9/16" }} />
+            <img src={cardUrl} alt="Your Colatch flex card" width={1080} height={1920} style={{ width: "100%", height: "auto", borderRadius: 18, boxShadow: "0 24px 48px -26px rgba(31,21,36,.6)", background: "#1B1342", aspectRatio: "9/16" }} />
           </a>
         </div>
       </div>

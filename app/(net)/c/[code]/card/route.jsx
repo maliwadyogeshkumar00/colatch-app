@@ -8,7 +8,7 @@ export const dynamic = "force-dynamic";
 
 const W = 1080;
 const H = 1920;
-const GOLD = "#E8B84B";
+const GOLD = "#E8C281";
 const TIER_MARK = { Rising: "◆", Trusted: "✦", Gold: "★", Icon: "♛" };
 
 /** Load Ubuntu from Google Fonts as TTF (Satori can't read woff2). Falls back to the built-in font if anything fails. */
@@ -51,10 +51,10 @@ export async function GET(req, { params }) {
   const img = new ImageResponse(
     (
       <div style={{ width: W, height: H, display: "flex", flexDirection: "column", justifyContent: "space-between", padding: "110px 90px 120px", color: "#F4EFE3", fontFamily: fonts.length ? "Ubuntu" : undefined,
-        backgroundColor: "#1E1128", backgroundImage: "radial-gradient(circle at 90% 0%, rgba(232,184,75,0.28) 0%, rgba(232,184,75,0) 45%), radial-gradient(circle at 0% 100%, rgba(106,74,120,0.65) 0%, rgba(106,74,120,0) 50%), linear-gradient(180deg, #2E1B36 0%, #1E1128 62%, #160B18 100%)" }}>
+        backgroundColor: "#1B1342", backgroundImage: "radial-gradient(circle at 90% 0%, rgba(214,162,86,0.28) 0%, rgba(214,162,86,0) 45%), radial-gradient(circle at 0% 100%, rgba(106,74,120,0.65) 0%, rgba(106,74,120,0) 50%), linear-gradient(180deg, #1B1342 0%, #1B1342 62%, #0F0A28 100%)" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 22 }}>
-            <div style={{ width: 74, height: 74, borderRadius: 999, display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg,#F2D163,#C8962E 60%,#8C5E18)", color: "#1E1128", fontSize: 40, fontWeight: 700 }}>C</div>
+            <div style={{ width: 74, height: 74, borderRadius: 999, display: "flex", alignItems: "center", justifyContent: "center", background: "linear-gradient(135deg,#F4D88A,#C58B2E 60%,#8C5E18)", color: "#1B1342", fontSize: 40, fontWeight: 700 }}>C</div>
             <div style={{ display: "flex", fontSize: 46, fontWeight: 700, letterSpacing: 6 }}>COLATCH</div>
           </div>
           <div style={{ display: "flex", fontSize: 26, letterSpacing: 6, color: GOLD, textTransform: "uppercase" }}>Creator network</div>
@@ -63,7 +63,7 @@ export async function GET(req, { params }) {
         <div style={{ display: "flex", flexDirection: "column" }}>
           {isCreator && f.tier && (
             <div style={{ display: "flex", alignSelf: "flex-start", alignItems: "center", gap: 14, padding: "14px 30px", borderRadius: 999, fontSize: 34, fontWeight: 700, letterSpacing: 2,
-              background: f.tier === "Gold" ? "linear-gradient(135deg,#F2D163,#C8962E)" : "rgba(255,255,255,.08)", color: f.tier === "Gold" ? "#2E1B36" : GOLD, border: "2px solid rgba(232,184,75,.55)" }}>
+              background: f.tier === "Gold" ? "linear-gradient(135deg,#F4D88A,#C58B2E)" : "rgba(255,255,255,.08)", color: f.tier === "Gold" ? "#1B1342" : GOLD, border: "2px solid rgba(214,162,86,.55)" }}>
               <span>{TIER_MARK[f.tier]}</span><span>{f.tier} creator</span>
             </div>
           )}
@@ -72,7 +72,7 @@ export async function GET(req, { params }) {
           {stats.length > 0 && (
             <div style={{ display: "flex", flexDirection: "column", marginTop: 80, gap: 34 }}>
               {stats.map((s) => (
-                <div key={s.k} style={{ display: "flex", alignItems: "baseline", gap: 26, paddingBottom: 30, borderBottom: "2px solid rgba(232,184,75,.22)" }}>
+                <div key={s.k} style={{ display: "flex", alignItems: "baseline", gap: 26, paddingBottom: 30, borderBottom: "2px solid rgba(214,162,86,.22)" }}>
                   <span style={{ fontSize: 96, fontWeight: 700, color: GOLD, letterSpacing: -2 }}>{s.v}</span>
                   <span style={{ fontSize: 38, color: "rgba(244,239,227,.8)" }}>{s.k}</span>
                 </div>
@@ -82,7 +82,7 @@ export async function GET(req, { params }) {
           {!isCreator && <div style={{ display: "flex", marginTop: 50, fontSize: 48, color: "rgba(244,239,227,.8)", lineHeight: 1.35 }}>Paid brand deals that fit you. Free to join.</div>}
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", padding: "54px 60px", borderRadius: 44, background: "linear-gradient(135deg,#F2D163 0%,#E8B84B 30%,#C8962E 70%,#A87422 100%)", color: "#1E1128" }}>
+        <div style={{ display: "flex", flexDirection: "column", padding: "54px 60px", borderRadius: 44, background: "linear-gradient(135deg,#F4D88A 0%,#E8C281 30%,#C58B2E 70%,#A87422 100%)", color: "#1B1342" }}>
           <div style={{ display: "flex", fontSize: 36, letterSpacing: 4, textTransform: "uppercase", fontWeight: 700, opacity: 0.8 }}>Join with my code</div>
           <div style={{ display: "flex", marginTop: 10, fontSize: codeSize, fontWeight: 700, letterSpacing: codeSpacing, whiteSpace: "nowrap" }}>{code}</div>
           <div style={{ display: "flex", marginTop: 14, fontSize: 36 }}>{host}/c/{code}</div>

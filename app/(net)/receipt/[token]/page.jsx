@@ -20,7 +20,7 @@ export async function generateMetadata({ params }) {
 
 const CSS = `
 .pg-receipt{padding:10px 0 40px}
-.pg-receipt .paper{position:relative;max-width:640px;margin:0 auto;background:#fffdf8;color:#1F1524;padding:44px 40px 40px;box-shadow:0 30px 60px -30px rgba(31,21,36,.35),0 2px 6px rgba(31,21,36,.06);
+.pg-receipt .paper{position:relative;max-width:640px;margin:0 auto;background:#fffdf8;color:#14121C;padding:44px 40px 40px;box-shadow:0 30px 60px -30px rgba(31,21,36,.35),0 2px 6px rgba(31,21,36,.06);
   -webkit-mask:radial-gradient(circle 7px at 50% 0,#0000 98%,#000) top/18px 51% repeat-x,radial-gradient(circle 7px at 50% 100%,#0000 98%,#000) bottom/18px 51% repeat-x;
   mask:radial-gradient(circle 7px at 50% 0,#0000 98%,#000) top/18px 51% repeat-x,radial-gradient(circle 7px at 50% 100%,#0000 98%,#000) bottom/18px 51% repeat-x}
 .pg-receipt .mono{font-family:var(--font-sans);font-variant-numeric:tabular-nums lining-nums}
@@ -37,13 +37,13 @@ const CSS = `
 .pg-receipt .ln .dots{flex:1;border-bottom:1px dotted rgba(31,21,36,.28);margin:0 6px 5px;min-width:20px;align-self:flex-end}
 .pg-receipt .rule{border-top:1px dashed rgba(31,21,36,.3);margin:12px 0}
 .pg-receipt .tot{display:flex;justify-content:space-between;font-weight:700;font-size:15px;padding:6px 0}
-.pg-receipt .grand{margin:22px -40px 0;padding:22px 40px;background:#1E1128;color:#F4EFE3;text-align:center}
-.pg-receipt .grand .k{font-size:10.5px;letter-spacing:.28em;text-transform:uppercase;color:#E8B84B}
+.pg-receipt .grand{margin:22px -40px 0;padding:22px 40px;background:#1B1342;color:#F4EFE3;text-align:center}
+.pg-receipt .grand .k{font-size:10.5px;letter-spacing:.28em;text-transform:uppercase;color:#E8C281}
 .pg-receipt .grand .v{font-size:46px;font-weight:300;letter-spacing:-.03em;margin-top:4px}
 .pg-receipt .grand .s{font-size:12.5px;opacity:.75;margin-top:4px}
 .pg-receipt .proofs{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:6px}
 .pg-receipt .proofs div{border:1px solid rgba(31,21,36,.12);border-radius:10px;padding:10px 12px;font-size:12.5px;color:#5A5664}
-.pg-receipt .proofs b{display:block;font-size:20px;font-weight:500;color:#1F1524}
+.pg-receipt .proofs b{display:block;font-size:20px;font-weight:500;color:#14121C}
 .pg-receipt .foot-note{font-size:11.5px;color:#6E6478;line-height:1.5;margin-top:18px}
 .pg-receipt .thanks{text-align:center;font-size:12px;letter-spacing:.2em;text-transform:uppercase;margin-top:22px;color:#5A5664}
 .pg-receipt .bar{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;max-width:640px;margin:22px auto 0}

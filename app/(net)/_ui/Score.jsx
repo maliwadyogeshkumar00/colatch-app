@@ -2,8 +2,8 @@
 export const TIER_STYLE = {
   Rising: { bg: "var(--soft-bg)", fg: "var(--soft-fg)", ring: "var(--line-strong)", mark: "◆" },
   Trusted: { bg: "var(--act-bg)", fg: "var(--act-fg)", ring: "var(--act-bg)", mark: "✦" },
-  Gold: { bg: "linear-gradient(135deg,#F2D163,#C8962E)", fg: "#2E1B36", ring: "#C8962E", mark: "★" },
-  Icon: { bg: "linear-gradient(135deg,#2E1B36,#1E1128)", fg: "#F2D163", ring: "#E8B84B", mark: "♛" },
+  Gold: { bg: "linear-gradient(135deg,#F4D88A,#C58B2E)", fg: "#1B1342", ring: "#C58B2E", mark: "★" },
+  Icon: { bg: "linear-gradient(135deg,#1B1342,#1B1342)", fg: "#F4D88A", ring: "#E8C281", mark: "♛" },
 };
 
 export function TierBadge({ tier, size = "md" }) {
@@ -11,7 +11,7 @@ export function TierBadge({ tier, size = "md" }) {
   const pad = size === "sm" ? "2px 9px" : "4px 12px";
   const fs = size === "sm" ? 11 : 12.5;
   return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: pad, borderRadius: 999, background: t.bg, color: t.fg, fontSize: fs, fontWeight: 700, letterSpacing: ".02em", whiteSpace: "nowrap", border: tier === "Icon" ? "1px solid rgba(232,184,75,.55)" : "0" }}>
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: pad, borderRadius: 999, background: t.bg, color: t.fg, fontSize: fs, fontWeight: 700, letterSpacing: ".02em", whiteSpace: "nowrap", border: tier === "Icon" ? "1px solid rgba(214,162,86,.55)" : "0" }}>
       <span aria-hidden="true">{t.mark}</span>{tier}
     </span>
   );

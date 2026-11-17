@@ -392,7 +392,7 @@ export default async function Page({ params, searchParams }) {
           <div className="panel kpi"><div className="k">Expected views</div><div className="v">{compact(views)}</div><div className="s">{spend && views ? `≈ ₹${(spend / views).toFixed(2)} per view` : "from avg reel views"}</div></div>
         </div>
 
-        {deals.some((d) => d.live_at) && <div className="panel pad" style={{ marginBottom: 22, background: "linear-gradient(135deg,#2E1B36,#1E1128)", color: "#F4EFE3", border: 0 }}>
+        {deals.some((d) => d.live_at) && <div className="panel pad" style={{ marginBottom: 22, background: "linear-gradient(135deg,#1B1342,#1B1342)", color: "#F4EFE3", border: 0 }}>
           <div className="lbl" style={{ color: "var(--gold-2)" }}>Value delivered by Colatch</div>
           <div style={{ fontSize: 34, fontWeight: 300, marginTop: 6 }}>{inr(tot.saved + tot.adsEquivalent + tot.sales)}</div>
           <div className="grid4" style={{ marginTop: 14 }}>
