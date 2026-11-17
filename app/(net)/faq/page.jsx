@@ -1,6 +1,7 @@
 // Public FAQ. Every answer describes how the app actually works today (lib/net/deal.ts, pricing.ts,
 // referral.ts, score.ts, dealflow.ts). Legal terms are left to each agreement, not stated here.
 import PublicShell from "../_ui/PublicShell";
+import { PageHeader, Grid, Section, AsideCard, KpiStrip } from "@/components/ui";
 import { feePct, RUSH_PCT } from "@/lib/net/deal";
 import { env } from "@/lib/net/env";
 import { TIERS } from "@/lib/net/score";
@@ -38,29 +39,46 @@ export default function Page() {
   const ld = { "@context": "https://schema.org", "@type": "FAQPage", url: `${SITE}/faq`, mainEntity: items.map((x) => ({ "@type": "Question", name: x.q, acceptedAnswer: { "@type": "Answer", text: x.a } })) };
   const groups = ["Brands", "Creators", "Everyone"];
   const hero = (
-    <section className="hero"><div className="hero-in">
-      <div className="eb">Colatch Connect · Questions</div>
-      <h1>How it <b>works.</b></h1>
-      <p>What brands pay, when creators get paid, and what happens if something goes wrong. Answers describe how Colatch Connect works today.</p>
-    </div></section>
+    <PageHeader variant="hero" eyebrow="Colatch Connect · Questions" title="How it <b>works.</b>"
+      sub="What brands pay, when creators get paid, and what happens if something goes wrong. Answers describe how Colatch Connect works today."
+      meta={groups.map((g) => ({ label: g, value: items.filter((x) => x.group === g).length, unit: "answers" }))} />
   );
+  const anchor = (g) => `faq-${g.toLowerCase()}`;
+  const std = feePct(env);
+  // The money facts, straight from the pricing code the answers describe.
+  const facts = [
+    { label: "Colatch fee", value: `${std}%`, foot: "of the creator fee, plus 18% GST on it", href: `#${anchor("Brands")}` },
+    { label: "Repeat bookings", value: "12%", foot: "when you rebook a creator you've paid", href: `#${anchor("Brands")}` },
+    { label: "Rush shortlist", value: `+${RUSH_PCT}%`, foot: "of the creator fee, shown as its own line", href: `#${anchor("Brands")}` },
+    { featured: true, label: "Creators pay", value: "₹0", foot: "free to join, paid after the post is verified", href: `#${anchor("Creators")}` },
+  ];
   return (
-    <PublicShell mode="client" hero={hero} narrow>
+    <PublicShell mode="client" hero={hero}>
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(ld).replace(/</g, "\\u003c") }} />
-      {groups.map((g) => (
-        <section key={g} className="sec" aria-labelledby={`faq-${g}`}>
-          <h2 id={`faq-${g}`} className="h2">{g}</h2>
-          <div className="stack">
-            {items.filter((x) => x.group === g).map((x) => (
-              <details key={x.q} className="box">
-                <summary>{x.q}</summary>
-                <div className="inner"><p style={{ margin: 0, color: "var(--ink-2)" }}>{x.a}</p></div>
-              </details>
-            ))}
-          </div>
-        </section>
-      ))}
-      <p className="hint" style={{ marginTop: 32 }}>Still stuck? Write to marketing@colatch.com.</p>
+      <div className="v2b">
+        <KpiStrip label="Money at a glance" items={facts} />
+        <Grid aside={<>
+          <AsideCard eyebrow="Jump to" title="Questions for" className="v2b-sticky">
+            <nav aria-label="FAQ sections" className="v2b-jump">{groups.map((g) => <a key={g} href={`#${anchor(g)}`}><span>{g}</span><b>{items.filter((x) => x.group === g).length}</b></a>)}</nav>
+          </AsideCard>
+          <AsideCard tone="night" eyebrow="Still stuck?" title="Write to the Colatch team" foot={<><a href="/brief">Post a brief</a><a href="/join">Join as a creator</a></>}>
+            <p className="small">Email marketing@colatch.com and a person on the team replies.</p>
+          </AsideCard>
+        </>}>
+          {groups.map((g) => (
+            <Section key={g} id={anchor(g)} title={g} sub={`${items.filter((x) => x.group === g).length} answers`}>
+              <div className="v2b-faq">
+                {items.filter((x) => x.group === g).map((x) => (
+                  <details key={x.q} className="box">
+                    <summary>{x.q}</summary>
+                    <div className="inner"><p style={{ margin: 0, color: "var(--ink-2)" }}>{x.a}</p></div>
+                  </details>
+                ))}
+              </div>
+            </Section>
+          ))}
+        </Grid>
+      </div>
     </PublicShell>
   );
 }

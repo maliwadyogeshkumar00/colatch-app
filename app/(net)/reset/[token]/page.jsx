@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import PublicShell from "../../_ui/PublicShell";
+import { SplitAuth } from "@/components/ui";
+import { ACCOUNT_PANEL } from "@/components/brand/AuthPanels";
 import Flash, { flashUrl } from "../../_ui/flash";
 import { passwordProblem } from "@/lib/net/auth";
 import { peekResetToken, consumeResetToken, audit } from "@/lib/net/security";
@@ -28,20 +30,21 @@ async function save(fd) {
 export default async function Page({ params, searchParams }) {
   const token = decodeURIComponent(String(params.token || ""));
   const who = await peekResetToken(token);
+  const forWho = { team: "For your Colatch team login.", brand: "For your Colatch brand account." }[who?.user_kind] || "For your Colatch creator account.";
   return (
-    <PublicShell path="/reset">
-      <div className="wrap narrow" style={{ maxWidth: 440, padding: "20px 0 0" }}>
+    <PublicShell path="/reset" flush>
+      <SplitAuth panel={ACCOUNT_PANEL} intro={!who
+        ? { eyebrow: "Reset link", title: "This link doesn't work any more", sub: "Reset links work once and expire after a couple of hours." }
+        : { eyebrow: "Reset link", title: "Set a new <b>password</b>", sub: `${forWho} You'll be signed out on other devices.` }}>
         {!who ? (
-          <div className="panel pad">
-            <h2>This link doesn't work any more</h2>
-            <p className="muted">Reset links work once and expire after a couple of hours.</p>
-            <p><a className="link" href="/reset/request">Ask for a new reset link</a> (creators and brands) · Team members: ask an owner or admin for a new link.</p>
+          <div className="v2b-auth-next">
+            <a className="btn-foil" style={{ width: "100%", justifyContent: "center" }} href="/reset/request">Ask for a new reset link</a>
+            <p className="hint">For creators and brands. Team members: ask an owner or admin for a new link.</p>
+            <p className="hint"><a className="link" href="/creator/login">Creator log in</a> · <a className="link" href="/brand/login">Brand log in</a></p>
           </div>
         ) : (
           <form className="panel pad" action={save}>
             <input type="hidden" name="token" value={token} />
-            <h2>Set a new password</h2>
-            <p className="muted" style={{ margin: "-4px 0 18px" }}>{{ team: "For your Colatch team login.", brand: "For your Colatch brand account." }[who.user_kind] || "For your Colatch creator account."} You'll be signed out on other devices.</p>
             <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
             <div className="stack">
               <div className="fld"><label htmlFor="f-reset-token-password-1">New password <span className="opt">— at least 10 characters</span></label><input id="f-reset-token-password-1" name="password" type="password" minLength={10} required autoComplete="new-password" /></div>
@@ -50,7 +53,7 @@ export default async function Page({ params, searchParams }) {
             <button className="btn-foil" style={{ marginTop: 20, width: "100%", justifyContent: "center" }}>Save password</button>
           </form>
         )}
-      </div>
+      </SplitAuth>
     </PublicShell>
   );
 }

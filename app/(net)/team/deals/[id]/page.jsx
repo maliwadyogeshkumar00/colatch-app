@@ -13,6 +13,17 @@ import { priceDeal } from "@/lib/net/pricing";
 import { safeUrl } from "@/lib/net/guard";
 import { can, logError } from "@/lib/net/security";
 import { colatchScore } from "@/lib/net/score";
+import { dealStepLine } from "@/components/team/dealStep";
+import { dayTime, day } from "@/components/team/labels";
+import { inrShort } from "@/lib/net/dashboard";
+import { PageHeader, KpiStrip, Grid, Section, Card, AsideCard, Pill } from "@/components/ui";
+import DealThread from "@/components/deal/DealThread";
+import { UsageLine, ShipPill } from "@/components/deal/DealExtras";
+import { listMessages, unreadCount, markRead, postMessage, notifyMessage, MessageError } from "@/lib/net/messages";
+import { listShipments, addShipment, moveShipment, nextStatuses, creatorAddress, addressLines, SHIP_LABEL, ShipError } from "@/lib/net/shipments";
+import { saveUsage, syncUsageStart, prefillFromText, toDate, USAGE_CHANNELS, MAX_USAGE_MONTHS, UsageError } from "@/lib/net/usage";
+import { audit } from "@/lib/net/security";
+import { REASONS } from "@/lib/net/disputes";
 
 export const metadata = { title: "Deal", robots: { index: false, follow: false } };
 
@@ -74,6 +85,56 @@ async function act(fd) {
   redirect(err ? flashUrl(back, "err", err) : flashUrl(back, "ok", msg));
 }
 
+/**
+ * Deal room: messages, gifting shipments and usage rights. Its own action so the permission rules stay separate
+ * from the money/progress steps: anyone with shortlist or finance may message and log shipments; usage rights
+ * need shortlist (owner/admin/shortlister). Viewers can read but not change anything.
+ */
+async function room(fd) {
+  "use server";
+  const id = String(fd.get("id") ?? "");
+  const a = String(fd.get("action") ?? "");
+  const base = `/team/deals/${encodeURIComponent(id)}`;
+  const anchor = a === "message" ? "#messages" : a === "usage" ? "#usage" : "#shipments";
+  const me = await requireTeam("view", base);
+  const allowed = a === "usage" ? can(me.role, "shortlist") : can(me.role, "shortlist") || can(me.role, "finance");
+  if (!allowed) redirect(flashUrl(base, "err", `Your role (${me.role}) can't do that. Ask an owner or admin.`) + anchor);
+  let msg = "", err = "";
+  try {
+    const d = await load(id);
+    if (!d) throw new FlowError("That deal does not exist.", "not_found");
+    const actor = { kind: "team", id: me.email };
+    if (a === "message") {
+      const r = await postMessage(d.id, actor, fd.get("body"), fd.get("mid"));
+      if (r.created) await notifyMessage(d.id, r.id, actor);
+      msg = r.created ? "Message sent." : "That message was already sent.";
+    } else if (a === "ship_add") {
+      const s = await addShipment(d.id, { product: fd.get("product"), carrier: fd.get("carrier"), awb: fd.get("awb"), note: fd.get("ship_note"), status: fd.get("ship_status") }, me.email);
+      await logEvent(env, d.id, `team:${me.email}`, "note", `Shipment added: ${s.product} (${SHIP_LABEL[s.status]})`);
+      await audit(actor, "shipment.add", "deal", d.id, { shipment: s.id, status: s.status });
+      msg = "Shipment added.";
+    } else if (a === "ship_move") {
+      const to = String(fd.get("to") ?? "");
+      const s = await moveShipment(d.id, String(fd.get("shipment") ?? ""), to, { carrier: fd.get("carrier"), awb: fd.get("awb") });
+      await logEvent(env, d.id, `team:${me.email}`, "note", `Shipment ${SHIP_LABEL[s.status].toLowerCase()}: ${s.product}${s.awb ? ` (${s.carrier || "AWB"} ${s.awb})` : ""}`);
+      await audit(actor, "shipment.move", "deal", d.id, { shipment: s.id, to: s.status });
+      msg = `Shipment marked ${SHIP_LABEL[s.status].toLowerCase()}.`;
+    } else if (a === "usage") {
+      const u = await saveUsage(d.id, { channels: fd.get("usage_channels"), months: fd.get("usage_months"), starts: fd.get("usage_starts") });
+      await logEvent(env, d.id, `team:${me.email}`, "note", `Usage rights: ${u.usage_channels} for ${u.usage_months} months`);
+      await audit(actor, "deal.usage", "deal", d.id, { channels: u.usage_channels, months: u.usage_months, expires: u.usage_expires_at ? String(toDate(u.usage_expires_at)?.toISOString()) : null });
+      msg = "Usage rights saved.";
+    } else throw new FlowError("Unknown action.");
+  } catch (e) {
+    if (e instanceof FlowError || e instanceof MessageError || e instanceof ShipError || e instanceof UsageError) err = e.message;
+    else { await logError("team/deal.room", e, { action: a, deal: id }); err = "Something went wrong, nothing was changed. Try again."; }
+  }
+  redirect((err ? flashUrl(base, "err", err) : flashUrl(base, "ok", msg)) + anchor);
+}
+
+/** 'YYYY-MM-DD' in India for a date input. */
+const istDay = (v) => { const d = toDate(v); return d ? new Date(d.getTime() + 5.5 * 36e5).toISOString().slice(0, 10) : ""; };
+
 const mask = (s) => { const t = String(s || ""); return t ? `•••• ${t.slice(-4)}` : "Not added"; };
 
 export default async function Page({ params, searchParams }) {
@@ -119,76 +180,180 @@ export default async function Page({ params, searchParams }) {
   const trackUrl = `${origin}/go/${d.track_code}`;
   const draftLabel = ({ none: "Not yet", submitted: "In review", changes: "Changes asked", approved: "Approved" })[d.draft_status] ?? d.draft_status;
   const extraRound = d.revisions_used >= d.revisions_included;
+  // Open disputes on this deal, from any side (read-only). Shown at the top: a dispute changes what the team should do next.
+  const disputesOpen = (await env.DB.prepare("SELECT id, raised_by_kind, reason, detail, created_at FROM disputes WHERE deal_id=? AND status='open' ORDER BY created_at").bind(d.id).all().catch(() => null))?.results ?? [];
   const openReports = Number((await env.DB.prepare("SELECT COUNT(*) n FROM bypass_reports WHERE deal_id=? AND status='open'").bind(d.id).first().catch(() => null))?.n ?? 0);
   const kindLabel = { cancelled: "Cancelled", refunded: "Refunded", live_link: "Live link shared", signoff: "Brand signed off", funded: "Brand paid", sow: "Terms accepted", draft: "Draft submitted", changes: "Changes requested", approved: "Draft approved", live: "Went live", released: "Payout approved", paid: "Creator paid", note: "Note", results: "Results updated" };
+  // Deal room. Each part is optional: a problem here must not take the deal page down.
+  await syncUsageStart(d).catch(() => false);
+  const reader = { kind: "team", id: me.email };
+  const thread = await listMessages(d.id).catch(() => []);
+  const unread = await unreadCount(d.id, reader).catch(() => 0);
+  if (thread.length) await markRead(d.id, reader).catch(() => {});
+  const shipments = await listShipments(d.id).catch(() => []);
+  const address = await creatorAddress(d.creator_id);
+  const crew = progress || money;
+  const pre = prefillFromText(k?.usage_rights);
+  const usageChannels = d.usage_channels || pre.channels;
+  const usageMonths = d.usage_months || pre.months || "";
+  const roomHidden = (a) => <><input type="hidden" name="id" value={d.id} /><input type="hidden" name="action" value={a} /></>;
   const esc = (s) => String(s).replace(/</g, "&lt;");
   const hidden = (a) => <><input type="hidden" name="id" value={d.id} /><input type="hidden" name="action" value={a} /></>;
 
+  const ledgerLabel = { brand_payment_received: "Brand paid Colatch", creator_payout_sent: "Paid to creator", brand_refund_sent: "Refunded to brand", referral_payout_sent: "Referral payout", adjustment: "Adjustment" };
+  const money0 = (n) => (n ? inrShort(n) : "—");
+  // Money trail: the deal's own status and the ledger are two sources. Say which one each line comes from,
+  // so "the brand has paid" (deal status) and "nothing in the ledger" never read as a contradiction.
+  const sumKind = (kind) => ledger.filter((l) => l.kind === kind).reduce((t, l) => t + Number(l.amount_paise || 0), 0);
+  const brandIn = sumKind("brand_payment_received"), payoutOut = sumKind("creator_payout_sent"), refundOut = sumKind("brand_refund_sent");
+  const brandMarked = ["funded", "released", "paid"].includes(d.pay_status) || (d.pay_status === "refunded" && d.brand_paid_paise != null);
+  const SIDE = { creator: "the creator", brand: "the brand", team: "the Colatch team" };
+
   return (
-    <TeamShell active="crm" eyebrow={`Deal · ${d.brand || "Brand"}`} title={`${esc(name)} × <b>${esc(d.brand || "Brand")}</b>`} email={me.email}
-      actions={<>
-        {wa && <a className="btn" href={wa} target="_blank" rel="noopener">WhatsApp nudge ↗</a>}
-        <a className="btn" href={`/team/creators/${d.creator_id}`}>Creator</a>
-        {k && <a className="btn" href={`/team/campaigns/${k.id}`}>Campaign</a>}
-        <a className="btn" href="/team/reports" title="Off-platform reports">{openReports ? `Report (${openReports} open)` : "Reports"}</a>
-      </>}>
+    <TeamShell active="crm" email={me.email} role={me.role}>
+      <PageHeader
+        crumbs={[{ label: "Creator CRM", href: "/team/crm" }, { label: name }]}
+        actions={<>
+          {wa && <a className="btn sm" href={wa} target="_blank" rel="noopener">WhatsApp nudge ↗</a>}
+          <a className="btn sm" href={`/team/creators/${d.creator_id}`}>Creator</a>
+          {k && <a className="btn sm" href={`/team/campaigns/${k.id}`}>Campaign</a>}
+          <a className="btn sm" href="/team/reports" title="Off-platform reports">{openReports ? `Report (${openReports} open)` : "Reports"}</a>
+        </>}
+        eyebrow={`Deal · ${d.brand || "Brand"}`}
+        title={`${esc(name)} × <b>${esc(d.brand || "Brand")}</b>`}
+        sub={[d.deliverable || "Deliverable not set", d.go_live_date ? `goes live ${day(d.go_live_date) || d.go_live_date}` : null, k ? `for ${k.title}` : null].filter(Boolean).join(" · ")}
+      >
+        <div className="ui-pills tr-headpills">
+          <Pill tone={closed ? "off" : d.pay_status === "paid" ? "done" : "plum"}>{dealStepLine(d)}</Pill>
+          {priority && <Pill tone="gold">{tier} creator</Pill>}
+          {unread > 0 && <a className="tr-pilllink" href="#messages"><Pill tone="mine">{unread} new {unread === 1 ? "message" : "messages"}</Pill></a>}
+          {openReports > 0 && <Pill tone="mine">{openReports} open {openReports === 1 ? "report" : "reports"}</Pill>}
+          {disputesOpen.length > 0 && <a className="tr-pilllink" href="#dispute"><Pill tone="mine">Dispute open</Pill></a>}
+        </div>
+      </PageHeader>
 
       {flash && <div className={`note ${tone}`} style={{ marginBottom: 16 }}>{flash}</div>}
       {priority && !closed && d.pay_status !== "paid" && <div className="note info" style={{ marginBottom: 16 }}><b>{tier} creator: priority payout.</b> Pay this creator as soon as the post is verified.</div>}
+      {disputesOpen.length > 0 && <section id="dispute" className="ui-card ui-card--night ui-card--pad tr-disputebar" aria-labelledby="dispute-h">
+        <div className="tr-disputebar__in">
+          <div className="tr-disputebar__text">
+            <p className="ui-aside__eb">{disputesOpen.length === 1 ? "Dispute open" : `${disputesOpen.length} disputes open`} · needs a decision</p>
+            {disputesOpen.map((x) => (
+              <div key={x.id} className="tr-disputebar__one">
+                <h2 id={x === disputesOpen[0] ? "dispute-h" : undefined} className="tr-disputebar__h">{REASONS[x.reason] || x.reason} <span>raised by {SIDE[x.raised_by_kind] || x.raised_by_kind} · {dayTime(x.created_at)}</span></h2>
+                {x.detail && <p className="tr-disputebar__d">{x.detail}</p>}
+              </div>
+            ))}
+            <p className="tr-disputebar__rule">A dispute never moves money. If money has to move, cancel or refund below, then resolve the dispute.</p>
+          </div>
+          <a className="btn tr-disputebar__go" href="/team/disputes#open">Resolve in Disputes →</a>
+        </div>
+      </section>}
       <DealRail d={d} side="team" role={me.role} />
 
-      <div className="grid4 sec" style={{ marginTop: 18 }}>
-        <div className="panel kpi"><div className="k">Creator fee</div><div className="v">{inr(d.fee)}</div><div className="s">{q ? `Brand pays ${inr(q.total)} all-in${q.frozen ? " (locked at payment)" : ""}` : "Set the fee below"}</div></div>
-        <div className="panel kpi"><div className="k">Draft</div><div className="v" style={{ fontSize: 20 }}>{draftLabel}</div><div className="s">Revision {Math.min(d.revisions_used, 99)} of {d.revisions_included} included{d.draft_status === "submitted" && d.auto_approve_at ? ` · auto-approves in ${countdown(d.auto_approve_at)}` : ""}</div></div>
-        <div className="panel kpi"><div className="k">Views · CPV</div><div className="v">{compact(views)}</div><div className="s">{cpvLine}</div></div>
-        <div className="panel kpi"><div className="k">Clicks · orders</div><div className="v">{d.clicks} · {d.orders ?? "—"}</div><div className="s">Code {d.track_code}</div></div>
+      <div className="tr-gap">
+        <KpiStrip label="Deal money and results" items={[
+          { label: "Creator fee", value: money0(d.fee), title: d.fee ? inr(d.fee) : undefined, foot: th ? `Takes home about ${inr(th.net)}${th.tds ? ` after TDS` : ""}` : "Set the fee in Terms" },
+          { featured: true, label: "Brand pays", value: q ? inrShort(q.total) : "—", title: q ? inr(q.total) : undefined, foot: q ? `all-in, with Colatch fee and GST${q.frozen ? " · locked at payment" : ""}` : "Set the fee to price the deal" },
+          views ? { label: "Views · CPV", value: compact(views), unit: d.actual_views ? "views" : "expected", foot: cpvLine }
+            : { label: "Views · CPV", empty: "No views yet", foot: d.live_at ? "Add real views under Results" : "Set expected views in Terms; real views come after the post is live" },
+          Number(d.clicks || 0) || d.orders != null ? { label: "Clicks · orders", value: `${Number(d.clicks || 0).toLocaleString("en-IN")} · ${d.orders ?? 0}`, foot: `Tracked with code ${d.track_code}` }
+            : { label: "Clicks · orders", empty: "No clicks yet", foot: `Counted from the tracked link · code ${d.track_code}` },
+        ]} />
       </div>
 
-      <div className="grid2 sec" style={{ alignItems: "start" }}>
-        <div className="stack">
-          <div className="panel pad">
-            <h2>Move the deal</h2>
+      <Grid aside={<>
+        {q && <AsideCard eyebrow="Money" title="Quote breakdown" foot={<span className="hint">{q.frozen ? "Price locked when the brand paid. " : q.reason ? `${q.reason}. ` : ""}TDS is an estimate: CA to confirm the section, rate and threshold. Finance records the actual TDS with the payout.</span>}>
+          <dl className="tr-lines">
+            <div><dt>Creator fee</dt><dd>{inr(q.creatorFee)}</dd></div>
+            <div><dt>Colatch fee ({q.pct}%)</dt><dd>{inr(q.colatch)}</dd></div>
+            <div><dt>GST 18% on Colatch fee</dt><dd>{inr(q.gstOnColatch)}</dd></div>
+            {q.gstOnCreator > 0 && <div><dt>GST 18% on creator fee (registered)</dt><dd>{inr(q.gstOnCreator)}</dd></div>}
+            <div className="tr-lines__total"><dt>Brand pays</dt><dd>{inr(q.total)}</dd></div>
+            {th && <div><dt>Creator takes home (estimate{th.tds ? `, after TDS ${inr(th.tds)}` : ""})</dt><dd>{inr(th.net)}</dd></div>}
+          </dl>
+        </AsideCard>}
+
+        {money && <AsideCard eyebrow="Money trail" title="Deal status and ledger" foot={<span className="hint">Ledger entries can't be edited or deleted. A mistake is fixed with an adjustment in <a className="link" href="/team/finance">Money and ledger</a>.</span>}>
+          <dl className="tr-lines tr-trail">
+            <div><dt>Brand payment</dt><dd>{brandIn ? <>{formatPaise(brandIn)} <span className="hint">in the ledger</span></>
+              : brandMarked ? <span className="tr-trail__gap">Marked paid · not in the ledger</span> : <span className="hint">Not paid yet</span>}</dd></div>
+            <div><dt>Paid to creator</dt><dd>{payoutOut ? <>{formatPaise(payoutOut)} <span className="hint">in the ledger</span></>
+              : d.pay_status === "paid" ? <span className="tr-trail__gap">Marked paid · not in the ledger</span> : <span className="hint">{d.pay_status === "released" ? "Approved, not sent" : "Not sent yet"}</span>}</dd></div>
+            {refundOut > 0 && <div><dt>Refunded to brand</dt><dd>{formatPaise(refundOut)}</dd></div>}
+          </dl>
+          {brandMarked && !brandIn && <p className="tr-trail__fix"><b>Brand marked paid · no ledger entry yet</b> — record it in <a className="link" href="/team/finance">Money and ledger</a> so reconciliation and the brand's receipt match.</p>}
+          {ledger.length ? <><div className="lbl tr-trail__lbl">Ledger entries</div><ol className="tr-ledger">{ledger.map((l, i) => <li key={i}>
+            <div className="tr-ledger__t"><b>{ledgerLabel[l.kind] || l.kind}</b><span className="hint">{l.utr} · {l.actor_id} · {dayTime(l.created_at)}</span></div>
+            <div className="tr-ledger__v">{formatPaise(Number(l.amount_paise))}{Number(l.tds_paise) ? <span className="hint">TDS {formatPaise(Number(l.tds_paise))}</span> : null}</div>
+          </li>)}</ol></>
+            : <p className="hint">No ledger entries on this deal yet.</p>}
+        </AsideCard>}
+
+        <AsideCard eyebrow="Tracking" title="Tracked link and code">
+          <div className="tr-copy"><code className="k">{trackUrl}</code><CopyButton url={trackUrl} label="Copy" /></div>
+          <p className="hint">{k?.brand_url ? <>Sends people to {k.brand_url} with UTM tags and counts every click. Share the code <b>{d.track_code}</b> as the discount code.</> : <>Add the brand's landing page on the campaign so this link redirects. Share the code <b>{d.track_code}</b> as the discount code.</>}</p>
+        </AsideCard>
+
+        {(must.length > 0 || avoid.length > 0) && <AsideCard eyebrow="From the brief" title="Deliverable checklist" foot={<span className="hint">Ticks come from the creator when they submit a draft.</span>}>
+          <ul className="tr-check">{must.map((m, i) => <li key={i} className={ticks[String(i)] ? "on" : ""}><span className={`pill ${ticks[String(i)] ? "good" : ""}`}>{ticks[String(i)] ? "✓" : "·"}</span><span>{m}</span></li>)}</ul>
+          {avoid.length > 0 && <><div className="lbl">Must not</div>{avoid.map((m, i) => <div key={i} className="small">✕ {m}</div>)}</>}
+        </AsideCard>}
+
+        <Card className="dr-panel tr-thread">
+          <DealThread id="messages" messages={thread} me="team" unread={unread} action={room} canPost={crew} hidden={[["id", d.id], ["action", "message"]]} mid={crypto.randomUUID()}
+            names={{ brand: d.brand || "Brand", creator: name }} readOnlyNote="Viewers can read messages but not send them." />
+        </Card>
+
+        <AsideCard eyebrow="History" title="Timeline">
+          {progress && <form action={act} className="row tr-noteform">{hidden("note")}<input className="in" name="note" aria-label="Add a note" placeholder="Add a note" /><button className="btn sm">Add</button></form>}
+          {events.length ? <ol className="tr-tl">{events.map((e) => <li key={e.id}><div className="tr-tl__h"><b className="small">{kindLabel[e.kind] || e.kind}</b><span className="hint">{e.actor} · {dayTime(e.created_at)}</span></div>{e.note && <div className="small muted tr-tl__n">{e.note}</div>}</li>)}</ol> : <p className="hint">Nothing yet.</p>}
+        </AsideCard>
+      </>}>
+        <Section id="move" title="Move the deal" sub={`Draft: ${draftLabel} · revision ${Math.min(d.revisions_used, 99)} of ${d.revisions_included} included${d.draft_status === "submitted" && d.auto_approve_at ? ` · auto-approves in ${countdown(d.auto_approve_at)}` : ""}`}>
+          <Card className="tr-move">
             <div className="stack">
               {closed && <div className="note bad">{d.pay_status === "refunded" ? "Cancelled and refunded." : "Cancelled."}</div>}
               {!closed && d.pay_status === "unfunded" && (money
                 ? <form action={act} className="stack">{hidden("fund")}
-                    <div className="row"><input className="in" name="amount" inputMode="decimal" required style={{ width: 160 }} placeholder="Amount ₹" defaultValue={q?.total ?? ""} />
-                      <input className="in" name="reference" required minLength={4} style={{ flex: 1 }} placeholder="Bank reference (UTR) of the brand payment" /></div>
+                    <div className="row tr-fields"><input className="in tr-w-amt" name="amount" inputMode="decimal" required aria-label="Amount ₹" placeholder="Amount ₹" defaultValue={q?.total ?? ""} />
+                      <input className="in tr-grow" name="reference" required minLength={4} aria-label="Bank reference (UTR) of the brand payment" placeholder="Bank reference (UTR) of the brand payment" /></div>
                     <div className="row"><button className="btn plum" disabled={!d.fee}>Record brand payment</button><span className="hint">Only after the money is in Colatch's bank account. This locks the price.</span></div></form>
                 : <p className="hint">Waiting for the brand payment. Someone with the finance role records it.</p>)}
               {!closed && d.draft_status === "submitted" && <>
                 <div className="note info">Draft: {safeUrl(d.draft_url) ? <a className="link" href={safeUrl(d.draft_url)} target="_blank" rel="noopener noreferrer">{d.draft_url}</a> : <span>{d.draft_url}</span>}</div>
                 {progress && <><form action={act} className="stack">{hidden("changes")}
-                  <textarea className="in" name="note" rows={3} required placeholder="Feedback, with timestamps: 0:04 show the pack front-on…" />
+                  <textarea className="in" name="note" rows={3} required aria-label="Feedback for the creator" placeholder="Feedback, with timestamps: 0:04 show the pack front-on…" />
                   <div className="row"><button className="btn">Request changes{extraRound ? " (extra round)" : ""}</button></div></form>
                 <form action={act}>{hidden("approve")}<button className="btn plum">Approve draft</button></form></>}
               </>}
-              {!closed && progress && d.draft_status === "approved" && !d.live_at && <form action={act} className="row">{hidden("live")}<input className="in" name="post_url" type="url" required style={{ flex: 1 }} placeholder="https:// live post link" defaultValue={d.post_url ?? ""} /><button className="btn plum">Verify live</button></form>}
-              {!closed && money && d.live_at && d.pay_status === "funded" && <form action={act} className="row">{hidden("release")}<input className="in" name="note" style={{ flex: 1 }} placeholder="Checked: tag, disclosure, still live (optional note)" /><button className="btn plum">Approve payout</button></form>}
+              {!closed && progress && d.draft_status === "approved" && !d.live_at && <form action={act} className="row tr-fields">{hidden("live")}<input className="in tr-grow" name="post_url" type="url" required aria-label="Live post link" placeholder="https:// live post link" defaultValue={d.post_url ?? ""} /><button className="btn plum">Verify live</button></form>}
+              {!closed && money && d.live_at && d.pay_status === "funded" && <form action={act} className="row tr-fields">{hidden("release")}<input className="in tr-grow" name="note" aria-label="Payout check note" placeholder="Checked: tag, disclosure, still live (optional note)" /><button className="btn plum">Approve payout</button></form>}
               {!closed && money && d.pay_status === "released" && <form action={act} className="stack">{hidden("paid")}
                 <div className="small">Send to UPI <b>{mask(c?.upi_id)}</b>{c?.gstin ? <> · GSTIN {mask(c.gstin)}</> : null}. PAN is not collected yet: get it from the creator before deducting TDS.</div>
-                <div className="row">
-                  <input className="in" name="amount" inputMode="decimal" required style={{ width: 150 }} placeholder="Sent ₹" defaultValue={th ? th.net : ""} />
-                  <input className="in" name="tds" inputMode="decimal" style={{ width: 130 }} placeholder="TDS ₹" defaultValue={th?.tds || "0"} />
-                  <input className="in" name="utr" required pattern="[A-Za-z0-9]{6,30}" style={{ flex: 1 }} placeholder="UTR / bank reference" />
+                <div className="row tr-fields">
+                  <input className="in tr-w-amt" name="amount" inputMode="decimal" required aria-label="Sent ₹" placeholder="Sent ₹" defaultValue={th ? th.net : ""} />
+                  <input className="in tr-w-amt" name="tds" inputMode="decimal" aria-label="TDS ₹" placeholder="TDS ₹" defaultValue={th?.tds || "0"} />
+                  <input className="in tr-grow" name="utr" required pattern="[A-Za-z0-9]{6,30}" aria-label="UTR / bank reference" placeholder="UTR / bank reference" />
                 </div>
                 <div className="row"><button className="btn plum">Record payout</button><span className="hint">Record only after the bank transfer went through. It can be recorded once.</span></div></form>}
               {d.pay_status === "paid" && <div className="note good">Paid {String(d.paid_at || "").slice(0, 10)} · UTR {d.utr}{d.tds_amount ? ` · TDS ${inr(d.tds_amount)}` : ""}</div>}
-              {money && d.stage === "cancelled" && d.pay_status === "funded" && <form action={act} className="row">{hidden("refund")}
-                <input className="in" name="amount" inputMode="decimal" required style={{ width: 150 }} placeholder="Refunded ₹" defaultValue={d.brand_paid_paise ? Number(d.brand_paid_paise) / 100 : ""} />
-                <input className="in" name="utr" required pattern="[A-Za-z0-9]{6,30}" style={{ flex: 1 }} placeholder="UTR of the refund" /><button className="btn">Record refund</button></form>}
+              {money && d.stage === "cancelled" && d.pay_status === "funded" && <form action={act} className="row tr-fields">{hidden("refund")}
+                <input className="in tr-w-amt" name="amount" inputMode="decimal" required aria-label="Refunded ₹" placeholder="Refunded ₹" defaultValue={d.brand_paid_paise ? Number(d.brand_paid_paise) / 100 : ""} />
+                <input className="in tr-grow" name="utr" required pattern="[A-Za-z0-9]{6,30}" aria-label="UTR of the refund" placeholder="UTR of the refund" /><button className="btn">Record refund</button></form>}
               {!d.sow_accepted_at && !closed && <p className="hint">The creator still has to accept the terms in their portal.</p>}
               {!progress && !money && <p className="hint">Your role is read-only.</p>}
-              {boss && !closed && d.pay_status !== "paid" && d.pay_status !== "released" && <details><summary className="hint">Cancel this deal</summary>
-                <form action={act} className="row" style={{ marginTop: 8 }}>{hidden("cancel")}<input className="in" name="reason" required minLength={3} style={{ flex: 1 }} placeholder="Reason (the creator and the timeline see this)" /><button className="btn">Cancel deal</button></form></details>}
-              {progress && !closed && d.pay_status === "unfunded" && <form action={act} className="row">{hidden("stage")}
-                <select className="in" name="stage" defaultValue={d.stage}>{["shortlisted", "contacted", "negotiating", "dropped"].map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}</select><button className="btn sm">Set pipeline stage</button></form>}
+              {progress && !closed && d.pay_status === "unfunded" && <form action={act} className="row tr-fields">{hidden("stage")}
+                <select className="in tr-w-sel" name="stage" aria-label="Pipeline stage" defaultValue={d.stage}>{["shortlisted", "contacted", "negotiating", "dropped"].map((s) => <option key={s} value={s}>{STAGE_LABEL[s]}</option>)}</select><button className="btn sm">Set pipeline stage</button></form>}
+              {boss && !closed && d.pay_status !== "paid" && d.pay_status !== "released" && <details className="tr-cancel"><summary className="hint">Cancel this deal</summary>
+                <form action={act} className="row tr-fields" style={{ marginTop: 8 }}>{hidden("cancel")}<input className="in tr-grow" name="reason" required minLength={3} aria-label="Reason for cancelling" placeholder="Reason (the creator and the timeline see this)" /><button className="btn">Cancel deal</button></form></details>}
             </div>
-          </div>
+          </Card>
+        </Section>
 
-          {progress && <form className="panel pad" action={act}>
+        {progress && <Section id="terms" title="Terms" sub={d.pay_status !== "unfunded" ? `Locked: the deal is marked brand-paid${brandIn ? "" : " (no ledger entry yet)"}. To change the terms, cancel and refund, or add a note.` : "Brand, deliverable, fee and dates the creator accepts."}>
+          <Card><form action={act}>
             {hidden("terms")}
-            <h2>Terms</h2>{d.pay_status !== "unfunded" && <p className="hint">Locked: the brand has paid against these terms. To change them, cancel and refund, or add a note.</p>}
             <fieldset disabled={d.pay_status !== "unfunded"} style={{ border: 0, padding: 0, margin: 0, minWidth: 0 }}>
             <div className="form-grid">
               <div className="fld"><label htmlFor="f-team-deals-id-brand-1">Brand</label><input id="f-team-deals-id-brand-1" name="brand" defaultValue={d.brand ?? ""} /></div>
@@ -199,12 +364,13 @@ export default async function Page({ params, searchParams }) {
               <div className="fld"><label htmlFor="f-team-deals-id-go-live-date-6">Go-live date</label><input id="f-team-deals-id-go-live-date-6" name="go_live_date" type="date" defaultValue={d.go_live_date ?? ""} /></div>
             </div>
             </fieldset>
-            <div className="row" style={{ marginTop: 14 }}><button className="btn plum" disabled={d.pay_status !== "unfunded"}>Save terms</button><span className="hint">Stage: {STAGE_LABEL[d.stage] || d.stage}. Changing the fee asks the creator to accept again.</span></div>
-          </form>}
+            <div className="row" style={{ marginTop: 14 }}><button className="btn plum" disabled={d.pay_status !== "unfunded"}>Save terms</button><span className="hint">Now: {dealStepLine(d)}.{d.pay_status === "unfunded" ? " Changing the fee asks the creator to accept again." : ""}</span></div>
+          </form></Card>
+        </Section>}
 
-          {progress && d.live_at && <form className="panel pad" action={act}>
+        {progress && d.live_at && <Section id="results" title="Results" sub="Real numbers from the live post. They drive CPV and the brand's report.">
+          <Card><form action={act}>
             {hidden("results")}
-            <h2>Results</h2>
             <div className="form-grid">
               <div className="fld"><label htmlFor="f-team-deals-id-actual-views-7">Views</label><input id="f-team-deals-id-actual-views-7" name="actual_views" defaultValue={d.actual_views ?? ""} /></div>
               <div className="fld"><label htmlFor="f-team-deals-id-likes-8">Likes</label><input id="f-team-deals-id-likes-8" name="likes" defaultValue={d.likes ?? ""} /></div>
@@ -215,52 +381,61 @@ export default async function Page({ params, searchParams }) {
               <div className="fld full"><label htmlFor="f-team-deals-id-market-rate-13">Market rate ₹ <span className="opt">— what this work usually costs; drives the brand's savings figure</span></label><input id="f-team-deals-id-market-rate-13" name="market_rate" defaultValue={d.market_rate ?? ""} /></div>
             </div>
             <button className="btn plum" style={{ marginTop: 14 }}>Save results</button>
-          </form>}
-        </div>
+          </form></Card>
+        </Section>}
 
-        <div className="stack">
-          {q && <div className="panel pad">
-            <h2>Quote breakdown</h2>
-            <table className="tbl"><tbody>
-              <tr><td>Creator fee</td><td className="num">{inr(q.creatorFee)}</td></tr>
-              <tr><td>Colatch fee ({q.pct}%)</td><td className="num">{inr(q.colatch)}</td></tr>
-              <tr><td>GST 18% on Colatch fee</td><td className="num">{inr(q.gstOnColatch)}</td></tr>
-              {q.gstOnCreator > 0 && <tr><td>GST 18% on creator fee (registered)</td><td className="num">{inr(q.gstOnCreator)}</td></tr>}
-              <tr><td><b>Brand pays</b></td><td className="num"><b>{inr(q.total)}</b></td></tr>
-              {th && <tr><td>Creator takes home (estimate{th.tds ? `, after TDS ${inr(th.tds)}` : ""})</td><td className="num">{inr(th.net)}</td></tr>}
-            </tbody></table>
-            <p className="hint" style={{ margin: "10px 0 0" }}>{q.frozen ? "Price locked when the brand paid. " : q.reason ? `${q.reason}. ` : ""}TDS is an estimate: CA to confirm the section, rate and threshold. Finance records the actual TDS with the payout.</p>
-          </div>}
+        <Section id="usage" title="Usage rights" sub="Where and for how long the brand may use the content.">
+          <Card className="dr-panel">
+            <UsageLine d={d} style={{ marginBottom: 12 }} />
+            {progress ? <form action={room} className="stack">
+              {roomHidden("usage")}
+              <div className="form-grid">
+                <div className="fld full"><label htmlFor="f-dr-usage-channels">Channels</label><input id="f-dr-usage-channels" name="usage_channels" required maxLength={500} defaultValue={usageChannels} placeholder="Organic repost, Paid ads (Meta), Website" /></div>
+                <div className="fld"><label htmlFor="f-dr-usage-months">Months</label><input id="f-dr-usage-months" name="usage_months" type="number" inputMode="numeric" min={1} max={MAX_USAGE_MONTHS} step={1} required defaultValue={usageMonths} /></div>
+                <div className="fld"><label htmlFor="f-dr-usage-starts">Starts <span className="opt">— empty = the live date</span></label><input id="f-dr-usage-starts" name="usage_starts" type="date" defaultValue={istDay(d.usage_starts_at)} /></div>
+              </div>
+              <p className="hint" style={{ margin: 0 }}>Common: {USAGE_CHANNELS.join(" · ")}. {!d.usage_channels && k?.usage_rights ? <>Prefilled from the campaign: "{k.usage_rights}".</> : null} The expiry is the start plus the months; the creator and the brand see it on their pages.</p>
+              <div className="row"><button className="btn plum">Save usage rights</button></div>
+            </form> : !d.usage_channels && <p className="hint" style={{ margin: 0 }}>{k?.usage_rights ? `Campaign terms: ${k.usage_rights}` : "No usage rights set yet."}</p>}
+          </Card>
+        </Section>
 
-          {money && <div className="panel pad">
-            <h2>Money recorded</h2>
-            {ledger.length ? <table className="tbl"><tbody>{ledger.map((l, i) => <tr key={i}>
-              <td>{({ brand_payment_received: "Brand paid Colatch", creator_payout_sent: "Paid to creator", brand_refund_sent: "Refunded to brand", referral_payout_sent: "Referral payout", adjustment: "Adjustment" })[l.kind] || l.kind}<div className="hint">{l.utr} · {l.actor_id} · {new Date(l.created_at).toISOString().slice(0, 16).replace("T", " ")}</div></td>
-              <td className="num">{formatPaise(Number(l.amount_paise))}{Number(l.tds_paise) ? <div className="hint">TDS {formatPaise(Number(l.tds_paise))}</div> : null}</td></tr>)}</tbody></table>
-              : <p className="hint">No money recorded on this deal yet.</p>}
-            <p className="hint" style={{ margin: "10px 0 0" }}>Entries can't be edited or deleted. A mistake is fixed with an adjustment.</p>
-          </div>}
-
-          <div className="panel pad">
-            <h2>Tracked link and code</h2>
-            <div className="row"><code className="k">{trackUrl}</code><CopyButton url={trackUrl} label="Copy" /></div>
-            <p className="hint" style={{ margin: "10px 0 0" }}>{k?.brand_url ? <>Sends people to {k.brand_url} with UTM tags and counts every click. Share the code <b>{d.track_code}</b> as the discount code.</> : <>Add the brand's landing page on the campaign so this link redirects. Share the code <b>{d.track_code}</b> as the discount code.</>}</p>
-          </div>
-
-          {(must.length > 0 || avoid.length > 0) && <div className="panel pad">
-            <h2>Deliverable checklist</h2>
-            {must.map((m, i) => <div key={i} className="row" style={{ gap: 10, flexWrap: "nowrap", marginBottom: 8 }}><span className={`pill ${ticks[String(i)] ? "good" : ""}`}>{ticks[String(i)] ? "✓" : "·"}</span><span>{m}</span></div>)}
-            {avoid.length > 0 && <><div className="lbl" style={{ marginTop: 12 }}>Must not</div>{avoid.map((m, i) => <div key={i} className="small" style={{ marginTop: 6 }}>✕ {m}</div>)}</>}
-            <p className="hint" style={{ margin: "10px 0 0" }}>Ticks come from the creator when they submit a draft.</p>
-          </div>}
-
-          <div className="panel pad">
-            <h2>Timeline</h2>
-            {progress && <form action={act} className="row" style={{ marginBottom: 14 }}>{hidden("note")}<input className="in" name="note" style={{ flex: 1 }} placeholder="Add a note" /><button className="btn sm">Add</button></form>}
-            {events.length ? events.map((e) => <div key={e.id} style={{ padding: "8px 0", borderTop: "1px solid var(--line-2)" }}><div className="spread"><b className="small">{kindLabel[e.kind] || e.kind}</b><span className="hint">{e.actor} · {String(e.created_at).slice(5, 16)}</span></div>{e.note && <div className="small muted" style={{ whiteSpace: "pre-line", marginTop: 2 }}>{e.note}</div>}</div>) : <p className="hint">Nothing yet.</p>}
-          </div>
-        </div>
-      </div>
+        <Section id="shipments" title="Gifting and product shipments" sub={shipments.length ? `${shipments.length} ${shipments.length === 1 ? "shipment" : "shipments"} on this deal` : "Products the creator needs for the content."}>
+          <Card className="dr-panel">
+            <div className="dr-address">
+              <div className="lbl">Ship to <span className="opt">— team only, never shown to the brand</span></div>
+              {address ? <div className="small" style={{ marginTop: 4 }}>{addressLines(address).map((l, i) => <div key={i}>{l}</div>)}</div>
+                : <p className="hint" style={{ margin: "4px 0 0" }}>No address yet — ask the creator to add it in Settings.</p>}
+            </div>
+            {shipments.length > 0 && <div className="dr-ships" style={{ marginTop: 14 }}>{shipments.map((s) => (
+              <div key={s.id} className="dr-shiprow">
+                <div className="spread" style={{ gap: 8 }}><b className="small">{s.product}</b><ShipPill status={s.status} /></div>
+                <div className="hint">{s.carrier || "Courier not set"}{s.awb ? <> · AWB <code className="k">{s.awb}</code></> : null} · added {dayTime(s.created_at)}{s.shipped_at ? ` · shipped ${dayTime(s.shipped_at)}` : ""}{s.delivered_at ? ` · delivered ${dayTime(s.delivered_at)}` : ""}{s.created_by ? ` · ${s.created_by}` : ""}</div>
+                {s.note && <div className="small muted" style={{ marginTop: 2 }}>{s.note}</div>}
+                {crew && nextStatuses(s.status).length > 0 && <form action={room} className="dr-move">
+                  {roomHidden("ship_move")}<input type="hidden" name="shipment" value={s.id} />
+                  {s.status === "pending" && <><input className="in" name="carrier" maxLength={80} placeholder="Courier" defaultValue={s.carrier ?? ""} aria-label="Courier" /><input className="in" name="awb" maxLength={40} placeholder="AWB number" defaultValue={s.awb ?? ""} aria-label="AWB number" /></>}
+                  {nextStatuses(s.status).map((to) => <button key={to} className="btn sm" name="to" value={to}>Mark {SHIP_LABEL[to].toLowerCase()}</button>)}
+                </form>}
+              </div>
+            ))}</div>}
+            {crew ? <details className="dr-add">
+              <summary className="hint">Add a shipment</summary>
+              <form action={room} className="stack" style={{ marginTop: 10 }}>
+                {roomHidden("ship_add")}
+                <div className="form-grid">
+                  <div className="fld full"><label htmlFor="f-dr-ship-product">Product</label><input id="f-dr-ship-product" name="product" required minLength={2} maxLength={200} placeholder="Diwali hamper, 2 kurtas (M)" /></div>
+                  <div className="fld"><label htmlFor="f-dr-ship-carrier">Courier <span className="opt">— optional</span></label><input id="f-dr-ship-carrier" name="carrier" maxLength={80} placeholder="Delhivery, Blue Dart…" /></div>
+                  <div className="fld"><label htmlFor="f-dr-ship-awb">AWB <span className="opt">— optional</span></label><input id="f-dr-ship-awb" name="awb" maxLength={40} pattern="[A-Za-z0-9\- ]{4,40}" /></div>
+                  <div className="fld"><label htmlFor="f-dr-ship-status">Status</label><select id="f-dr-ship-status" name="ship_status" defaultValue="pending"><option value="pending">Packing (not sent yet)</option><option value="shipped">Already shipped</option></select></div>
+                  <div className="fld"><label htmlFor="f-dr-ship-note">Note <span className="opt">— team only</span></label><input id="f-dr-ship-note" name="ship_note" maxLength={500} /></div>
+                </div>
+                <div className="row"><button className="btn plum">Add shipment</button><span className="hint">The creator sees the courier and AWB; the brand sees the status only.</span></div>
+              </form>
+            </details> : !shipments.length && <p className="hint" style={{ margin: "10px 0 0" }}>No shipments on this deal.</p>}
+          </Card>
+        </Section>
+      </Grid>
     </TeamShell>
   );
 }

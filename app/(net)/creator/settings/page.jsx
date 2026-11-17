@@ -8,9 +8,14 @@ import { audit, createVerifyToken } from "@/lib/net/security";
 import { checkLogin, setPassword, overLimit, mailBase, clientIp, TOO_MANY } from "../../reset/_lib";
 import { notify } from "@/lib/net/notify";
 import { claimStatus, ClaimNote } from "../../join/_claim";
+import { addressFromForm } from "@/lib/net/creators";
+import { PageHeader, AsideCard } from "@/components/ui";
+import { StatusTiles, istDay } from "@/components/creator/Parts";
+import { profileGaps } from "@/lib/net/match";
 
 export const metadata = { title: "Account settings", robots: { index: false } };
 const BACK = "/creator/settings";
+const SHIP = "/creator/settings?at=shipping"; // the message then shows inside the shipping form, where the page lands
 
 async function changePassword(fd) {
   "use server";
@@ -53,22 +58,82 @@ async function resendVerify() {
   redirect(flashUrl(BACK, status === "sent" ? "ok" : "err", status === "sent" ? `We sent a confirmation link to ${row.email}.` : "Email isn't set up on Colatch yet, so the link could not be sent. The Colatch team can confirm your email for you."));
 }
 
+// ---- Shipping address for product seeding (creator_addresses). Team-only: never shown to brands.
+// Only an account that owns its creator profile can save one (a pending claim can't write to that creator).
+async function ownCreator(next) {
+  const me = await currentCreator();
+  if (!me) redirect(`/creator/login?next=${next}`);
+  if (me.claimPending || !me.creator?.id || (await claimStatus(me.accountId)) !== "own") redirect(flashUrl(BACK, "err", "You can add a shipping address once your profile is verified."));
+  return me;
+}
+
+async function saveAddress(fd) {
+  "use server";
+  const me = await ownCreator("/creator/settings");
+  const { value: a, error } = addressFromForm(fd);
+  if (!a) redirect(flashUrl(SHIP, "err", error) + "#shipping");
+  await env.DB.prepare(
+    `INSERT INTO creator_addresses (creator_id, name, line1, line2, city, state, pincode, phone, updated_at) VALUES (?,?,?,?,?,?,?,?, now())
+     ON CONFLICT (creator_id) DO UPDATE SET name = excluded.name, line1 = excluded.line1, line2 = excluded.line2, city = excluded.city,
+       state = excluded.state, pincode = excluded.pincode, phone = excluded.phone, updated_at = now()`
+  ).bind(me.creator.id, a.name, a.line1, a.line2, a.city, a.state, a.pincode, a.phone).run();
+  // The audit log records that it changed, never the address itself.
+  await audit({ kind: "creator", id: me.accountId }, "creator.address_saved", "creator", me.creator.id);
+  redirect(flashUrl(SHIP, "ok", "Shipping address saved. Only the Colatch team can see it.") + "#shipping");
+}
+
+async function deleteAddress() {
+  "use server";
+  const me = await ownCreator("/creator/settings");
+  const r = await env.DB.prepare("DELETE FROM creator_addresses WHERE creator_id = ?").bind(me.creator.id).run();
+  await audit({ kind: "creator", id: me.accountId }, "creator.address_deleted", "creator", me.creator.id);
+  redirect(flashUrl(SHIP, "ok", r.meta?.changes ? "Shipping address deleted." : "There was no shipping address to delete.") + "#shipping");
+}
+
 export default async function Page({ searchParams }) {
   const me = await currentCreator();
   if (!me) redirect("/creator/login?next=/creator/settings");
   const status = await claimStatus(me.accountId);
-  const verified = !!(await env.DB.prepare("SELECT email_verified_at FROM creator_accounts WHERE id=?").bind(me.accountId).first())?.email_verified_at;
+  const acct = await env.DB.prepare("SELECT email_verified_at, last_login_at, created_at FROM creator_accounts WHERE id=?").bind(me.accountId).first();
+  const verified = !!acct?.email_verified_at;
+  const own = status === "own" && !me.claimPending && me.creator?.id;
+  const addr = own ? await env.DB.prepare("SELECT name, line1, line2, city, state, pincode, phone FROM creator_addresses WHERE creator_id = ?").bind(me.creator.id).first() : null;
+  // Read-only, for the status strip: the last security change on this account. A failure only hides the date.
+  const sec = await env.DB.prepare("SELECT action, at FROM audit_log WHERE actor_kind='creator' AND actor_id=? AND action IN ('creator.password_changed','creator.signed_out_everywhere') ORDER BY at DESC LIMIT 1").bind(me.accountId).first().catch(() => null);
+  const c = own ? me.creator : null;
+  const done = c ? Math.round(((8 - profileGaps(c).length) / 8) * 100) : null;
+  const tiles = [
+    { label: "Email", value: verified ? "Confirmed" : "Not confirmed", tone: verified ? "ok" : "todo", note: verified ? me.email : "Confirm it below", href: verified ? undefined : "#email" },
+    own
+      ? { label: "Account ownership", value: c.owner_verified ? "Proven" : "Not proven yet", tone: c.owner_verified ? "ok" : "todo", note: c.owner_verified ? `You proved you own @${c.handle}` : "Add a code to your Instagram bio", href: c.owner_verified ? undefined : "/creator/profile#own" }
+      : { label: "Profile link", value: status === "rejected" ? "Not linked" : "Being checked", tone: "todo", note: status === "rejected" ? "This profile wasn't linked to you" : "Usually within one working day" },
+    own
+      ? { label: "Payout details", value: c.upi_id ? "UPI added" : "UPI missing", tone: c.upi_id ? "ok" : "todo", note: c.upi_id ? (c.pan_last4 ? "PAN on file" : "Add PAN to pay 10% TDS, not 20%") : "Needed before your first payout", href: "/creator/profile#payout" }
+      : { label: "Payout details", value: "After linking", tone: "info", note: "Added on your profile once linked" },
+    { label: "Security", value: sec ? (sec.action === "creator.password_changed" ? "Password changed" : "Signed out everywhere") : "Password set", tone: "info",
+      note: sec ? istDay(sec.at) : acct?.last_login_at ? `Last sign-in ${istDay(acct.last_login_at)}` : acct?.created_at ? `Account since ${istDay(acct.created_at)}` : null, href: "#security" },
+  ];
+  const hero = (
+    <PageHeader variant="hero" crumbs={[{ label: "Home", href: "/creator" }, "Settings"]} eyebrow="Account" title="Account <b>settings</b>"
+      sub={`Signed in as ${me.email}. Your login, shipping address and devices.`}
+      meta={[
+        ...(done != null ? [{ label: "Profile complete", value: `${done}%`, gold: done === 100 }] : []),
+        ...(own ? [{ label: "Shipping", value: addr ? "Saved" : "Not added" }] : [{ label: "Profile link", value: status === "rejected" ? "Not linked" : "Checking" }]),
+      ]} />
+  );
   return (
-    <PublicShell path="/creator/settings" creatorName={status === "own" ? me.creator?.name : null}>
-      <div className="wrap narrow" style={{ maxWidth: 520, padding: "20px 0 0" }}>
-        <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
-        {status !== "own" && <div style={{ marginBottom: 18 }}><ClaimNote status={status} /></div>}
-        <form className="panel pad" action={resendVerify} style={{ marginBottom: 18 }}>
+    <PublicShell path="/creator/settings" creatorName={status === "own" ? me.creator?.name : null} hero={hero}>
+      <div className="cr-page">
+        {searchParams?.at !== "shipping" && <Flash sp={searchParams} />}
+        {status !== "own" && <ClaimNote status={status} />}
+        <StatusTiles label="Your account at a glance" items={tiles} />
+        <div className="cr-setgrid">
+        <form className="panel pad cr-set-email" action={resendVerify} id="email">
           <div className="spread"><h2 style={{ margin: 0 }}>Email</h2>{verified ? <span className="pill good">Confirmed</span> : <span className="pill ok">Not confirmed</span>}</div>
           <p className="muted" style={{ margin: "10px 0 0" }}>{me.email}</p>
           {!verified && <><p className="hint" style={{ margin: "8px 0 14px" }}>Confirm your email so brands and the Colatch team can reach you about deals and payments.</p><button className="btn">Send confirmation link</button></>}
         </form>
-        <form className="panel pad" action={changePassword}>
+        <form className="panel pad cr-set-pw" action={changePassword} id="security">
           <h2>Change password</h2>
           <p className="muted" style={{ margin: "-4px 0 18px" }}>Signed in as {me.email}.</p>
           <div className="stack">
@@ -78,12 +143,34 @@ export default async function Page({ searchParams }) {
           </div>
           <button className="btn-foil" style={{ marginTop: 20 }}>Change password</button>
         </form>
-        <form className="panel pad" action={signOutEverywhere} style={{ marginTop: 18 }}>
+        {own && <form className="panel pad ship-form cr-set-ship" action={saveAddress} id="shipping" aria-labelledby="shipping-h">
+          <div className="spread"><h2 id="shipping-h" style={{ margin: 0 }}>Shipping address for product seeding</h2>{addr ? <span className="pill good">Saved</span> : <span className="pill ok">Not added</span>}</div>
+          {searchParams?.at === "shipping" && <div style={{ marginTop: 12 }}><Flash sp={searchParams} /></div>}
+          <p className="note info ship-private" style={{ margin: "12px 0 16px" }}><b>Only the Colatch team sees this. Brands never do.</b> We use it to send you products for gifting and seeding deals you accept.</p>
+          <div className="form-grid">
+            <div className="fld full"><label htmlFor="f-ship-name">Name on the parcel</label><input id="f-ship-name" name="ship_name" required maxLength={80} autoComplete="shipping name" defaultValue={addr?.name ?? me.creator?.name ?? ""} /></div>
+            <div className="fld full"><label htmlFor="f-ship-line1">House or flat, building, street</label><input id="f-ship-line1" name="line1" required maxLength={120} autoComplete="shipping address-line1" defaultValue={addr?.line1 ?? ""} /></div>
+            <div className="fld full"><label htmlFor="f-ship-line2">Area or landmark <span className="opt">— optional</span></label><input id="f-ship-line2" name="line2" maxLength={120} autoComplete="shipping address-line2" defaultValue={addr?.line2 ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-ship-city">City</label><input id="f-ship-city" name="ship_city" required maxLength={60} autoComplete="shipping address-level2" defaultValue={addr?.city ?? me.creator?.city ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-ship-state">State <span className="opt">— optional</span></label><input id="f-ship-state" name="ship_state" maxLength={60} autoComplete="shipping address-level1" defaultValue={addr?.state ?? ""} /></div>
+            <div className="fld"><label htmlFor="f-ship-pin">PIN code</label><input id="f-ship-pin" name="pincode" required inputMode="numeric" maxLength={7} pattern="[1-9][0-9]{2} ?[0-9]{3}" autoComplete="shipping postal-code" defaultValue={addr?.pincode ?? ""} placeholder="110001" /><span className="hint">6 digits</span></div>
+            <div className="fld"><label htmlFor="f-ship-phone">Phone for the courier <span className="opt">— optional</span></label><input id="f-ship-phone" name="ship_phone" type="tel" inputMode="tel" maxLength={16} autoComplete="shipping tel-national" defaultValue={addr?.phone ?? ""} placeholder="98XXXXXXXX" /></div>
+          </div>
+          <div className="row" style={{ marginTop: 18, gap: 10 }}>
+            <button className="btn plum">{addr ? "Update address" : "Save address"}</button>
+            {addr && <button className="btn ghost" formAction={deleteAddress} formNoValidate>Delete address</button>}
+          </div>
+        </form>}
+        <AsideCard className="cr-set-else" eyebrow="Elsewhere" title="Profile and payouts" foot={<a className="link" href="/creator/profile#payout">Payout details →</a>}>
+          <p className="small muted" style={{ margin: 0 }}>Your UPI, PAN and GSTIN live on your profile page, next to your media kit. Account ownership is proven there too, with a code in your Instagram bio.</p>
+        </AsideCard>
+        <form className="panel pad cr-set-out" action={signOutEverywhere}>
           <h2>Sign out everywhere</h2>
           <p className="muted" style={{ margin: "-4px 0 14px" }}>Lost a phone, or logged in on someone else's laptop? This signs your account out on every device, including this one.</p>
           <button className="btn">Sign out on all devices</button>
         </form>
-        <p className="hint" style={{ margin: "16px 0 0" }}><a className="link" href="/creator">Back to my briefs</a> · <a className="link" href="/creator/logout">Log out</a></p>
+        </div>
+        <p className="hint" style={{ margin: 0 }}><a className="link" href="/creator">Back to my briefs</a> · <a className="link" href="/creator/logout">Log out</a></p>
       </div>
     </PublicShell>
   );

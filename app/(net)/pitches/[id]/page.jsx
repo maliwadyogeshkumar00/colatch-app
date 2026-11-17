@@ -1,5 +1,8 @@
 import { notFound, redirect } from "next/navigation";
-import PublicShell, { Hero } from "../../_ui/PublicShell";
+import PublicShell from "../../_ui/PublicShell";
+import { PageHeader, KpiStrip, Grid, Section, Card, AsideCard, Avatar } from "@/components/ui";
+import { Facts } from "@/components/brand/Facts";
+import { inrShort } from "@/lib/net/dashboard";
 import Flash, { flashUrl } from "../../_ui/flash";
 import { env } from "@/lib/net/env";
 import { inr, compact } from "@/lib/net/creators";
@@ -69,12 +72,16 @@ export default async function Page({ params, searchParams }) {
 
   if (done) {
     return (
-      <PublicShell mode="client" narrow>
-        <div className="panel pad" style={{ maxWidth: 620, margin: "20px auto 0", textAlign: "center" }}>
-          <div className="lbl" style={{ color: "var(--good)" }}>Booking received</div>
-          <h2 style={{ fontSize: 26, letterSpacing: "-.02em", textTransform: "none", color: "var(--head)", margin: "10px 0 8px" }}>"{scrubContacts(done.title).text}" is yours to make happen.</h2>
-          <p className="muted" style={{ margin: "0 0 18px" }}>We'll confirm the creator's dates{done.shortlist_due ? `, aiming for ${formatIST(done.shortlist_due)}` : ", usually within 2 working days"}, and email you your private campaign page. You approve the creator, fund the deal through Colatch, and see the post, the views and the proof in one place.</p>
-          <div className="row" style={{ justifyContent: "center" }}><a className="btn" href="/pitches">Browse more ideas</a><a className="btn-foil" href="/brief">Post a full brief</a></div>
+      <PublicShell mode="client" hero={<PageHeader variant="hero" crumbs={[{ label: "Idea board", href: "/pitches" }, { label: "Booking received" }]} eyebrow="Booking received" title={`"${scrubContacts(done.title).text}" is <b>yours to make happen.</b>`} />}>
+        <div className="v2b v2b-own-cta">
+          <Grid aside={<AsideCard tone="night" eyebrow="Next" title="What happens now" foot={<a href="/faq">What brands pay</a>}>
+            <ol className="v2b-steps"><li>We confirm the creator's dates{done.shortlist_due ? `, aiming for ${formatIST(done.shortlist_due)}` : ", usually within 2 working days"}.</li><li>We email you your private campaign page.</li><li>You approve the creator and fund the deal through Colatch.</li></ol>
+          </AsideCard>}>
+            <Card pad="lg">
+              <p className="v2b-lead">We'll confirm the creator's dates{done.shortlist_due ? `, aiming for ${formatIST(done.shortlist_due)}` : ", usually within 2 working days"}, and email you your private campaign page. You approve the creator, fund the deal through Colatch, and see the post, the views and the proof in one place.</p>
+              <div className="row" style={{ marginTop: 18, gap: 10 }}><a className="btn" href="/pitches">Browse more ideas</a><a className="btn-foil" href="/brief">Post a full brief</a></div>
+            </Card>
+          </Grid>
         </div>
       </PublicShell>
     );
@@ -84,44 +91,56 @@ export default async function Page({ params, searchParams }) {
   const facts = [p.followers ? compact(p.followers) + " followers" : null, p.city, String(p.niche || "").split(",")[0].trim() || null].filter(Boolean).join(" · ");
   const allIn = quote(env, p.price || 0, false);
   const hero = (
-    <Hero eyebrow={`Idea board · ${p.occasion || "Any time"} · ${p.format}`} title={scrubContacts(p.title).text.replace(/[<>&]/g, "")}>
-      <p>Pitched by {who}{p.verified ? ", Instagram-verified" : ""}{facts ? ` · ${facts}` : ""}{p.rating != null ? ` · ★ ${Number(p.rating).toFixed(1)} from brands` : ""}{p.done ? ` · ${p.done} Colatch ${p.done === 1 ? "campaign" : "campaigns"} delivered` : ""}.</p>
-    </Hero>
+    <PageHeader variant="hero" crumbs={[{ label: "Idea board", href: "/pitches" }, { label: p.occasion || "Any time" }]}
+      eyebrow={`Idea board · ${p.occasion || "Any time"} · ${p.format}`} title={scrubContacts(p.title).text.replace(/[<>&]/g, "")}
+      sub={`Pitched by ${who}${p.verified ? ", Instagram-verified" : ""}${facts ? ` · ${facts}` : ""}${p.rating != null ? ` · ★ ${Number(p.rating).toFixed(1)} from brands` : ""}${p.done ? ` · ${p.done} Colatch ${p.done === 1 ? "campaign" : "campaigns"} delivered` : ""}.`} />
   );
 
   return (
     <PublicShell mode="client" hero={hero}>
-      <div style={{ marginBottom: 16 }}><Flash sp={searchParams} /></div>
-      <div className="grid2" style={{ alignItems: "start" }}>
-        <div className="panel pad">
-          <h2>The idea</h2>
-          <p style={{ whiteSpace: "pre-line", margin: "0 0 18px", fontSize: 15.5, lineHeight: 1.65 }}>{scrubContacts(p.idea).text}</p>
-          <div className="lbl">What it costs</div>
-          <table className="tbl" style={{ marginTop: 8 }}><tbody>
-            <tr><td>Creator's price</td><td className="num">{inr(allIn.creatorFee)}</td></tr>
-            <tr><td>Colatch fee ({allIn.pct}%)</td><td className="num">{inr(allIn.colatch)}</td></tr>
-            <tr><td>GST on Colatch fee</td><td className="num">{inr(allIn.gstOnColatch)}</td></tr>
-            <tr><td><b>All in</b></td><td className="num"><b>{inr(allIn.total)}</b></td></tr>
-          </tbody></table>
-          <p className="hint" style={{ margin: "12px 0 0" }}>Creator GST is added only if they are GST-registered. You pay only after you approve the creator, and your money is held by Colatch until the post is live and checked.</p>
-        </div>
-        <form className="panel pad" action={book}>
-          <input type="hidden" name="pitch" value={p.id} />
-          <input type="hidden" name="ref" value={String(searchParams?.ref || "")} />
-          <h2>Book this idea</h2>
-          <p className="muted small" style={{ margin: "-4px 0 16px" }}>The creator's handle and contact stay private until the booking is confirmed. Everything runs through Colatch, so the work and the payment are both protected.</p>
-          <div className="stack">
-            <div className="form-grid">
-              <div className="fld"><label htmlFor="f-pitches-id-name-1">Your name</label><input id="f-pitches-id-name-1" name="name" required autoComplete="name" /></div>
-              <div className="fld"><label htmlFor="f-pitches-id-company-2">Brand / company</label><input id="f-pitches-id-company-2" name="company" required autoComplete="organization" /></div>
-              <div className="fld"><label htmlFor="f-pitches-id-email-3">Work email</label><input id="f-pitches-id-email-3" name="email" type="email" required autoComplete="email" /></div>
-              <div className="fld"><label htmlFor="f-pitches-id-phone-4">Phone / WhatsApp <span className="opt">optional</span></label><input id="f-pitches-id-phone-4" name="phone" autoComplete="tel" /></div>
-            </div>
-            <div className="fld"><label htmlFor="f-pitches-id-note-5">Anything to add <span className="opt">product, dates, must-haves</span></label><textarea id="f-pitches-id-note-5" name="note" rows={4} /></div>
-          </div>
-          <button className="btn-foil" style={{ marginTop: 18, width: "100%", justifyContent: "center" }}>Book for {inr(allIn.total)} all in</button>
-          <p className="hint" style={{ margin: "12px 0 0" }}>No payment now. We confirm the creator's dates within 2 working days.</p>
-        </form>
+      <div className="v2b v2b-own-cta">
+        <div className="v2b-flash"><Flash sp={searchParams} /></div>
+        <KpiStrip label="This idea at a glance" items={[
+          { label: "Creator's price", value: inrShort(allIn.creatorFee), title: inr(allIn.creatorFee), foot: p.format },
+          { label: "All in", value: inrShort(allIn.total), title: inr(allIn.total), foot: `incl. Colatch ${allIn.pct}% + GST` },
+          { label: "Followers", value: p.followers ? compact(p.followers) : "—", foot: p.city || "India" },
+          { label: "Brand rating", value: p.rating != null ? `★ ${Number(p.rating).toFixed(1)}` : "New", foot: p.done ? `${p.done} ${p.done === 1 ? "campaign" : "campaigns"} delivered` : "no Colatch campaigns yet" },
+        ]} />
+        <Grid aside={
+          <AsideCard eyebrow="Book through Colatch" title="Book this idea" className="v2b-sticky">
+            <form action={book} className="v2b-book">
+              <input type="hidden" name="pitch" value={p.id} />
+              <input type="hidden" name="ref" value={String(searchParams?.ref || "")} />
+              <p className="hint">The creator's handle and contact stay private until the booking is confirmed. Everything runs through Colatch, so the work and the payment are both protected.</p>
+              <div className="stack">
+                <div className="fld"><label htmlFor="f-pitches-id-name-1">Your name</label><input id="f-pitches-id-name-1" name="name" required autoComplete="name" /></div>
+                <div className="fld"><label htmlFor="f-pitches-id-company-2">Brand / company</label><input id="f-pitches-id-company-2" name="company" required autoComplete="organization" /></div>
+                <div className="fld"><label htmlFor="f-pitches-id-email-3">Work email</label><input id="f-pitches-id-email-3" name="email" type="email" required autoComplete="email" /></div>
+                <div className="fld"><label htmlFor="f-pitches-id-phone-4">Phone / WhatsApp <span className="opt">optional</span></label><input id="f-pitches-id-phone-4" name="phone" autoComplete="tel" /></div>
+                <div className="fld"><label htmlFor="f-pitches-id-note-5">Anything to add <span className="opt">product, dates, must-haves</span></label><textarea id="f-pitches-id-note-5" name="note" rows={4} /></div>
+              </div>
+              <button className="btn-foil" style={{ marginTop: 18, width: "100%", justifyContent: "center" }}>Book for {inr(allIn.total)} all in</button>
+              <p className="hint" style={{ margin: "12px 0 0" }}>No payment now. We confirm the creator's dates within 2 working days.</p>
+            </form>
+          </AsideCard>
+        }>
+          <Section id="idea" title="The idea" sub={`${p.format}${p.category ? ` · for ${p.category.toLowerCase()} brands` : ""}`}>
+            <Card pad="lg"><p className="v2b-idea">{scrubContacts(p.idea).text}</p>
+              <div className="v2b-by"><Avatar name={who} size={44} /><div><b>{who}{p.verified ? " ✓" : ""}</b><span className="hint">{facts || "Colatch creator"}</span></div></div>
+            </Card>
+          </Section>
+          <Section id="cost" title="What it costs" sub="Shown before you book. The price is locked once your payment is recorded.">
+            <Card>
+              <Facts label="Price breakdown" items={[
+                { label: "Creator's price", value: inr(allIn.creatorFee) },
+                { label: `Colatch fee (${allIn.pct}%)`, value: inr(allIn.colatch) },
+                { label: "GST on Colatch fee", value: inr(allIn.gstOnColatch) },
+                { label: "All in", value: inr(allIn.total) },
+              ]} />
+              <p className="hint" style={{ margin: "12px 0 0" }}>Creator GST is added only if they are GST-registered. You pay only after you approve the creator, and your money is held by Colatch until the post is live and checked.</p>
+            </Card>
+          </Section>
+        </Grid>
       </div>
     </PublicShell>
   );

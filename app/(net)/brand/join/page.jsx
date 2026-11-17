@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
-import PublicShell, { Hero } from "../../_ui/PublicShell";
+import PublicShell from "../../_ui/PublicShell";
+import { SplitAuth } from "@/components/ui";
+import { BRAND_PANEL } from "@/components/brand/AuthPanels";
 import { flashUrl } from "../../_ui/flash";
 import { packForm, unpackForm } from "../../_ui/keep";
 import { env } from "@/lib/net/env";
@@ -67,18 +69,12 @@ export default async function Page({ searchParams }) {
   if (await currentBrand()) redirect("/brand");
   const v = unpackForm(searchParams?.v);
   const err = searchParams?.err;
-  const hero = (
-    <Hero eyebrow="Colatch for brands" title="Every campaign, creator and payment <b>in one place.</b>">
-      <p>Post briefs, approve the creators we shortlist, review drafts and see exactly what you've paid. Free to create an account.</p>
-    </Hero>
-  );
   return (
-    <PublicShell mode="client" path="/brand/join" hero={hero}>
-      <div className="wrap narrow" style={{ padding: 0, maxWidth: 560 }}>
+    <PublicShell mode="client" path="/brand/join" flush>
+      <SplitAuth panel={BRAND_PANEL} intro={{ eyebrow: "Free brand account", title: "Every campaign, creator and payment <b>in one place</b>.", sub: "Post briefs, approve the creators we shortlist, review drafts and see exactly what you've paid." }}>
         {err && <div className="note bad" role="alert" style={{ marginBottom: 18 }}>{err}</div>}
         <form className="panel pad" action={join}>
           <div style={{ position: "absolute", left: -9999 }} aria-hidden="true"><input name="website" tabIndex={-1} autoComplete="off" /></div>
-          <h2>Create your brand account</h2>
           <div className="form-grid">
             <div className="fld"><label htmlFor="f-bj-name">Your name</label><input id="f-bj-name" name="name" required maxLength={120} defaultValue={v.name ?? ""} autoComplete="name" /></div>
             <div className="fld"><label htmlFor="f-bj-company">Company or brand</label><input id="f-bj-company" name="company" required maxLength={160} defaultValue={v.company ?? ""} autoComplete="organization" /></div>
@@ -86,15 +82,15 @@ export default async function Page({ searchParams }) {
             <div className="fld"><label htmlFor="f-bj-phone">Phone <span className="opt">— optional</span></label><input id="f-bj-phone" name="phone" type="tel" inputMode="tel" defaultValue={v.phone ?? ""} autoComplete="tel" placeholder="98765 43210" /></div>
             <div className="fld" style={{ gridColumn: "1 / -1" }}><label htmlFor="f-bj-password">Password <span className="opt">— at least 10 characters</span></label><input id="f-bj-password" name="password" type="password" required minLength={10} autoComplete="new-password" /></div>
           </div>
-          <label className="row" style={{ marginTop: 18, gap: 10, fontSize: 13.5, color: "var(--ink-3)", alignItems: "flex-start", flexWrap: "nowrap" }}>
-            <input type="checkbox" name="terms" value="1" required style={{ marginTop: 3 }} />
+          <label className="row v2b-terms">
+            <input type="checkbox" name="terms" value="1" required />
             <span>Colatch may contact me by email, phone or WhatsApp about my campaigns.</span>
           </label>
           <p className="hint" style={{ margin: "14px 0 0" }}>We'll email you a link to confirm your address. Briefs you already sent from it show up once it's confirmed.</p>
-          <button className="btn-foil" style={{ marginTop: 18 }}>Create account</button>
+          <button className="btn-foil" style={{ marginTop: 18, width: "100%", justifyContent: "center" }}>Create account</button>
           <p className="hint" style={{ margin: "14px 0 0" }}>Already have one? <a className="link" href="/brand/login">Log in</a></p>
         </form>
-      </div>
+      </SplitAuth>
     </PublicShell>
   );
 }

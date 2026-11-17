@@ -1,6 +1,9 @@
 import { redirect } from "next/navigation";
 import { cookies, headers } from "next/headers";
-import PublicShell, { Hero } from "../_ui/PublicShell";
+import PublicShell from "../_ui/PublicShell";
+import { PageHeader, Grid, Section, Card, AsideCard, FormSteps, KpiStrip } from "@/components/ui";
+import { MiniStats } from "@/components/brand/Facts";
+import BriefPreview from "@/components/brand/BriefPreview";
 import { env } from "@/lib/net/env";
 import { extractNeeds, slugify, shortlistDue, formatIST } from "@/lib/net/brief";
 import { rankCreators } from "@/lib/net/campaign";
@@ -187,100 +190,142 @@ export default async function Page({ searchParams }) {
   }
   const has = (k, x) => (v[k] ?? "").split(", ").includes(x);
   const origin = `https://${headers().get("host")}`;
+  // Read-only, for the form view: the network a brief is matched against. A failure only hides the strip.
+  const net = done ? null : await env.DB.prepare("SELECT COUNT(*) n, COUNT(DISTINCT LOWER(city)) cities, COUNT(*) FILTER (WHERE owner_verified=1) owned FROM creators WHERE status <> 'blacklisted'").first().catch(() => null);
 
   const hero = (
-    <Hero eyebrow="For brands" title="Tell us who you need. <b>We'll find them.</b>">
-      <p>Describe the campaign in your own words, like "4 Bhangra dancers in Delhi for a Lohri reel". Colatch's matching engine reads it and finds creators who fit on talent, city, size and language. Our team then puts together a shortlist, usually within 2 working days.</p>
-    </Hero>
+    <PageHeader variant="hero" eyebrow="For brands"
+      title={done ? "Thanks. <b>Here's what we understood.</b>" : "Tell us who you need. <b>We'll find them.</b>"}
+      sub={done ? "A Colatch strategist checks every brief by hand before creators see it." : "Describe the campaign in your own words, like \"4 Bhangra dancers in Delhi for a Lohri reel\". Colatch's matching engine reads it and finds creators who fit on talent, city, size and language. Our team then puts together a shortlist, usually within 2 working days."} />
   );
+  const initial = { raw: v.raw ?? "", talent: list(v.talent), cities: list(v.cities), languages: list(v.languages), size: v.size ?? "", count: v.count ?? "", when: v.when ?? "", mandatories: v.mandatories ?? "", rush: Boolean(v.rush), featured: Boolean(v.featured) };
 
   return (
     <PublicShell mode="client" brandName={account ? (account.name || account.email) : null} path="/brief" hero={hero}>
       <style dangerouslySetInnerHTML={{ __html: CSS }} />
-      <div className="wrap narrow pg-brief" style={{ padding: 0 }}>
+      <div className={`pg-brief v2b${done ? "" : " v2b-own-cta"}`}>
         {done ? (
-          <div className="panel pad">
-            <h2>Brief received</h2>
-            <h3 style={{ fontSize: 24, fontWeight: 300 }}>Thanks. Here's what we understood.</h3>
-            {done.held
-              ? <div className="note warn" style={{ marginTop: 14 }}><b>We'll quickly confirm your brand first.</b> You used a personal email and no website, so a Colatch strategist will contact you to verify before creators see this brief. It keeps creators safe from fake-brand scams, and verified brands get more applicants.</div>
-              : done.due && <div className="note good" style={{ marginTop: 14 }}><b>{done.rush ? "Rush shortlist: " : ""}We aim to have your shortlist ready by {formatIST(done.due)}.</b> It appears on your private campaign page below, where you approve each creator. We also email you the link.</div>}
-            <div className="note info" style={{ marginTop: 12 }}><b>Your private campaign page:</b> <a className="link" href={`/shortlist/${done.token}`} data-testid="shortlist-link">{origin}/shortlist/{done.token.slice(0, 8)}…</a><br /><span className="hint">Bookmark it. Anyone with this link can see and approve your shortlist, so share it only inside your team.</span></div>
-            <div className="bscore" style={{ marginTop: 14 }}>
-              <div className={`bscore-ring ${done.score >= 75 ? "hi" : done.score >= 50 ? "mid" : "lo"}`}><b>{done.score}</b><span>/100</span></div>
-              <div><b>Brief strength</b>
-                <div className="hint">{done.score >= 85 ? "Excellent. Creators will know exactly what to make." : "Complete briefs get about twice the applicants. To raise it, add:"}</div>
-                {done.score < 85 && done.missing.length > 0 && <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>{done.missing.map((m) => <li key={m}>{m}</li>)}</ul>}
-                {done.score < 85 && <div className="hint" style={{ marginTop: 6 }}>Reply to our email with these and we'll add them.</div>}
+          <Grid aside={<>
+            <AsideCard eyebrow="Brief strength" title={done.score >= 85 ? "Excellent brief" : "Make it stronger"}>
+              <div className="bscore">
+                <div className={`bscore-ring ${done.score >= 75 ? "hi" : done.score >= 50 ? "mid" : "lo"}`}><b>{done.score}</b><span>/100</span></div>
+                <div>
+                  <div className="hint">{done.score >= 85 ? "Excellent. Creators will know exactly what to make." : "Complete briefs get about twice the applicants. To raise it, add:"}</div>
+                  {done.score < 85 && done.missing.length > 0 && <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>{done.missing.map((m) => <li key={m}>{m}</li>)}</ul>}
+                  {done.score < 85 && <div className="hint" style={{ marginTop: 6 }}>Reply to our email with these and we'll add them.</div>}
+                </div>
               </div>
-            </div>
-            {done.featured && <div className="note info" style={{ marginTop: 12 }}>You asked to feature this brief (₹1,999 for 7 days at the top of every matching creator's feed). We'll confirm it with your shortlist.</div>}
-            <div className="stack" style={{ marginTop: 18 }}>
-              <div><div className="lbl">Looking for</div><div>
-                {done.needs.talent_types.length ? done.needs.talent_types.map((t) => <span key={t} className="tag">{t}</span>) : <span className="tag">Creators of any kind</span>}
-                {done.needs.city.map((t) => <span key={"c" + t} className="tag">{t}</span>)}
-                {done.needs.languages.map((t) => <span key={"l" + t} className="tag">{t}</span>)}
-                {done.needs.gender && <span className="tag">{done.needs.gender}</span>}
-                {(done.needs.min_followers || done.needs.max_followers) ? <span className="tag">{compact(done.needs.min_followers || 0)}{done.needs.max_followers ? `–${compact(done.needs.max_followers)}` : "+"} followers</span> : null}
-              </div></div>
-              {done.needs.deliverables && <div><div className="lbl">Deliverables</div><b>{done.needs.deliverables}</b></div>}
-              {done.needs.budget_total ? <div><div className="lbl">Your budget</div><b>{inr(done.needs.budget_total)}</b></div> : null}
-              {done.est && <div><div className="lbl">Typical market cost for this brief</div><b>{inr(done.est[0])} – {inr(done.est[1])}</b>
-                <div className="hint">For {done.needs.creators_needed || 1} {(done.needs.creators_needed || 1) === 1 ? "creator" : "creators"} at this size, 1 reel each, before Colatch's fee and GST. Your shortlist will show each creator's exact fee.</div>
-                {done.low && <div className="note warn" style={{ marginTop: 10 }}>Your budget is below the usual range. We'll suggest smaller creators or fewer deliverables so it still works.</div>}</div>}
-              <div className="note good"><b>{done.pool > 0 ? `${done.pool} ${done.pool === 1 ? "creator" : "creators"} in our network already ${done.pool === 1 ? "fits" : "fit"} this.` : "We will source fresh creators for this."}</b> A Colatch strategist will check the brief, confirm details with you and share a shortlist{done.needs.questions.length ? ". We may ask:" : "."}
-                {done.needs.questions.length > 0 && <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>{done.needs.questions.map((q, i) => <li key={i}>{q}</li>)}</ul>}</div>
-            </div>
-            {done.code && <div className="panel pad" style={{ marginTop: 18, boxShadow: "none", background: "var(--ivory-2)" }}>
-              <h2>Know another brand that needs creators?</h2>
-              <p style={{ margin: "0 0 10px" }}>Share your link. For 12 months you earn credit off your own Colatch invoices on every campaign they run.</p>
-              <div className="row"><code className="k">{origin}/r/{done.code}</code></div>
-            </div>}
-            <a className="btn" style={{ marginTop: 18 }} href="/brief">Send another brief</a>
-          </div>
+            </AsideCard>
+            {done.code && <AsideCard eyebrow="Refer a brand" title="Know another brand that needs creators?">
+              <p className="small">Share your link. For 12 months you earn credit off your own Colatch invoices on every campaign they run.</p>
+              <p><code className="k v2b-code">{origin}/r/{done.code}</code></p>
+            </AsideCard>}
+            <AsideCard tone="night" eyebrow="Next" title="What happens now" foot={<a href="/faq">How Colatch works</a>}>
+              <ol className="v2b-steps"><li>A strategist checks the brief and may ask a question or two.</li><li>Your shortlist appears on your private campaign page.</li><li>You approve each creator; nothing is booked until you do.</li></ol>
+            </AsideCard>
+          </>}>
+            <Card pad="lg">
+              <h2 className="v2b-h2">Brief received</h2>
+              {done.held
+                ? <div className="note warn" style={{ marginTop: 14 }}><b>We'll quickly confirm your brand first.</b> You used a personal email and no website, so a Colatch strategist will contact you to verify before creators see this brief. It keeps creators safe from fake-brand scams, and verified brands get more applicants.</div>
+                : done.due && <div className="note good" style={{ marginTop: 14 }}><b>{done.rush ? "Rush shortlist: " : ""}We aim to have your shortlist ready by {formatIST(done.due)}.</b> It appears on your private campaign page below, where you approve each creator. We also email you the link.</div>}
+              <div className="v2b-link-card">
+                <span className="v2b-link-card__eb">Your private campaign page</span>
+                <a className="link" href={`/shortlist/${done.token}`} data-testid="shortlist-link">{origin}/shortlist/{done.token.slice(0, 8)}…</a>
+                <span className="hint">Bookmark it. Anyone with this link can see and approve your shortlist, so share it only inside your team.</span>
+              </div>
+              {done.featured && <div className="note info" style={{ marginTop: 12 }}>You asked to feature this brief (₹1,999 for 7 days at the top of every matching creator's feed). We'll confirm it with your shortlist.</div>}
+              <div className="stack" style={{ marginTop: 18 }}>
+                <div><div className="lbl">Looking for</div><div>
+                  {done.needs.talent_types.length ? done.needs.talent_types.map((t) => <span key={t} className="tag">{t}</span>) : <span className="tag">Creators of any kind</span>}
+                  {done.needs.city.map((t) => <span key={"c" + t} className="tag">{t}</span>)}
+                  {done.needs.languages.map((t) => <span key={"l" + t} className="tag">{t}</span>)}
+                  {done.needs.gender && <span className="tag">{done.needs.gender}</span>}
+                  {(done.needs.min_followers || done.needs.max_followers) ? <span className="tag">{compact(done.needs.min_followers || 0)}{done.needs.max_followers ? `–${compact(done.needs.max_followers)}` : "+"} followers</span> : null}
+                </div></div>
+                <MiniStats label="Brief figures" items={[
+                  done.needs.deliverables ? { label: "Deliverables", value: done.needs.deliverables } : null,
+                  done.needs.budget_total ? { label: "Your budget", value: inr(done.needs.budget_total) } : null,
+                  { label: "Creators who fit", value: String(done.pool), note: done.pool > 0 ? "already in our network" : "we'll source fresh ones" },
+                ]} />
+                {done.est && <div><div className="lbl">Typical market cost for this brief</div><b>{inr(done.est[0])} – {inr(done.est[1])}</b>
+                  <div className="hint">For {done.needs.creators_needed || 1} {(done.needs.creators_needed || 1) === 1 ? "creator" : "creators"} at this size, 1 reel each, before Colatch's fee and GST. Your shortlist will show each creator's exact fee.</div>
+                  {done.low && <div className="note warn" style={{ marginTop: 10 }}>Your budget is below the usual range. We'll suggest smaller creators or fewer deliverables so it still works.</div>}</div>}
+                <div className="note good"><b>{done.pool > 0 ? `${done.pool} ${done.pool === 1 ? "creator" : "creators"} in our network already ${done.pool === 1 ? "fits" : "fit"} this.` : "We will source fresh creators for this."}</b> A Colatch strategist will check the brief, confirm details with you and share a shortlist{done.needs.questions.length ? ". We may ask:" : "."}
+                  {done.needs.questions.length > 0 && <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>{done.needs.questions.map((q, i) => <li key={i}>{q}</li>)}</ul>}</div>
+              </div>
+              <div className="row" style={{ marginTop: 18, gap: 10 }}><a className="btn plum" href={`/shortlist/${done.token}`}>Open my campaign page</a><a className="btn" href="/brief">Send another brief</a></div>
+            </Card>
+          </Grid>
         ) : (
-          <form className="panel pad" action={submitBrief}>
-            <div style={{ position: "absolute", left: -9999 }} aria-hidden="true"><input name="website" tabIndex={-1} autoComplete="off" /></div>
-            {sp.ref && <input type="hidden" name="ref" value={String(sp.ref)} />}
-            {err && <div className="note bad" style={{ marginBottom: 16 }}>{err}</div>}
-            <h2>What do you need?</h2>
-            <div className="fld"><label>Describe the campaign</label><textarea id="brief-raw" name="raw" rows={6} required placeholder="We're launching a festive kurta range and need 4 female Bhangra dancers in Delhi or Chandigarh, 50K+ followers, Punjabi audience. 1 reel + 2 stories each, going live 10 Jan." defaultValue={v.raw ?? ""} /><span className="hint">Write it like a WhatsApp message. Talent, city, audience, dates, what to post.</span></div>
-            <BriefMeter target="brief-raw" />
+          <>
+            {net && Number(net.n) > 0 && <KpiStrip label="The network your brief is matched against" items={[
+              { label: "Creators", value: Number(net.n), foot: "in the Colatch network" },
+              { label: "Cities", value: Number(net.cities), foot: "where those creators live" },
+              ...(Number(net.owned) > 0 ? [{ label: "Account ownership proven", value: Number(net.owned), foot: "creators who proved their handle" }] : []),
+              { label: "Shortlist", value: "2 days", foot: "usually, in working days; rush is 6 working hours" },
+            ]} />}
+          <Grid aside={<div className="v2b-sticky v2b-stack">
+            <AsideCard eyebrow="Live preview" title="What creators will see">
+              <BriefPreview form="brief-form" initial={initial} />
+            </AsideCard>
+            <AsideCard tone="night" eyebrow="After you send it" title="What happens next" foot={<a href="/faq">How Colatch works</a>}>
+              <ol className="v2b-steps"><li>A strategist checks the brief by hand.</li><li>Your shortlist appears on your private campaign page.</li><li>You approve each creator; nothing is booked or charged until you do.</li></ol>
+            </AsideCard>
+          </div>}>
+            <FormSteps label="Brief parts" current={0} steps={[{ label: "What you need", href: "#need" }, { label: "About you", href: "#you" }, { label: "Speed it up", href: "#speed" }]} />
+            <form id="brief-form" className="v2b-form" action={submitBrief}>
+              <div style={{ position: "absolute", left: -9999 }} aria-hidden="true"><input name="website" tabIndex={-1} autoComplete="off" /></div>
+              {sp.ref && <input type="hidden" name="ref" value={String(sp.ref)} />}
+              {err && <div className="note bad" style={{ marginBottom: 16 }}>{err}</div>}
+              <Section id="need" title="What do you need?" sub="Write it like a WhatsApp message. Talent, city, audience, dates, what to post.">
+                <Card>
+                  <div className="fld"><label htmlFor="brief-raw">Describe the campaign</label><textarea id="brief-raw" name="raw" rows={6} required placeholder="We're launching a festive kurta range and need 4 female Bhangra dancers in Delhi or Chandigarh, 50K+ followers, Punjabi audience. 1 reel + 2 stories each, going live 10 Jan." defaultValue={v.raw ?? ""} /></div>
+                  <BriefMeter target="brief-raw" />
+                  <details className="box" style={{ marginTop: 18 }} open={Boolean(v.talent || v.cities)}>
+                    <summary>Add specifics (optional, makes the match sharper)</summary>
+                    <div className="inner form-grid">
+                      <div className="fld full"><label>Talent needed</label><div className="chips">{SKILLS.map((s) => <label key={s} className="chip"><input type="checkbox" name="talent" value={s} defaultChecked={has("talent", s)} /><span>{s}</span></label>)}</div></div>
+                      <div className="fld full"><label>Cities</label><div className="chips">{CITIES.map((s) => <label key={s} className="chip"><input type="checkbox" name="cities" value={s} defaultChecked={has("cities", s)} /><span>{s}</span></label>)}</div></div>
+                      <div className="fld full"><label>Languages</label><div className="chips">{LANGUAGES.map((s) => <label key={s} className="chip"><input type="checkbox" name="languages" value={s} defaultChecked={has("languages", s)} /><span>{s}</span></label>)}</div></div>
+                      <div className="fld"><label htmlFor="f-brief-size-1">Creator size</label><select id="f-brief-size-1" name="size" defaultValue={v.size ?? ""}>{[["", "Not sure, suggest"], ["nano", "Nano (1K–10K)"], ["micro", "Micro (10K–1L)"], ["mid", "Mid (1L–5L)"], ["macro", "Macro (5L+)"]].map(([a, b]) => <option key={a} value={a}>{b}</option>)}</select></div>
+                      <div className="fld"><label htmlFor="f-brief-count-2">How many creators</label><input id="f-brief-count-2" name="count" defaultValue={v.count ?? ""} placeholder="e.g. 5" /></div>
+                      <div className="fld"><label htmlFor="f-brief-budget-3">Total budget ₹</label><input id="f-brief-budget-3" name="budget" defaultValue={v.budget ?? ""} placeholder="e.g. 300000" /></div>
+                      <div className="fld"><label htmlFor="f-brief-when-4">Go-live date</label><input id="f-brief-when-4" name="when" type="date" defaultValue={v.when ?? ""} /></div>
+                      <div className="fld full"><label htmlFor="f-brief-mandatories-5">Must include <span className="opt">— one per line</span></label><textarea id="f-brief-mandatories-5" name="mandatories" rows={3} placeholder={'Say "festive collection" in the first 5 seconds\nShow the product front-on'} defaultValue={v.mandatories ?? ""} /></div>
+                      <div className="fld full"><label htmlFor="f-brief-exclusions-6">Must not <span className="opt">— competitors, words, claims</span></label><textarea id="f-brief-exclusions-6" name="exclusions" rows={2} defaultValue={v.exclusions ?? ""} /></div>
+                      <div className="fld full"><label htmlFor="f-brief-brand-url-7">Where should viewers go? <span className="opt">— we create a tracked link per creator</span></label><input id="f-brief-brand-url-7" name="brand_url" defaultValue={v.brand_url ?? ""} placeholder="https://yourbrand.com/collection" /></div>
+                    </div>
+                  </details>
+                </Card>
+              </Section>
 
-            <details className="box" style={{ marginTop: 18 }} open={Boolean(v.talent || v.cities)}>
-              <summary>Add specifics (optional, makes the match sharper)</summary>
-              <div className="inner form-grid">
-                <div className="fld full"><label>Talent needed</label><div className="chips">{SKILLS.map((s) => <label key={s} className="chip"><input type="checkbox" name="talent" value={s} defaultChecked={has("talent", s)} /><span>{s}</span></label>)}</div></div>
-                <div className="fld full"><label>Cities</label><div className="chips">{CITIES.map((s) => <label key={s} className="chip"><input type="checkbox" name="cities" value={s} defaultChecked={has("cities", s)} /><span>{s}</span></label>)}</div></div>
-                <div className="fld full"><label>Languages</label><div className="chips">{LANGUAGES.map((s) => <label key={s} className="chip"><input type="checkbox" name="languages" value={s} defaultChecked={has("languages", s)} /><span>{s}</span></label>)}</div></div>
-                <div className="fld"><label htmlFor="f-brief-size-1">Creator size</label><select id="f-brief-size-1" name="size" defaultValue={v.size ?? ""}>{[["", "Not sure, suggest"], ["nano", "Nano (1K–10K)"], ["micro", "Micro (10K–1L)"], ["mid", "Mid (1L–5L)"], ["macro", "Macro (5L+)"]].map(([a, b]) => <option key={a} value={a}>{b}</option>)}</select></div>
-                <div className="fld"><label htmlFor="f-brief-count-2">How many creators</label><input id="f-brief-count-2" name="count" defaultValue={v.count ?? ""} placeholder="e.g. 5" /></div>
-                <div className="fld"><label htmlFor="f-brief-budget-3">Total budget ₹</label><input id="f-brief-budget-3" name="budget" defaultValue={v.budget ?? ""} placeholder="e.g. 300000" /></div>
-                <div className="fld"><label htmlFor="f-brief-when-4">Go-live date</label><input id="f-brief-when-4" name="when" type="date" defaultValue={v.when ?? ""} /></div>
-                <div className="fld full"><label htmlFor="f-brief-mandatories-5">Must include <span className="opt">— one per line</span></label><textarea id="f-brief-mandatories-5" name="mandatories" rows={3} placeholder={'Say "festive collection" in the first 5 seconds\nShow the product front-on'} defaultValue={v.mandatories ?? ""} /></div>
-                <div className="fld full"><label htmlFor="f-brief-exclusions-6">Must not <span className="opt">— competitors, words, claims</span></label><textarea id="f-brief-exclusions-6" name="exclusions" rows={2} defaultValue={v.exclusions ?? ""} /></div>
-                <div className="fld full"><label htmlFor="f-brief-brand-url-7">Where should viewers go? <span className="opt">— we create a tracked link per creator</span></label><input id="f-brief-brand-url-7" name="brand_url" defaultValue={v.brand_url ?? ""} placeholder="https://yourbrand.com/collection" /></div>
-              </div>
-            </details>
+              <Section id="you" title="About you" sub={account ? undefined : "So we can send your shortlist. Creators never see these."}>
+                <Card>
+                  {!account && <p className="hint" style={{ margin: "0 0 12px" }}>Have a brand account? <a className="link" href="/brand/login?next=/brief">Log in</a> so this brief shows up in your campaigns.</p>}
+                  <div className="form-grid">
+                    <div className="fld"><label htmlFor="f-brief-name-8">Your name</label><input id="f-brief-name-8" name="name" required defaultValue={v.name ?? ""} /></div>
+                    <div className="fld"><label htmlFor="f-brief-company-9">Brand / company</label><input id="f-brief-company-9" name="company" required defaultValue={v.company ?? ""} /></div>
+                    <div className="fld"><label htmlFor="f-brief-email-10">Work email</label><input id="f-brief-email-10" name="email" type="email" required defaultValue={v.email ?? ""} readOnly={!!account} aria-describedby={account ? "brief-acct" : undefined} />{account && <span className="hint" id="brief-acct">Logged in as {account.email}. This brief goes to <a className="link" href="/brand">your campaigns</a>. Not you? <a className="link" href="/brand/logout">Log out</a></span>}</div>
+                    <div className="fld"><label htmlFor="f-brief-phone-11">Phone / WhatsApp</label><input id="f-brief-phone-11" name="phone" defaultValue={v.phone ?? ""} /></div>
+                    <div className="fld full"><label htmlFor="f-brief-site-12">Company website <span className="opt">— helps us verify you faster</span></label><input id="f-brief-site-12" name="site" defaultValue={v.site ?? ""} placeholder="yourbrand.com" /></div>
+                  </div>
+                </Card>
+              </Section>
 
-            <h2 style={{ marginTop: 26 }}>About you</h2>
-            {!account && <p className="hint" style={{ margin: "-4px 0 12px" }}>Have a brand account? <a className="link" href="/brand/login?next=/brief">Log in</a> so this brief shows up in your campaigns.</p>}
-            <div className="form-grid">
-              <div className="fld"><label htmlFor="f-brief-name-8">Your name</label><input id="f-brief-name-8" name="name" required defaultValue={v.name ?? ""} /></div>
-              <div className="fld"><label htmlFor="f-brief-company-9">Brand / company</label><input id="f-brief-company-9" name="company" required defaultValue={v.company ?? ""} /></div>
-              <div className="fld"><label htmlFor="f-brief-email-10">Work email</label><input id="f-brief-email-10" name="email" type="email" required defaultValue={v.email ?? ""} readOnly={!!account} aria-describedby={account ? "brief-acct" : undefined} />{account && <span className="hint" id="brief-acct">Logged in as {account.email}. This brief goes to <a className="link" href="/brand">your campaigns</a>. Not you? <a className="link" href="/brand/logout">Log out</a></span>}</div>
-              <div className="fld"><label htmlFor="f-brief-phone-11">Phone / WhatsApp</label><input id="f-brief-phone-11" name="phone" defaultValue={v.phone ?? ""} /></div>
-              <div className="fld full"><label htmlFor="f-brief-site-12">Company website <span className="opt">— helps us verify you faster</span></label><input id="f-brief-site-12" name="site" defaultValue={v.site ?? ""} placeholder="yourbrand.com" /></div>
-            </div>
-
-            <h2 style={{ marginTop: 26 }}>Speed it up <span className="opt" style={{ textTransform: "none", letterSpacing: 0 }}>— optional</span></h2>
-            <div className="stack">
-              <label className="addon"><input type="checkbox" name="rush" defaultChecked={Boolean(v.rush)} /><span><b>Rush shortlist in 6 working hours</b><span className="hint">We aim for 6 working hours instead of 2 working days. Adds 5% of the creator fees, shown line by line on your shortlist.</span></span></label>
-              <label className="addon"><input type="checkbox" name="featured" defaultChecked={Boolean(v.featured)} /><span><b>Feature this brief for 7 days, ₹1,999</b><span className="hint">Pinned at the top of matching creators' feeds. Nothing is charged until we confirm it with you.</span></span></label>
-            </div>
-            <button className="btn-foil" style={{ marginTop: 22 }}>Find my creators →</button>
-            <p className="hint" style={{ margin: "12px 0 0" }}>Your budget and contact details stay with the Colatch team. Creators only see the brief.</p>
-          </form>
+              <Section id="speed" title="Speed it up" sub="Optional. Nothing is charged until we confirm it with you.">
+                <Card>
+                  <div className="stack">
+                    <label className="addon"><input type="checkbox" name="rush" defaultChecked={Boolean(v.rush)} /><span><b>Rush shortlist in 6 working hours</b><span className="hint">We aim for 6 working hours instead of 2 working days. Adds 5% of the creator fees, shown line by line on your shortlist.</span></span></label>
+                    <label className="addon"><input type="checkbox" name="featured" defaultChecked={Boolean(v.featured)} /><span><b>Feature this brief for 7 days, ₹1,999</b><span className="hint">Pinned at the top of matching creators' feeds. Nothing is charged until we confirm it with you.</span></span></label>
+                  </div>
+                  <button className="btn-foil v2b-submit">Find my creators →</button>
+                  <p className="hint" style={{ margin: "12px 0 0" }}>Your budget and contact details stay with the Colatch team. Creators only see the brief.</p>
+                </Card>
+              </Section>
+            </form>
+          </Grid>
+          </>
         )}
       </div>
     </PublicShell>

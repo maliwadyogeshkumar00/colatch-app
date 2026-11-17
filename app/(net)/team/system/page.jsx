@@ -1,6 +1,9 @@
 import TeamShell from "../../_ui/TeamShell";
 import { requireTeam } from "../_guard";
 import { env } from "@/lib/net/env";
+import { JOB_NAMES, JOB_LABEL } from "@/lib/net/jobs";
+import { PageHeader, DataTable, Grid, Section, AsideCard, InlineState, Pill, Cell } from "@/components/ui";
+import { Tiles, ShareBar, stamp } from "@/components/admin/Charts";
 
 export const metadata = { title: "System health", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
@@ -16,80 +19,104 @@ const CONFIG = [
   ["BLOB_READ_WRITE_TOKEN", "Creator image uploads (Vercel Blob)", false],
   ["ANTHROPIC_API_KEY", "AI brief and matching (Anthropic)", false],
   ["GEMINI_API_KEY", "AI helpers (Gemini)", false],
+  ["CRON_SECRET", "Scheduled jobs (Vercel Cron sends it; jobs are off without it)", false],
 ];
-const when = (t) => (t ? new Date(t).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", second: "2-digit", timeZone: "Asia/Kolkata" }) : "");
+const when = (t) => stamp(t, { seconds: true, year: false });
 
 export default async function Page() {
   const me = await requireTeam("team");
   const q = (sql) => env.DB.prepare(sql).all().then((r) => r.results ?? []).catch(() => null);
-  const [errors, settings, outbox] = await Promise.all([
+  const [errors, settings, outbox, runs, hookRows, stuck] = await Promise.all([
     q("SELECT id, at, source, message, digest FROM app_errors ORDER BY id DESC LIMIT 100"),
     q("SELECT key, value FROM app_settings WHERE key IN ('schema_version','migration_warnings')"),
     q("SELECT status, COUNT(*) AS n FROM notifications GROUP BY status"),
+    q("SELECT job, last_run_at, last_result FROM cron_runs"),
+    q("SELECT status, COUNT(*) AS n FROM webhook_deliveries GROUP BY status"),
+    q("SELECT d.id, d.event, d.status, d.attempts, d.last_error, d.created_at, w.url FROM webhook_deliveries d LEFT JOIN webhooks w ON w.id=d.webhook_id WHERE d.status IN ('pending','failed') ORDER BY d.created_at DESC LIMIT 20"),
   ]);
+  const runBy = Object.fromEntries((runs || []).map((r) => [r.job, r]));
+  const hooks = Object.fromEntries((hookRows || []).map((r) => [r.status, Number(r.n)]));
+  // Hourly schedule: a job not seen for 26 hours means cron isn't calling (or CRON_SECRET is missing). Daily plans allow 26h.
+  const stale = (t) => !t || Date.now() - new Date(t).getTime() > 26 * 36e5;
+  const hostOf = (u) => { try { return new URL(u).hostname; } catch { return "deleted webhook"; } };
   const set = Object.fromEntries((settings || []).map((s) => [s.key, s.value]));
   const box = Object.fromEntries((outbox || []).map((o) => [o.status, Number(o.n)]));
   const cfg = CONFIG.map(([k, label, required, test]) => ({ k, label, required, on: test ? test() : !!process.env[k] }));
   const missingRequired = cfg.filter((c) => c.required && !c.on).length;
 
+  const unsent = (box.queued || 0) + (box.failed || 0) + (box.not_configured || 0);
+  const jobBad = JOB_NAMES.filter((j) => stale(runBy[j]?.last_run_at) || String(runBy[j]?.last_result || "").startsWith("error")).length;
+  const errDay = (errors || []).filter((e) => Date.now() - new Date(e.at).getTime() < 864e5).length;
+  const tiles = [
+    { label: "Database schema", value: set.schema_version ? `v${set.schema_version}` : "—", state: settings === null ? "off" : set.migration_warnings ? "warn" : "ok", stateText: settings === null ? "Can't read" : set.migration_warnings ? "Warnings" : "Up to date", note: settings === null ? "Couldn't read settings" : set.migration_warnings ? "Has migration warnings" : "No migration warnings" },
+    { label: "Scheduled jobs", value: `${JOB_NAMES.length - jobBad}/${JOB_NAMES.length}`, state: runs === null ? "off" : jobBad ? "warn" : "ok", stateText: runs === null ? "Can't read" : jobBad ? `${jobBad} to check` : "On time", note: runs === null ? "Couldn't read the job history" : "ran in the last day without an error", href: "#jobs" },
+    { label: "Webhook deliveries", value: hookRows === null ? "—" : (hooks.delivered || 0).toLocaleString("en-IN"), state: hookRows === null ? "off" : hooks.failed ? "warn" : "ok", stateText: hookRows === null ? "Can't read" : hooks.failed ? `${hooks.failed} failed` : hooks.pending ? `${hooks.pending} retrying` : "Clear", note: `delivered · ${hooks.pending || 0} waiting to retry · ${hooks.failed || 0} failed`, href: "#wh" },
+    { label: "Emails not sent", value: outbox === null ? "—" : unsent, state: outbox === null ? "off" : unsent ? "warn" : "ok", stateText: outbox === null ? "Can't read" : unsent ? "Waiting" : "Clear", note: `${box.queued || 0} queued · ${box.failed || 0} failed · ${box.not_configured || 0} email not set up`, href: "/team/notifications" },
+    { label: "Errors logged", value: errors === null ? "—" : errors.length, state: errors === null ? "off" : errDay ? "warn" : "ok", stateText: errors === null ? "Can't read" : errDay ? `${errDay} today` : "Quiet today", note: errors?.length === 100 ? "showing the latest 100" : "all shown below", href: "#err" },
+    { label: "Settings", value: `${cfg.filter((c) => c.on).length}/${cfg.length}`, state: missingRequired ? "warn" : "ok", stateText: missingRequired ? `${missingRequired} required missing` : "Required set", note: "settings present in Vercel", href: "#cfg" },
+  ];
+  const attention = tiles.filter((t) => t.state !== "ok").length;
+
   return (
-    <TeamShell active="system" eyebrow="Owners and admins" title="System <b>health</b>" email={me.email} role={me.role}>
-      <p className="lead">What's switched on, what's failing, and what's waiting to be sent. Settings show only whether they're present, never their values.</p>
+    <TeamShell active="system" email={me.email} role={me.role}>
+      <PageHeader
+        crumbs={[{ label: "Owners and admins" }, { label: "System health" }]}
+        eyebrow="Owners and admins"
+        title="System <b>health</b>"
+        sub="What's switched on, what's failing, and what's waiting to be sent. Settings show only whether they're present, never their values."
+        meta={[{ label: "Need a look", value: attention, gold: attention > 0 }, { label: "Checks", value: tiles.length }]}
+      />
+      <Tiles label="System checks" items={tiles} />
+      {set.migration_warnings && <div style={{ marginBottom: 24 }}><InlineState kind="error" label="Migration warnings.">{set.migration_warnings}. These unique rules were not added because existing rows break them; remove the duplicates by hand, then redeploy.</InlineState></div>}
 
-      <div className="grid4" style={{ marginBottom: 24 }}>
-        <div className="panel kpi"><div className="k">Database schema</div><div className="v">{set.schema_version ? `v${set.schema_version}` : "—"}</div><div className="s">{settings === null ? "Couldn't read settings" : set.migration_warnings ? "Has migration warnings" : "No migration warnings"}</div></div>
-        <div className="panel kpi"><div className="k">Errors logged</div><div className="v">{errors === null ? "—" : errors.length}</div><div className="s">{errors?.length === 100 ? "showing the latest 100" : "all shown below"}</div></div>
-        <div className="panel kpi"><div className="k">Emails waiting</div><div className="v">{(box.queued || 0) + (box.failed || 0)}</div><div className="s">{box.failed || 0} failed · {box.not_configured || 0} not configured</div></div>
-        <div className="panel kpi"><div className="k">Settings</div><div className="v">{cfg.filter((c) => c.on).length}/{cfg.length}</div><div className="s">{missingRequired ? `${missingRequired} required missing` : "Required ones present"}</div></div>
-      </div>
+      <Grid aside={<>
+        <AsideCard eyebrow="Email" title="Outbox by status" foot={<a href="/team/notifications">Open the outbox</a>}>
+          {outbox === null ? <p className="small" style={{ margin: 0 }}>Couldn't read the outbox.</p> : (
+            <ShareBar label="Emails by status" parts={["sent", "queued", "failed", "not_configured", "skipped"].map((st) => ({ label: st.replace("_", " ").replace(/^./, (c) => c.toUpperCase()), n: box[st] || 0 }))} />
+          )}
+        </AsideCard>
+        <AsideCard eyebrow="Backups" title="Point-in-time history">
+          <p className="small" style={{ margin: 0 }}>Neon keeps point-in-time history; restore is done in the Neon console — not verified from here.</p>
+        </AsideCard>
+      </>}>
+        <Section id="jobs" title="Scheduled jobs" sub="Runs from Vercel Cron (vercel.json). A gold edge means the job failed last time or hasn't run in over a day.">
+          {runs === null ? <InlineState kind="error" label="Couldn't read the job history.">The database may still be updating.</InlineState> : (
+            <Tiles label="Scheduled jobs" cols={2} compact items={JOB_NAMES.map((j) => {
+              const r = runBy[j];
+              const failed = String(r?.last_result || "").startsWith("error");
+              const late = stale(r?.last_run_at);
+              return { key: j, label: JOB_LABEL[j], value: r ? when(r.last_run_at) : "Never run", state: failed || late ? "warn" : "ok", stateText: failed ? "Failed" : !r ? "Not run" : late ? "Late" : "On time",
+                note: r ? r.last_result : process.env.CRON_SECRET ? "Waiting for the first cron call." : "CRON_SECRET is not set, so cron calls are refused." };
+            })} />
+          )}
+        </Section>
 
-      {set.migration_warnings && <div className="note" style={{ marginBottom: 24 }}><b>Migration warnings.</b> {set.migration_warnings}. These unique rules were not added because existing rows break them; remove the duplicates by hand, then redeploy.</div>}
+        <Section id="wh" title="Webhook deliveries" sub={hookRows === null ? undefined : `${hooks.delivered || 0} delivered · ${hooks.pending || 0} waiting to retry · ${hooks.failed || 0} failed`} actions={<a className="btn sm" href="/team/integrations">Integrations</a>}>
+          {hookRows === null ? <InlineState kind="error" label="Couldn't read webhook deliveries." /> : (
+            <DataTable caption="Webhook deliveries waiting or failed" rows={stuck || []} columns={[
+              { key: "event", label: "Event", render: (d) => <Cell eyebrow={when(d.created_at)} title={<code className="adm-mono">{d.event}</code>} sub={hostOf(d.url)} /> },
+              { key: "status", label: "Status", primary: true, render: (d) => <span><Pill tone={d.status === "pending" ? "wait" : "mine"}>{d.status === "pending" ? "Retrying" : "Failed"}</Pill><span className="adm-dim" style={{ display: "block", marginTop: 4 }}>{d.attempts} attempts</span></span> },
+              { key: "err", label: "Last error", render: (d) => <span className="adm-dim">{d.last_error || "—"}</span> },
+            ]} empty={{ title: "No deliveries waiting or failed.", body: "Every webhook event so far was delivered." }} />
+          )}
+        </Section>
 
-      <section className="sheet" aria-labelledby="cfg-h" style={{ marginBottom: 32 }}>
-        <div className="sheet__h"><h2 id="cfg-h">Settings</h2></div>
-        <div className="panel scroll-x"><table className="tbl">
-          <thead><tr><th>Setting</th><th>What it does</th><th>Status</th></tr></thead>
-          <tbody>{cfg.map((c) => (
-            <tr key={c.k}><td><code>{c.k}</code></td><td>{c.label}{c.required ? "" : <span className="hint"> · optional</span>}</td>
-              <td><span className={`pill ${c.on ? "good" : c.required ? "mine" : "low"}`}>{c.on ? "Set" : "Not set"}</span></td></tr>
-          ))}</tbody>
-        </table></div>
-        <p className="hint">The sign-in session secret is generated and stored in the database on first use, so it is not listed here.</p>
-      </section>
+        <Section id="cfg" title="Settings" sub="The sign-in session secret is generated and stored in the database on first use, so it is not listed here.">
+          <DataTable caption="Settings" rows={cfg} rowKey={(c) => c.k} columns={[
+            { key: "k", label: "Setting", render: (c) => <Cell title={<code className="adm-mono">{c.k}</code>} sub={<>{c.label}{c.required ? "" : " · optional"}</>} /> },
+            { key: "on", label: "Status", primary: true, num: true, render: (c) => <Pill tone={c.on ? "done" : c.required ? "mine" : "off"}>{c.on ? "Set" : "Not set"}</Pill> },
+          ]} />
+        </Section>
 
-      <section className="sheet" aria-labelledby="ob-h" style={{ marginBottom: 32 }}>
-        <div className="sheet__h"><h2 id="ob-h">Email outbox</h2></div>
-        {outbox === null ? <p className="hint">Couldn't read the outbox.</p> : (
-          <div className="panel scroll-x"><table className="tbl">
-            <thead><tr><th>Status</th><th className="num">Count</th></tr></thead>
-            <tbody>{["queued", "sent", "failed", "not_configured", "skipped"].map((s) => (
-              <tr key={s}><td>{s.replace("_", " ")}</td><td className="num">{box[s] || 0}</td></tr>
-            ))}</tbody>
-          </table></div>
-        )}
-      </section>
-
-      <section className="sheet" aria-labelledby="bk-h" style={{ marginBottom: 32 }}>
-        <div className="sheet__h"><h2 id="bk-h">Backups</h2></div>
-        <div className="note info">Neon keeps point-in-time history; restore is done in the Neon console — not verified from here.</div>
-      </section>
-
-      <section aria-labelledby="err-h">
-        <div className="sheet__h"><h2 id="err-h">Recent errors</h2><span className="n">{errors?.length ?? 0}</span></div>
-        {errors === null ? <p className="hint">Couldn't read the error log.</p> : errors.length === 0 ? <div className="allclear"><b>No errors logged.</b></div> : (
-          <div className="panel scroll-x"><table className="tbl">
-            <thead><tr><th>When</th><th>Where</th><th>Message</th><th>Ref</th></tr></thead>
-            <tbody>{errors.map((e) => (
-              <tr key={e.id}>
-                <td className="hint" style={{ whiteSpace: "nowrap" }}>{when(e.at)}</td>
-                <td><code>{e.source}</code></td>
-                <td style={{ maxWidth: 420, wordBreak: "break-word" }}>{String(e.message || "").slice(0, 300)}</td>
-                <td className="hint">{e.digest || e.id}</td>
-              </tr>
-            ))}</tbody>
-          </table></div>
-        )}
-      </section>
+        <Section id="err" title="Recent errors" sub={errors === null ? undefined : `${errors.length} logged`}>
+          {errors === null ? <InlineState kind="error" label="Couldn't read the error log." /> : (
+            <DataTable caption="Recent errors" rows={errors} columns={[
+              { key: "msg", label: "Message", render: (e) => <Cell eyebrow={when(e.at)} title={<code className="adm-mono">{e.source}</code>} sub={String(e.message || "").slice(0, 300)} /> },
+              { key: "ref", label: "Ref", num: true, render: (e) => <span className="adm-dim">{e.digest || e.id}</span> },
+            ]} empty={{ title: "No errors logged.", body: "Server errors show up here with a reference people can quote." }} />
+          )}
+        </Section>
+      </Grid>
     </TeamShell>
   );
 }

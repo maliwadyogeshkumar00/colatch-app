@@ -3,6 +3,8 @@ import PublicShell from "../../_ui/PublicShell";
 import { env } from "@/lib/net/env";
 import { compact } from "@/lib/net/creators";
 import { safeUrl } from "@/lib/net/guard";
+import { PageHeader, KpiStrip, Grid, Section, Card, AsideCard, Avatar } from "@/components/ui";
+import { day } from "@/components/team/labels";
 
 // Public proof of work: only exists once the brand signed off and allowed it to be shown.
 async function load(id) {
@@ -29,30 +31,40 @@ export default async function Page({ params }) {
   const d = await load(params.id);
   if (!d) notFound();
   const name = d.name || d.handle;
+  const pic = safeUrl(d.profile_pic);
+  const post = safeUrl(d.post_url);
+  const hero = (
+    <PageHeader variant="hero" eyebrow="✓ Verified by Colatch" title={`${name.replace(/[<>&]/g, "")} × <b>${String(d.brand || "").replace(/[<>&]/g, "")}</b>`}
+      sub={`@${d.handle} · ${d.deliverable || "Campaign"} · live ${day(d.live_at) || String(d.live_at).slice(0, 10)}`} />
+  );
   return (
-    <PublicShell mode="client">
-      <div className="wrap narrow" style={{ padding: 0 }}>
-        <div className="panel pad" style={{ textAlign: "center", padding: "34px 26px" }}>
-          <div className="lbl" style={{ color: "var(--good)" }}>✓ Verified by Colatch</div>
-          {safeUrl(d.profile_pic) && <img src={safeUrl(d.profile_pic)} alt="" style={{ width: 84, height: 84, borderRadius: "50%", objectFit: "cover", margin: "18px auto 0" }} />}
-          <h1 style={{ margin: "14px 0 4px", fontWeight: 300, fontSize: 30, color: "var(--head)" }}>{name} × <b style={{ fontWeight: 600 }}>{d.brand}</b></h1>
-          <p className="muted" style={{ margin: 0 }}>@{d.handle} · {d.deliverable || "Campaign"} · live {String(d.live_at).slice(0, 10)}</p>
-          <div className="grid3" style={{ marginTop: 24, textAlign: "left" }}>
-            <div className="panel kpi" style={{ boxShadow: "none" }}><div className="k">Views</div><div className="v">{compact(d.actual_views)}</div></div>
-            <div className="panel kpi" style={{ boxShadow: "none" }}><div className="k">Engagement</div><div className="v">{compact((d.likes || 0) + (d.comments || 0))}</div></div>
-            <div className="panel kpi" style={{ boxShadow: "none" }}><div className="k">Brand rating</div><div className="v">{d.stars ? "★".repeat(d.stars) : "—"}</div></div>
-          </div>
-          <ul style={{ textAlign: "left", margin: "22px 0 0", paddingLeft: 20, lineHeight: 1.8, color: "var(--ink-2)" }}>
-            <li>The brand approved the draft and signed off the final post on {String(d.brand_signoff_at).slice(0, 10)}.</li>
-            <li>The post was checked live by the Colatch team.</li>
-            <li>{d.pay_status === "paid" ? "The creator was paid through Colatch." : "Payment is handled through Colatch."}</li>
-            {d.owner_verified ? <li>The creator proved they own @{d.handle}.</li> : null}
-          </ul>
-          <div className="row" style={{ justifyContent: "center", marginTop: 22 }}>
-            {safeUrl(d.post_url) && <a className="btn" href={safeUrl(d.post_url)} target="_blank" rel="noopener noreferrer nofollow">See the post ↗</a>}
-            <a className="btn-foil" href="/brief">Work with {name.split(" ")[0]} →</a>
-          </div>
-        </div>
+    <PublicShell mode="client" hero={hero}>
+      <div className="v2b v2b-own-cta">
+        <KpiStrip label="Results" items={[
+          { label: "Views", value: compact(d.actual_views), foot: "checked by Colatch" },
+          { label: "Engagement", value: compact((d.likes || 0) + (d.comments || 0)), foot: "likes + comments" },
+          { label: "Brand rating", value: d.stars ? "★".repeat(d.stars) : "—", foot: d.stars ? `${d.stars} of 5` : "not rated" },
+        ]} />
+        <Grid aside={
+          <AsideCard eyebrow="Book this creator" title={`Work with ${name.split(" ")[0]}`} foot={<a href="/pitches">See creator ideas</a>}>
+            <div className="v2b-by v2b-by--top">{pic ? <Avatar name={name} src={pic} size={56} /> : <Avatar name={name} size={56} />}<div><b>{name}</b><span className="hint">@{d.handle}</span></div></div>
+            <div className="v2b-acts">
+              <a className="btn-foil" href="/brief">Work with {name.split(" ")[0]} →</a>
+              {post && <a className="btn" href={post} target="_blank" rel="noopener noreferrer nofollow">See the post ↗</a>}
+            </div>
+          </AsideCard>
+        }>
+          <Section id="checks" title="What Colatch checked" sub="This page exists only because the brand signed off and allowed it to be shown.">
+            <Card pad="lg">
+              <ul className="v2b-checks">
+                <li>The brand approved the draft and signed off the final post on {day(d.brand_signoff_at) || String(d.brand_signoff_at).slice(0, 10)}.</li>
+                <li>The post was checked live by the Colatch team.</li>
+                <li>{d.pay_status === "paid" ? "The creator was paid through Colatch." : "Payment is handled through Colatch."}</li>
+                {d.owner_verified ? <li>The creator proved they own @{d.handle}.</li> : null}
+              </ul>
+            </Card>
+          </Section>
+        </Grid>
       </div>
     </PublicShell>
   );

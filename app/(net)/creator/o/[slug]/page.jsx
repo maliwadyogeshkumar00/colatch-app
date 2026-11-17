@@ -13,13 +13,14 @@ import { colatchScore } from "@/lib/net/score";
 import { notify, teamInbox } from "@/lib/net/notify";
 import { audit } from "@/lib/net/security";
 import { ClaimNote } from "@/app/(net)/join/_claim.js";
+import { PageHeader, Grid } from "@/components/ui";
 
 const CSS = `
 .pg-brief .trust{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
 .pg-brief .trust span{font-size:12.5px;padding:6px 12px;border-radius:999px;background:var(--ivory-2);color:var(--ink-2)}
 .pg-brief .trust span.ok{background:var(--soft-bg);color:var(--soft-fg);font-weight:500}
-.pg-brief .loss{margin-top:18px;padding:16px 18px;border-radius:14px;border:1px dashed rgba(155,59,59,.35);background:rgba(155,59,59,.03)}
-.pg-brief .loss h4{margin:0 0 10px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#7a2c2c}
+.pg-brief .loss{margin-top:18px;padding:16px 18px;border-radius:14px;border:1px dashed var(--line-3);background:var(--ui-wash)}
+.pg-brief .loss h4{margin:0 0 10px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-3)}
 .pg-brief .loss div{font-size:13.5px;color:var(--ink-2);padding:4px 0}
 .pg-brief .deal{margin-top:24px;padding:18px 20px;border-radius:14px;background:var(--ivory-2);border:1px solid var(--line)}
 .pg-brief .deal ul{margin:0;padding:0;list-style:none}
@@ -28,7 +29,8 @@ const CSS = `
 .pg-brief .deal li::before{content:"✓";position:absolute;left:0;top:0;color:var(--good);font-weight:700}
 `;
 
-const getCampaign = (slug) => env.DB.prepare("SELECT * FROM campaigns WHERE slug=? AND status IN ('open','closed')").bind(slug).first();
+// published_at: when the team last published the brief (campaigns has no column for it, so it comes from the audit log).
+const getCampaign = (slug) => env.DB.prepare("SELECT k.*, (SELECT MAX(a.at) FROM audit_log a WHERE a.entity='campaign' AND a.entity_id=k.id AND a.action IN ('campaign.approve','campaign.publish','campaign.reopen')) AS published_at FROM campaigns k WHERE k.slug=? AND k.status IN ('open','closed')").bind(slug).first();
 const isOpen = (k) => k.status === "open" && Number(k.is_open) === 1 && (!k.deadline || k.deadline >= new Date().toISOString().slice(0, 10));
 const myApplication = (k, c) => env.DB.prepare("SELECT * FROM campaign_applications WHERE campaign_id=? AND (creator_id=? OR handle=?) ORDER BY created_at DESC LIMIT 1").bind(k.id, c.id, c.handle).first();
 /** Private campaigns (a brand booked one creator's idea) are visible only to creators already on them. */
@@ -39,7 +41,10 @@ async function canSee(k, c) {
   return Boolean(await env.DB.prepare("SELECT id FROM creator_deals WHERE campaign_id=? AND creator_id=?").bind(k.id, c.id).first());
 }
 const EARLY_HOURS = 24;
-const isFresh = (k) => { const t = Date.parse(String(k.created_at || "").replace(" ", "T") + "Z"); return Number.isFinite(t) && Date.now() - t < EARLY_HOURS * 36e5; };
+// Icon early access runs for 24 hours from when the brief was published, not from when it was written: every
+// brief is created 'pending' and published by the team later. Without a recorded publish time the window can't be
+// placed, so the brief is open to everyone rather than held back from a stale or wrong start.
+const isFresh = (k) => { const t = k.published_at ? new Date(k.published_at).getTime() : NaN; return Number.isFinite(t) && Date.now() - t < EARLY_HOURS * 36e5; };
 
 export async function generateMetadata({ params }) {
   const k = await getCampaign(params.slug).catch(() => null);
@@ -137,11 +142,10 @@ export default async function Page({ params, searchParams }) {
   const next = encodeURIComponent(`/creator/o/${k.slug}`);
 
   const hero = (
-    <section className="hero"><div className="hero-in">
-      <div className="eb">{brandShown} · {PAY_LABEL[pay]}{when}</div>
-      <h1>{k.title}</h1>
-      <div className="row" style={{ marginTop: 18, gap: 8 }}>{chips.map((r) => <span key={r} className="tag" style={{ background: "rgba(255,255,255,.1)", color: "#F4EFE3" }}>{r}</span>)}</div>
-    </div></section>
+    <PageHeader variant="hero" crumbs={c ? [{ label: "Briefs that fit you", href: "/creator#briefs" }, "Brief"] : undefined} eyebrow={`${brandShown} · ${PAY_LABEL[pay]}${when}`} title={k.title}
+      meta={[{ label: "Reward", value: rewardLine(k) }, ...(k.creators_needed ? [{ label: "Creators", value: k.creators_needed }] : []), ...(m && m.eligible ? [{ label: "Your match", value: m.score, unit: "/100", gold: true }] : [])]}>
+      {chips.length > 0 && <div className="cr-herotags">{chips.map((r) => <span key={r}>{r}</span>)}</div>}
+    </PageHeader>
   );
 
   let side;
@@ -164,7 +168,7 @@ export default async function Page({ params, searchParams }) {
   } else if (m && !m.eligible) {
     side = (
       <><h2>Not a fit yet</h2>
-        <div className="why opp" style={{ padding: 0, border: 0, boxShadow: "none" }}>{m.blockers.map((b) => <span key={b} className="no" style={{ fontSize: 12, padding: "4px 10px", borderRadius: 999, background: "rgba(155,59,59,.08)", color: "#7a2c2c", display: "inline-block", margin: "0 6px 6px 0" }}>{b}</span>)}</div>
+        <div className="why opp" style={{ padding: 0, border: 0, boxShadow: "none" }}>{m.blockers.map((b) => <span key={b} className="no" style={{ fontSize: 12, padding: "4px 10px", borderRadius: 999, background: "var(--ivory-2)", color: "var(--ink-2)", display: "inline-block", margin: "0 6px 6px 0" }}>{b}</span>)}</div>
         {m.blockers.some((b) => b.startsWith("Add your")) && <a className="btn plum" style={{ marginTop: 12 }} href="/creator/profile">Update profile</a>}
       </>
     );
@@ -189,9 +193,9 @@ export default async function Page({ params, searchParams }) {
 
   return (
     <PublicShell creatorName={c ? c.name || c.handle : pendingClaim ? me.creator.name || me.creator.handle : null} path={`/creator/o/${k.slug}`} hero={hero}>
-      <div className="pg-brief">
+      <div className="pg-brief cr-page cr-own-cta">
         <style dangerouslySetInnerHTML={{ __html: CSS }} />
-        <div className="grid2" style={{ gridTemplateColumns: "minmax(0,1.5fr) minmax(0,1fr)", alignItems: "start" }}>
+        <Grid aside={<div className="panel pad cr-applybox" id="apply">{side}</div>}>
           <div className="panel pad">
             <div className="trust">
               <span className={trust.funded ? "ok" : ""}>{trust.funded ? "✓ Brand has paid Colatch" : "Brand pays Colatch before you start"}</span>
@@ -228,8 +232,7 @@ export default async function Page({ params, searchParams }) {
             </div>
             <p className="hint" style={{ margin: "14px 0 0" }}>Colatch never charges creators to apply or join. We only contact you from @colatch on Instagram, a @colatch.com email or the WhatsApp number in your portal.</p>
           </div>
-          <div className="panel pad">{side}</div>
-        </div>
+        </Grid>
       </div>
     </PublicShell>
   );

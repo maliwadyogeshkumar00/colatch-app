@@ -2,6 +2,10 @@ import { notFound, redirect } from "next/navigation";
 import { headers } from "next/headers";
 import PublicShell from "../../../_ui/PublicShell";
 import DealRail from "../../../_ui/DealRail";
+import { PageHeader, KpiStrip, Grid, Section, AsideCard } from "@/components/ui";
+import { stepsDone, RAIL } from "@/lib/net/moves";
+import { inrShort } from "@/lib/net/dashboard";
+import { istDay, istShort } from "@/components/creator/Parts";
 import { env } from "@/lib/net/env";
 import { currentCreator } from "@/lib/net/creatorAuth";
 import { inr, str } from "@/lib/net/creators";
@@ -14,6 +18,11 @@ import { scrubContacts, safeUrl } from "@/lib/net/guard";
 import { goingDirectLosses } from "@/lib/net/trust";
 import { REASONS, raiseDispute, DisputeError, openDispute, lastClosedDispute } from "@/lib/net/disputes";
 import { logError } from "@/lib/net/security";
+import DealThread from "@/components/deal/DealThread";
+import { UsageLine, ShipmentStatus } from "@/components/deal/DealExtras";
+import { listMessages, unreadCount, markRead, postMessage, notifyMessage, MessageError } from "@/lib/net/messages";
+import { listShipments } from "@/lib/net/shipments";
+import { syncUsageStart } from "@/lib/net/usage";
 
 export const metadata = { title: "Deal", robots: { index: false } };
 
@@ -116,6 +125,23 @@ async function dispute(fd) {
   redirect(err ? back(d.id, "bad", err) : back(d.id, "good", "Dispute sent. The Colatch team will look into it and reply here and by email."));
 }
 
+/** A message to the brand and the Colatch team on this deal. Contact details are scrubbed before it is stored. */
+async function sendMessage(fd) {
+  "use server";
+  const { d, me } = await ctx(fd);
+  if (isClosed(d)) redirect(back(d.id, "bad", "This deal is closed, so messages are off. WhatsApp the Colatch team if you need anything.") + "#messages");
+  let r;
+  try {
+    r = await postMessage(d.id, { kind: "creator", id: me.creator.id }, fd.get("body"), fd.get("mid"));
+  } catch (e) {
+    if (e instanceof MessageError) redirect(back(d.id, "bad", e.message) + "#messages");
+    await logError("creator/deal.message", e, { deal: d.id });
+    redirect(back(d.id, "bad", "Something went wrong, your message wasn't sent. Try again.") + "#messages");
+  }
+  if (r.created) await notifyMessage(d.id, r.id, { kind: "creator", id: me.creator.id });
+  redirect(back(d.id, "good", !r.created ? "That message was already sent." : r.scrubbed ? "Message sent. Contact details were hidden: keep the deal on Colatch." : "Message sent.") + "#messages");
+}
+
 export default async function Page({ params, searchParams }) {
   const me = await currentCreator();
   if (!me) redirect(`/creator/login?next=${encodeURIComponent(`/creator/deals/${params.id}`)}`);
@@ -148,19 +174,103 @@ export default async function Page({ params, searchParams }) {
   const origin = `https://${headers().get("host")}`;
   const hid = <input type="hidden" name="id" value={d.id} />;
   const myDispute = await openDispute(d.id, "creator").catch(() => null);
+  // A dispute the brand or the Colatch team opened on this deal shows here too (reason only, not their notes).
+  const brandDispute = myDispute ? null : await openDispute(d.id, "brand").catch(() => null);
+  const teamDispute = myDispute || brandDispute ? null : await openDispute(d.id, "team").catch(() => null);
+  const otherDispute = brandDispute || teamDispute;
+  const otherBy = brandDispute ? "The brand" : "The Colatch team";
   const lastDispute = myDispute ? null : await lastClosedDispute(d.id, "creator").catch(() => null);
+  // Deal room: messages, product shipment and usage rights. Each part is optional so the page never breaks on it.
+  await syncUsageStart(d).catch(() => false);
+  const reader = { kind: "creator", id: me.creator.id };
+  const thread = await listMessages(d.id).catch(() => []);
+  const unread = await unreadCount(d.id, reader).catch(() => 0);
+  if (thread.length) await markRead(d.id, reader).catch(() => {});
+  const shipments = await listShipments(d.id).catch(() => []);
 
+  const fmtFee = d.fee ? inrShort(d.fee) : "Product";
+  const payByT = d.live_at ? Date.parse(String(d.live_at).replace(" ", "T") + "Z") + payDays * 864e5 : null;
+  const dueDay = payByT ? istShort(new Date(payByT)) : d.go_live_date ? istShort(d.go_live_date) || d.go_live_date : null;
+  const dueYear = payByT ? istDay(new Date(payByT)) : d.go_live_date ? istDay(d.go_live_date) : null;
+  const done = stepsDone(d);
+  const disputeOpen = myDispute || otherDispute;
+  const brandShown = d.sow_accepted_at ? d.brand || "Brand" : "Brand revealed after you accept";
+  const lede = closed ? "This deal is closed. Nothing more to do here."
+    : !d.sow_accepted_at ? "Read the terms below and accept them to see the brand and start."
+    : d.pay_status === "unfunded" ? "Terms accepted. The brand pays Colatch first, then you start."
+    : ["none", "changes"].includes(d.draft_status) ? (d.draft_status === "changes" ? "Your move: the brand asked for changes. Send the revised draft." : "Your move: make the draft and send the link.")
+    : d.draft_status === "submitted" ? "Your draft is with the brand. We'll tell you the moment they reply."
+    : !d.live_at ? "Draft approved. Post it and share the live link."
+    : d.pay_status === "paid" ? "Paid. Thank you for a great collab."
+    : `Live since ${istDay(d.live_at)}. Payment due by ${payBy}.`;
+  const hero = (
+    <PageHeader variant="hero" crumbs={[{ label: "My deals", href: "/creator/applications" }, d.deliverable || "Deal"]} eyebrow={PAY_LABEL[k?.pay_type || "cash"]}
+      title={<>{brandShown} · <b>{d.deliverable || "Deliverables"}</b></>} sub={lede}
+      actions={k?.slug ? <a className="cr-herolink" href={`/creator/o/${k.slug}`}>See the brief →</a> : null}
+      meta={[
+        { label: closed ? "Status" : "Step", value: closed ? "Closed" : `${Math.min(done + 1, RAIL.length)} of ${RAIL.length}` },
+        { label: "Messages", value: thread.length },
+      ]} />
+  );
+  const disputeCard = myDispute ? (
+    <div className="panel pad cr-dispute" role="status"><span className="pill mine">Dispute open</span>
+      <p className="small" style={{ margin: "10px 0 0" }}>You raised a dispute about <b>{(REASONS[myDispute.reason] || myDispute.reason).toLowerCase()}</b>. The Colatch team is looking into it and will reply here and by email.</p></div>
+  ) : otherDispute ? (
+    <div className="panel pad cr-dispute" role="status"><span className="pill mine">Dispute open</span>
+      <p className="small" style={{ margin: "10px 0 0" }}>{otherBy} raised a dispute on this deal about <b>{(REASONS[otherDispute.reason] || otherDispute.reason).toLowerCase()}</b>. The Colatch team is looking into it and will reply here and by email. Raising a dispute doesn't move or hold any money by itself.</p></div>
+  ) : null;
   return (
-    <PublicShell creatorName={me.creator.name || me.creator.handle} path="/creator/applications">
-      <div className="spread" style={{ marginBottom: 16 }}>
-        <div><div className="lbl">{PAY_LABEL[k?.pay_type || "cash"]} deal</div><h1 style={{ margin: "6px 0 0", fontWeight: 300, fontSize: 30, color: "var(--head)" }}>{d.sow_accepted_at ? d.brand || "Brand" : "Brand revealed after you accept"} · <b style={{ fontWeight: 600 }}>{d.deliverable || "Deliverables"}</b></h1></div>
-        {k?.slug && <a className="btn" href={`/creator/o/${k.slug}`}>See the brief</a>}
-      </div>
-      {flash && <div className={`note ${tone}`} style={{ marginBottom: 16 }}>{flash}</div>}
-      <DealRail d={d} side="creator" />
+    <PublicShell creatorName={me.creator.name || me.creator.handle} path="/creator/applications" hero={hero}>
+      <div className="cr-page cr-deal">
+        {flash && <div className={`note ${tone}`}>{flash}</div>}
+        <DealRail d={d} side="creator" />
+        {disputeCard}
+        <KpiStrip label="Deal money and dates" items={[
+          { label: "Your fee", value: fmtFee, title: d.fee ? inr(d.fee) : undefined, foot: d.fee ? `Paid within ${payDays} days of going live` : "No cash fee on this deal" },
+          { label: "Take-home (estimate)", value: th ? inrShort(th.net) : "—", title: th ? inr(th.net) : undefined, foot: th ? (th.tds ? `After ${inr(th.tds)} TDS you can claim back` : "No TDS expected") : "Shows once a fee is set" },
+          { label: payBy ? "Payment due" : "Go-live", value: dueDay || "Not set", title: dueYear || undefined, foot: payBy ? (d.pay_status === "paid" ? `${dueYear} · paid` : `${dueYear} · from your verified post`) : dueYear ? `${dueYear} · agreed with the team` : "Agreed with the Colatch team" },
+          { label: "Revisions left", value: `${revLeft} of ${d.revisions_included}`, foot: "More only with your OK and a fee" },
+        ]} />
 
-      <div className="grid2 sec" style={{ alignItems: "start", marginTop: 18 }}>
-        <div className="stack">
+        <Grid aside={<>
+          {th && <AsideCard eyebrow="Money" title="What you take home">
+            <dl className="cr-take">
+              <div><dt>Your fee</dt><dd>{inr(th.fee)}</dd></div>
+              <div><dt>TDS (estimate)</dt><dd>{th.tds ? `−${inr(th.tds)}` : "₹0"}</dd></div>
+              <div className="cr-take__net"><dt>Paid to you (estimate)</dt><dd>{inr(th.net)}</dd></div>
+            </dl>
+            <p className="hint" style={{ margin: "10px 0 0" }}>This is an estimate. The actual TDS, if any, is shown with your payment. TDS isn't lost: it's credited against your income tax, and you can claim it back in your ITR. If you're GST-registered, GST is paid on top of your fee.</p>
+          </AsideCard>}
+          <AsideCard eyebrow="Why Colatch" title="What you'd lose going direct">
+            {goingDirectLosses({ funded: d.pay_status !== "unfunded", fee: d.fee, payDays }).map((x) => <div key={x.title} className="small" style={{ padding: "5px 0", color: "var(--ink-2)" }}><b>{x.title}.</b> {x.line}</div>)}
+          </AsideCard>
+          <details className="panel pad">
+            <summary style={{ cursor: "pointer", fontWeight: 600, minHeight: 44, display: "flex", alignItems: "center" }}>Someone asked to deal outside Colatch?</summary>
+            <form action={reportBypass} style={{ marginTop: 12 }}>
+              {hid}
+              <p className="small muted" style={{ margin: "0 0 10px" }}>Asked for your number, to move to DMs, or to be paid directly? Tell us. It stays private, and a confirmed report adds ₹500 to your earnings.</p>
+              <div className="fld"><label htmlFor="f-creator-deals-id-note-4">What happened</label><textarea id="f-creator-deals-id-note-4" name="note" rows={3} required minLength={10} maxLength={1000} placeholder="The brand's manager asked for my WhatsApp to send the product directly…" /></div>
+              <button className="btn sm" style={{ marginTop: 10 }}>Send report</button>
+            </form>
+          </details>
+          {!disputeOpen && (
+            <details className="panel pad">
+              <summary style={{ cursor: "pointer", fontWeight: 600, minHeight: 44, display: "flex", alignItems: "center" }}>Something wrong? Raise a dispute</summary>
+              {lastDispute && <div className="note info" style={{ marginTop: 12 }}><span className={`pill ${lastDispute.status === "resolved" ? "good" : "low"}`}>{lastDispute.status === "resolved" ? "Resolved" : "Not upheld"}</span> <span style={{ whiteSpace: "pre-line" }}>{lastDispute.resolution}</span></div>}
+              <form action={dispute} style={{ marginTop: 12 }}>
+                {hid}
+                <p className="small muted" style={{ margin: "0 0 10px" }}>For problems with the work, the timeline, payment or terms. The team reads every dispute and replies in writing. Raising one doesn't move or hold any money by itself.</p>
+                <div className="fld"><label htmlFor="f-cd-dispute-reason">What it's about</label>
+                  <select id="f-cd-dispute-reason" name="reason" required defaultValue="">{[<option key="" value="" disabled>Choose one</option>, ...Object.entries(REASONS).map(([k, l]) => <option key={k} value={k}>{l}</option>)]}</select></div>
+                <div className="fld" style={{ marginTop: 10 }}><label htmlFor="f-cd-dispute-detail">What happened</label><textarea id="f-cd-dispute-detail" name="detail" rows={3} required minLength={10} maxLength={2000} placeholder="Dates, what was agreed, and what went wrong." /></div>
+                <button className="btn" style={{ marginTop: 10, minHeight: 44 }}>Send dispute</button>
+              </form>
+            </details>
+          )}
+          <p className="hint">Questions about this deal? WhatsApp the Colatch team from the number in your welcome message. Colatch never asks you to pay anything.</p>
+        </>}>
+          <Section id="next" title={closed ? "Deal closed" : "Your next step"} sub={closed ? null : "Everything you need to do on this deal happens here."}>
+            <div className="stack">
           {closed && <div className="panel pad"><h2>This deal was cancelled</h2><p style={{ margin: 0 }}>Nothing more to do here. If you had already started work, message the Colatch team.</p></div>}
           {!closed && !d.sow_accepted_at && (
             <form className="panel pad" action={accept}>
@@ -188,7 +298,7 @@ export default async function Page({ params, searchParams }) {
               {feedback && d.draft_status === "changes" && <div className="note info" style={{ marginTop: 12, whiteSpace: "pre-line" }}><b>Brand feedback:</b> {feedback.note}</div>}
               <div className="fld" style={{ marginTop: 14 }}><label htmlFor="f-creator-deals-id-draft-url-1">Draft link</label><input id="f-creator-deals-id-draft-url-1" name="draft_url" type="url" required pattern="https://.*" placeholder="https:// Google Drive / Dropbox / WeTransfer link" defaultValue={d.draft_url ?? ""} /></div>
               {must.length > 0 && <div className="fld" style={{ marginTop: 14 }}><label>Brief checklist</label>{must.map((m, i) => <label key={i} className="row" style={{ gap: 10, flexWrap: "nowrap", marginTop: 6, fontSize: 14 }}><input type="checkbox" name={`m${i}`} value="1" defaultChecked={Boolean(ticks[String(i)])} /><span>{m}</span></label>)}</div>}
-              {avoid.length > 0 && <div className="note bad" style={{ marginTop: 12 }}><b>Don't:</b> {avoid.join(" · ")}</div>}
+              {avoid.length > 0 && <div className="note info" style={{ marginTop: 12 }}><b>Don't:</b> {avoid.join(" · ")}</div>}
               <label className="row" style={{ marginTop: 14, gap: 10, flexWrap: "nowrap", fontSize: 13.5, alignItems: "flex-start" }}><input type="checkbox" name="disclosure" value="1" style={{ marginTop: 3 }} /><span>{DISCLOSURE_LINE}</span></label>
               <div className="fld" style={{ marginTop: 14 }}><label htmlFor="f-creator-deals-id-note-2">Note to the brand <span className="opt">— optional</span></label><input id="f-creator-deals-id-note-2" name="note" /></div>
               <button className="btn-foil" style={{ marginTop: 16 }}>Send draft</button>
@@ -212,8 +322,8 @@ export default async function Page({ params, searchParams }) {
           )}
 
           {d.live_at && <div className="panel pad"><h2>Payment</h2>
-            {d.pay_status === "paid" ? <div className="note good">Paid on {String(d.paid_at ?? "").slice(0, 10)} · bank reference (UTR) <b>{d.utr}</b>{d.tds_amount ? ` · TDS ${inr(d.tds_amount)} (shows in your Form 26AS)` : ""}</div>
-              : <p style={{ margin: 0 }}>Your post went live on {String(d.live_at).slice(0, 10)}. Payment due by <b>{payBy}</b>. {d.pay_status === "released" ? "Your payout is approved; you'll see the bank reference here once it's sent." : ""}</p>}
+            {d.pay_status === "paid" ? <div className="note good">Paid on {istDay(d.paid_at) || "—"} · bank reference (UTR) <b>{d.utr}</b>{d.tds_amount ? ` · TDS ${inr(d.tds_amount)} (shows in your Form 26AS)` : ""}</div>
+              : <p style={{ margin: 0 }}>Your post went live on {istDay(d.live_at)}. Payment due by <b>{payBy}</b>. {d.pay_status === "released" ? "Your payout is approved; you'll see the bank reference here once it's sent." : ""}</p>}
             {d.brand_signoff_at && <div className="note good" style={{ marginTop: 12 }}>The brand signed off your work{d.proof_public ? <>. <a className="link" href={`/proof/${d.id}`} target="_blank">Your verified proof ↗</a> is on your media kit.</> : "."}</div>}
             {!myRating ? (
               <form action={rate} className="row" style={{ marginTop: 12 }}>
@@ -226,54 +336,30 @@ export default async function Page({ params, searchParams }) {
             ) : <p className="hint" style={{ margin: "10px 0 0" }}>You rated this brand {"★".repeat(myRating.stars)}.</p>}
             {!me.creator.upi_id && <p className="hint" style={{ margin: "10px 0 0" }}>Add your UPI ID in <a className="link" href="/creator/profile#payout">your payout details</a> so we can pay you.</p>}
           </div>}
-        </div>
 
-        <div className="stack">
-          {th && <div className="panel pad">
-            <h2>What you take home</h2>
-            <table className="tbl"><tbody>
-              <tr><td>Your fee</td><td className="num">{inr(th.fee)}</td></tr>
-              <tr><td>TDS (estimate)</td><td className="num">{th.tds ? `−${inr(th.tds)}` : "₹0"}</td></tr>
-              <tr><td><b>Paid to you (estimate)</b></td><td className="num"><b>{inr(th.net)}</b></td></tr>
-            </tbody></table>
-            <p className="hint" style={{ margin: "10px 0 0" }}>This is an estimate. The actual TDS, if any, is shown with your payment. TDS isn't lost: it's credited against your income tax, and you can claim it back in your ITR. If you're GST-registered, GST is paid on top of your fee.</p>
+            </div>
+          </Section>
+
+          <div className="panel pad dr-panel cr-thread">
+            <DealThread id="messages" messages={thread} me="creator" unread={unread} action={sendMessage} canPost={!closed} hidden={[["id", d.id]]} mid={crypto.randomUUID()}
+              names={{ brand: d.sow_accepted_at ? d.brand || "Brand" : "Brand" }} readOnlyNote="This deal is closed, so messages are off." />
+          </div>
+
+          {(shipments.length > 0 || d.usage_channels) && <div className="panel pad dr-panel">
+            <ShipmentStatus shipments={shipments} showCarrier title={shipments.length === 1 ? "Product shipment" : "Product shipments"} />
+            {d.usage_channels && <><h2 style={{ marginTop: shipments.length ? 18 : 0 }}>Usage rights</h2><UsageLine d={d} /></>}
           </div>}
-          <div className="panel pad">
-            <h2>Timeline</h2>
-            {events.length ? events.map((e) => <div key={e.id} style={{ padding: "8px 0", borderTop: "1px solid var(--line-2)" }}><div className="spread"><b className="small">{kindLabel[e.kind] || e.kind}</b><span className="hint">{String(e.created_at).slice(5, 16)}</span></div>{e.note && e.kind !== "paid" && <div className="small muted" style={{ whiteSpace: "pre-line", marginTop: 2 }}>{e.note}</div>}</div>) : <p className="hint">Nothing yet.</p>}
-          </div>
-          <div className="panel pad" style={{ borderStyle: "dashed", borderColor: "rgba(155,59,59,.35)" }}>
-            <h2>What you'd lose going direct</h2>
-            {goingDirectLosses({ funded: d.pay_status !== "unfunded", fee: d.fee, payDays }).map((x) => <div key={x.title} className="small" style={{ padding: "5px 0", color: "var(--ink-2)" }}><b>{x.title}.</b> {x.line}</div>)}
-          </div>
-          <details className="panel pad">
-            <summary style={{ cursor: "pointer", fontWeight: 600 }}>Someone asked to deal outside Colatch?</summary>
-            <form action={reportBypass} style={{ marginTop: 12 }}>
-              {hid}
-              <p className="small muted" style={{ margin: "0 0 10px" }}>Asked for your number, to move to DMs, or to be paid directly? Tell us. It stays private, and a confirmed report adds ₹500 to your earnings.</p>
-              <div className="fld"><label htmlFor="f-creator-deals-id-note-4">What happened</label><textarea id="f-creator-deals-id-note-4" name="note" rows={3} required minLength={10} maxLength={1000} placeholder="The brand's manager asked for my WhatsApp to send the product directly…" /></div>
-              <button className="btn sm" style={{ marginTop: 10 }}>Send report</button>
-            </form>
-          </details>
-          {myDispute ? (
-            <div className="panel pad"><span className="pill mine">Dispute open</span>
-              <p className="small" style={{ margin: "10px 0 0" }}>You raised a dispute about <b>{(REASONS[myDispute.reason] || myDispute.reason).toLowerCase()}</b>. The Colatch team is looking into it and will reply here and by email.</p></div>
-          ) : (
-            <details className="panel pad">
-              <summary style={{ cursor: "pointer", fontWeight: 600, minHeight: 44, display: "flex", alignItems: "center" }}>Something wrong? Raise a dispute</summary>
-              {lastDispute && <div className="note info" style={{ marginTop: 12 }}><span className={`pill ${lastDispute.status === "resolved" ? "good" : "low"}`}>{lastDispute.status === "resolved" ? "Resolved" : "Not upheld"}</span> <span style={{ whiteSpace: "pre-line" }}>{lastDispute.resolution}</span></div>}
-              <form action={dispute} style={{ marginTop: 12 }}>
-                {hid}
-                <p className="small muted" style={{ margin: "0 0 10px" }}>For problems with the work, the timeline, payment or terms. The team reads every dispute and replies in writing. Raising one doesn't move or hold any money by itself.</p>
-                <div className="fld"><label htmlFor="f-cd-dispute-reason">What it's about</label>
-                  <select id="f-cd-dispute-reason" name="reason" required defaultValue="">{[<option key="" value="" disabled>Choose one</option>, ...Object.entries(REASONS).map(([k, l]) => <option key={k} value={k}>{l}</option>)]}</select></div>
-                <div className="fld" style={{ marginTop: 10 }}><label htmlFor="f-cd-dispute-detail">What happened</label><textarea id="f-cd-dispute-detail" name="detail" rows={3} required minLength={10} maxLength={2000} placeholder="Dates, what was agreed, and what went wrong." /></div>
-                <button className="btn" style={{ marginTop: 10, minHeight: 44 }}>Send dispute</button>
-              </form>
-            </details>
-          )}
-          <p className="hint">Questions about this deal? WhatsApp the Colatch team from the number in your welcome message. Colatch never asks you to pay anything.</p>
-        </div>
+
+          <Section id="timeline" title="Timeline" sub={events.length ? "Every step on this deal, newest first (IST)." : undefined}>
+            {events.length ? (
+              <ol className="cr-tl">{events.map((e) => (
+                <li key={e.id}><span className="cr-tl__dot" aria-hidden="true" />
+                  <div className="cr-tl__row"><b>{kindLabel[e.kind] || e.kind}</b><span className="hint">{istDay(e.created_at)}</span></div>
+                  {e.note && e.kind !== "paid" && <div className="small muted" style={{ whiteSpace: "pre-line", marginTop: 2 }}>{e.note}</div>}
+                </li>))}</ol>
+            ) : <p className="hint cr-tl__empty">Nothing yet. Each step (terms, payment, draft, live post, payout) is logged here as it happens.</p>}
+          </Section>
+        </Grid>
       </div>
     </PublicShell>
   );

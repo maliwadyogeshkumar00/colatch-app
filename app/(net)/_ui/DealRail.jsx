@@ -1,7 +1,9 @@
 // The deal progress rail. Steps and "whose move" come from lib/net/moves.ts, which asks the deal state
 // machine itself, so the rail can never disagree with what the server will allow.
 // Props: d (deal row), side ('creator' | 'brand' | 'team'), role (team member's role, for "your move").
+// Renders through the shared StatusRail (components/ui), so every progress rail in the app looks the same.
 import { RAIL, nextMove, stepsDone, isMine } from "@/lib/net/moves";
+import StatusRail from "@/components/ui/StatusRail";
 
 export default function DealRail({ d, side, role = null }) {
   const m = nextMove(d);
@@ -10,26 +12,18 @@ export default function DealRail({ d, side, role = null }) {
   const mine = m && isMine(m, side === "team" ? { role: role || "viewer" } : side);
   const text = !m ? (closed ? "This deal was cancelled." : "Paid. This deal is complete.")
     : side === "creator" ? m.forCreator : side === "brand" ? m.forBrand : m.forTeam;
+  const steps = RAIL.map((r, i) => ({
+    key: r.step,
+    label: side !== "creator" && r.step === "record_payout" ? "Creator paid" : r.label,
+    state: closed ? "todo" : i < done ? "done" : i === done && m ? "now" : "todo",
+  }));
   return (
-    <section className="panel pad" aria-label="Deal progress">
-      <div className="spread" style={{ marginBottom: 12 }}>
-        <span className="eyebrow">{closed ? "Closed" : m ? `Step ${Math.min(done + 1, RAIL.length)} of ${RAIL.length}` : "Complete"}</span>
-        {m && <span className={`pill ${mine ? "mine" : "ok"}`}>{mine ? "Your move" : "Waiting"}</span>}
-        {!m && !closed && <span className="pill good">Done</span>}
-      </div>
-      <ol className="drail" style={{ "--n": RAIL.length }}>
-        {RAIL.map((r, i) => {
-          const state = closed ? "" : i < done ? "done" : i === done && m ? "now" : "";
-          return (
-            <li key={r.step} className={state} aria-current={state === "now" ? "step" : undefined}>
-              <span>{side !== "creator" && r.step === "record_payout" ? "Creator paid" : r.label}</span>
-            </li>
-          );
-        })}
-      </ol>
-      <p className="drail-cap" style={{ margin: "12px 0 0" }}>
-        {mine ? <b style={{ color: "var(--head)" }}>Your move: {text}</b> : text}
-      </p>
-    </section>
+    <StatusRail
+      label="Deal progress"
+      steps={steps}
+      eyebrow={closed ? "Closed" : m ? `Step ${Math.min(done + 1, RAIL.length)} of ${RAIL.length}` : "Complete"}
+      badge={m ? <span className={`pill ${mine ? "mine" : "ok"}`}>{mine ? "Your move" : "Waiting"}</span> : !closed ? <span className="pill good">Done</span> : null}
+      note={mine ? <b style={{ color: "var(--head)" }}>Your move: {text}</b> : text}
+    />
   );
 }

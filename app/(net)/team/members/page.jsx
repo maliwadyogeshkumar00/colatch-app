@@ -1,6 +1,11 @@
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import TeamShell from "../../_ui/TeamShell";
+import { PageHeader, KpiStrip, DataTable, Grid, Section, Card, AsideCard, InlineState, Pill, Cell, Avatar } from "@/components/ui";
+import { ShareBar, StateMark, stamp } from "@/components/admin/Charts";
+import { parseWhen } from "@/lib/net/dashboard";
+
+const dayTime = (t) => stamp(t);
 import Flash, { flashUrl } from "../../_ui/flash";
 import { env } from "@/lib/net/env";
 import { revokeSessions } from "@/lib/net/creatorAuth";
@@ -133,70 +138,119 @@ export default async function Page({ searchParams }) {
   try { shown = JSON.parse(cookies().get(LINK_COOKIE)?.value || "null"); } catch { shown = null; }
   const mail = emailConfig();
   const roles = can(me.role, "owner") ? ROLES : ROLES.filter((r) => r !== "owner");
+  const short = (r) => String(ROLE_LABEL[r] || r).split(" (")[0];
+  const isInvited = (t) => Number(t.invited) === 1 || t.invited === true;
+  const active = team.filter((t) => !t.disabled_at && !isInvited(t)).length;
+  const invited = team.filter((t) => !t.disabled_at && isInvited(t)).length;
+  const disabled = team.filter((t) => t.disabled_at).length;
+  const byRole = ROLES.map((r) => ({ label: String(ROLE_LABEL[r] || r).split(" (")[0], n: team.filter((t) => t.role === r && !t.disabled_at).length }));
+  // Read-only: team sign-ins per IST day for the last 14 days (from the audit log), for the strip's line.
+  const signins = (await env.DB.prepare(`SELECT to_char(at AT TIME ZONE 'Asia/Kolkata', 'YYYY-MM-DD') AS d, COUNT(*) AS n FROM audit_log WHERE action='team.login' AND at > now() - interval '14 days' GROUP BY 1`).all().catch(() => ({ results: [] }))).results ?? [];
+  const days = Array.from({ length: 14 }, (_, i) => new Date(Date.now() + 5.5 * 36e5 - (13 - i) * 864e5).toISOString().slice(0, 10));
+  const spark = days.map((d) => Number(signins.find((r) => r.d === d)?.n || 0));
+  const now = Date.now();
+  const idle = (t) => { const w = parseWhen(t.last_login_at); return w ? Math.floor((now - w.t) / 864e5) : null; };
+  const owners = team.filter((t) => t.role === "owner" && !t.disabled_at).length;
+  // The action queue: things an owner or admin should act on, built from the rows already loaded.
+  const queue = [
+    ...claims.map((c) => ({ key: "c" + c.id, state: "warn", title: `Check @${c.handle}'s profile claim`, sub: `Joined as ${c.email} · waiting since ${dayTime(c.created_at)}`, href: "#claims", cta: "Check claim" })),
+    ...team.filter((t) => !t.disabled_at && isInvited(t)).map((t) => ({ key: "i" + t.id, state: "warn", title: `${t.name || t.email} hasn't set a password`, sub: "Their invite may have expired: send a new invite link from the Members table.", href: "#members", cta: "See member" })),
+    ...team.filter((t) => !t.disabled_at && !isInvited(t) && t.id !== me.id && (idle(t) == null || idle(t) > 30)).map((t) => ({ key: "d" + t.id, state: "off", title: `${t.name || t.email}: ${idle(t) == null ? "never signed in" : `no sign-in for ${idle(t)} days`}`, sub: "If they have left, disable the login: it signs them out everywhere.", href: "#members", cta: "See member" })),
+    ...(owners === 1 && team.length > 1 ? [{ key: "own", state: "warn", title: "Only one owner", sub: "Add a second owner so the desk can't be locked out if one login is lost.", href: "#add", cta: "Invite an owner" }] : []),
+  ];
   return (
-    <TeamShell active="members" title="Team <b>members</b>" email={me.email} role={me.role}>
+    <TeamShell active="members" email={me.email} role={me.role}>
+      <PageHeader
+        crumbs={[{ label: "Team" }, { label: "Team members" }]}
+        eyebrow="Team · Access"
+        title="Team <b>members</b>"
+        sub="Who can log in to the team desk, with which role. New members set their own password from a one-time link."
+      />
       <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
-      {!mail.ready && <div className="note" style={{ marginBottom: 14 }}>Email is not set up (missing {mail.missing.join(", ")}), so invite and reset links are shown here for you to send yourself.</div>}
+      {!mail.ready && <div style={{ marginBottom: 14 }}><InlineState kind="info" label="Email is not set up">(missing {mail.missing.join(", ")}), so invite and reset links are shown here for you to send yourself.</InlineState></div>}
       {shown?.link && (
-        <div className="panel pad" style={{ marginBottom: 18, borderColor: "var(--gold-2)" }}>
-          <h2>Link for {shown.email}</h2>
+        <Card tone="gold" className="pf-secret" label={`Link for ${shown.email}`}>
+          <h2 style={{ marginTop: 0 }}>Link for {shown.email}</h2>
           <p className="muted" style={{ margin: "-4px 0 10px" }}>{shown.status === "not_configured" ? "Email is not set up, copy this link and send it yourself" : "The email did not go out, copy this link and send it yourself"} (WhatsApp or a direct message). It works once and expires in {RESET_HOURS} hours. Don't post it in a group.</p>
-          <input readOnly value={shown.link} style={{ width: "100%", fontFamily: "monospace", fontSize: 13 }} data-testid="invite-link" />
+          <input readOnly value={shown.link} aria-label={`Set-password link for ${shown.email}`} style={{ width: "100%", fontFamily: "monospace", fontSize: 13 }} data-testid="invite-link" />
           <form action={dismissLink} style={{ marginTop: 10 }}><button className="btn sm">I've sent it, hide the link</button></form>
-        </div>
+        </Card>
       )}
-      <div className="panel scroll-x" style={{ marginBottom: 18 }}>
-        <table className="tbl">
-          <thead><tr><th>Member</th><th>Role</th><th>Status</th><th></th></tr></thead>
-          <tbody>
-            {team.map((t) => (
-              <tr key={t.id}>
-                <td><b>{t.name || t.email}</b><div className="hint">{t.email}{t.id === me.id ? " · you" : ""}</div></td>
-                <td>
-                  {t.id === me.id ? (ROLE_LABEL[t.role] || t.role) : (
-                    <form action={changeRole} className="row" style={{ gap: 6, flexWrap: "nowrap" }}>
-                      <input type="hidden" name="id" value={t.id} />
-                      <select name="role" defaultValue={t.role} aria-label={`Role for ${t.email}`}>{ROLES.filter((r) => roles.includes(r) || r === t.role).map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select>
-                      <button className="btn sm">Save</button>
-                    </form>
-                  )}
-                </td>
-                <td>{t.disabled_at ? <span className="pill bad">Disabled</span> : Number(t.invited) || t.invited === true ? <span className="pill">Invited, no password yet</span> : <span className="pill ok">Active</span>}<div className="hint">{t.last_login_at ? `Last login ${t.last_login_at} UTC` : "Never logged in"}</div></td>
-                <td className="num">
-                  <div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
-                    {!t.disabled_at && <form action={issueReset}><input type="hidden" name="id" value={t.id} /><button className="btn sm">{Number(t.invited) || t.invited === true ? "New invite link" : "Reset link"}</button></form>}
-                    {t.id !== me.id && <form action={setDisabled}><input type="hidden" name="id" value={t.id} /><input type="hidden" name="disable" value={t.disabled_at ? "0" : "1"} /><button className="btn sm">{t.disabled_at ? "Enable" : "Disable"}</button></form>}
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <form className="panel pad" action={addMember} style={{ marginBottom: 18, maxWidth: 640 }}>
-        <h2>Add a team member</h2>
-        <p className="muted" style={{ margin: "-4px 0 14px" }}>They get a one-time link to set their own password. Nobody else ever knows it.</p>
-        <div className="form-grid">
-          <div className="fld"><label htmlFor="f-team-members-name-1">Name</label><input id="f-team-members-name-1" name="name" /></div>
-          <div className="fld"><label htmlFor="f-team-members-email-2">Email</label><input id="f-team-members-email-2" name="email" type="email" required /></div>
-          <div className="fld"><label htmlFor="f-team-members-role-3">Role</label><select id="f-team-members-role-3" name="role" defaultValue="viewer">{roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></div>
-        </div>
-        <button className="btn-foil" style={{ marginTop: 16 }}>Add member</button>
-      </form>
-      <div className="panel pad">
-        <h2>Creator profile claims</h2>
-        <p className="muted" style={{ margin: "-4px 0 14px" }}>Someone joined with the handle of a creator we already had on file, from a different email. Check it's really them (for example a DM from that Instagram account) before verifying: verifying shows them that creator's deals, earnings and payout details.</p>
-        {claims.length === 0 ? <p className="hint">No claims waiting.</p> : (
-          <table className="tbl"><tbody>{claims.map((c) => (
-            <tr key={c.id}>
-              <td><b>@{c.handle}</b> {c.name ? `· ${c.name}` : ""}<div className="hint">Joined as {c.email} · email on file: {c.file_email || "none"} · {c.created_at} UTC</div></td>
-              <td className="num"><div className="row" style={{ gap: 6, justifyContent: "flex-end" }}>
+      {shown?.link && <div style={{ height: 18 }} />}
+
+      <KpiStrip label="Team at a glance" items={[
+        { featured: true, label: "Active logins", value: active, foot: `${team.length} ${team.length === 1 ? "member" : "members"} in all · sign-ins per day, 14 days`, spark, sparkLabel: "Team sign-ins per day, last 14 days" },
+        { label: "Invited, no password yet", value: invited, foot: invited ? "send a new invite link if it expired" : "everyone has set a password" },
+        { label: "Disabled", value: disabled, foot: "can't log in, signed out everywhere" },
+        { label: "Creator claims", value: claims.length, foot: claims.length ? "waiting for a check" : "none waiting", href: "#claims" },
+      ]} />
+
+      <Grid aside={<>
+        <AsideCard id="add" eyebrow="Invite" title="Add a team member">
+          <form action={addMember}>
+            <p className="small" style={{ marginTop: 0 }}>They get a one-time link to set their own password. Nobody else ever knows it.</p>
+            <div className="stack">
+              <div className="fld"><label htmlFor="f-team-members-name-1">Name</label><input id="f-team-members-name-1" name="name" /></div>
+              <div className="fld"><label htmlFor="f-team-members-email-2">Email</label><input id="f-team-members-email-2" name="email" type="email" required /></div>
+              <div className="fld"><label htmlFor="f-team-members-role-3">Role</label><select id="f-team-members-role-3" name="role" defaultValue="viewer">{roles.map((r) => <option key={r} value={r}>{ROLE_LABEL[r]}</option>)}</select></div>
+            </div>
+            <button className="btn-foil" style={{ marginTop: 16, width: "100%", justifyContent: "center" }}>Add member</button>
+          </form>
+        </AsideCard>
+        <AsideCard eyebrow="Roles" title="Who can do what">
+          <ShareBar label="Active members by role" parts={byRole} />
+          <p className="small" style={{ marginBottom: 0 }}>Shortlisters run campaigns and deals but never money; finance records payments but never shortlists. Only an owner can make or change an owner.</p>
+        </AsideCard>
+      </>}>
+        <Section id="queue" title="Needs a look" sub={queue.length ? `${queue.length} ${queue.length === 1 ? "thing" : "things"} to check on access.` : "Nothing waiting: every login is set up and in use."}>
+          {queue.length ? (
+            <ul className="adm-queue" aria-label="Access to check">
+              {queue.slice(0, 6).map((q) => (
+                <li key={q.key}>
+                  <StateMark state={q.state} />
+                  <div><b>{q.title}</b><span>{q.sub}</span></div>
+                  <a className="btn sm" href={q.href}>{q.cta}</a>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+          {queue.length > 6 && <p className="small" style={{ marginTop: 10 }}>Showing 6 of {queue.length}.</p>}
+        </Section>
+
+        <Section id="members" title="Members" sub={`${team.length} ${team.length === 1 ? "login" : "logins"}, oldest first. You can't change your own role or disable yourself.`}>
+          <DataTable caption="Team members" rows={team} columns={[
+            { key: "who", label: "Member", render: (t) => <span className="adm-who"><Avatar name={t.name || t.email} size={36} /><Cell title={t.name || t.email} sub={<span className="adm-dim">{t.email}{t.id === me.id ? " · you" : ""}</span>} /></span> },
+            { key: "role", label: "Role", className: "cell-stack", render: (t) => (t.id === me.id ? <span title={ROLE_LABEL[t.role]}>{short(t.role)} <span className="adm-dim">(you)</span></span> : (
+              <form action={changeRole} className="adm-acts adm-acts--wrap">
+                <input type="hidden" name="id" value={t.id} />
+                <select className="in" name="role" defaultValue={t.role} aria-label={`Role for ${t.email}`} style={{ maxWidth: "100%" }}>{ROLES.filter((r) => roles.includes(r) || r === t.role).map((r) => <option key={r} value={r}>{short(r)}</option>)}</select>
+                <button className="btn sm">Save</button>
+              </form>
+            )) },
+            { key: "status", label: "Status", primary: true, className: "cell-stack", render: (t) => (
+              <span className="adm-mstat">{t.disabled_at ? <Pill tone="off">Disabled</Pill> : isInvited(t) ? <Pill tone="wait">Invited, no password yet</Pill> : <Pill tone="done">Active</Pill>}<span className="adm-dim">{t.last_login_at ? `Last login ${dayTime(t.last_login_at)}` : "Never logged in"}</span></span>
+            ) },
+            { key: "access", label: "Actions", className: "cell-stack", render: (t) => (
+              <div className="adm-acts adm-acts--wrap">
+                {!t.disabled_at && <form action={issueReset}><input type="hidden" name="id" value={t.id} /><button className="btn sm">{isInvited(t) ? "New invite link" : "Reset link"}</button></form>}
+                {t.id !== me.id && <form action={setDisabled}><input type="hidden" name="id" value={t.id} /><input type="hidden" name="disable" value={t.disabled_at ? "0" : "1"} /><button className="btn sm">{t.disabled_at ? "Enable" : "Disable"}</button></form>}
+              </div>
+            ) },
+          ]} empty={{ title: "No team logins yet.", body: "Add the first member from the form." }} />
+        </Section>
+
+        <Section id="claims" title="Creator profile claims" sub="Someone joined with the handle of a creator we already had on file, from a different email. Check it's really them (for example a DM from that Instagram account) before verifying: verifying shows them that creator's deals, earnings and payout details.">
+          <DataTable caption="Creator profile claims" rows={claims} columns={[
+            { key: "who", label: "Creator", render: (c) => <Cell eyebrow={dayTime(c.created_at)} title={`@${c.handle}${c.name ? ` · ${c.name}` : ""}`} sub={<span className="adm-dim">Joined as {c.email} · email on file: {c.file_email || "none"}</span>} /> },
+            { key: "act", label: "Decision", num: true, primary: true, render: (c) => (
+              <div className="adm-acts">
                 <form action={decideClaim}><input type="hidden" name="id" value={c.id} /><input type="hidden" name="decision" value="verify" /><button className="btn sm">Verify</button></form>
                 <form action={decideClaim}><input type="hidden" name="id" value={c.id} /><input type="hidden" name="decision" value="reject" /><button className="btn sm">Reject</button></form>
-              </div></td>
-            </tr>))}</tbody></table>
-        )}
-      </div>
+              </div>
+            ) },
+          ]} empty={{ title: "No claims waiting.", body: "When a creator claims a profile we already had, it shows up here to check." }} />
+        </Section>
+      </Grid>
     </TeamShell>
   );
 }

@@ -3,7 +3,8 @@ import Flash, { flashUrl } from "../../_ui/flash";
 import { env } from "@/lib/net/env";
 import { hashPassword, passwordProblem } from "@/lib/net/auth";
 import { currentTeam, startTeamSession } from "@/lib/net/creatorAuth";
-import { audit, isEmail } from "@/lib/net/security";
+import { audit, isEmail, ROLES } from "@/lib/net/security";
+import { SplitAuth } from "@/components/ui";
 import { clientIp, overLimit, sameSecret, TOO_MANY } from "../../reset/_lib";
 
 export const metadata = { title: "Set up the team login", robots: { index: false, follow: false } };
@@ -51,22 +52,24 @@ export default async function Page({ searchParams }) {
   if (exists) redirect("/team/login");
   const locked = !setupCode();
   return (
-    <div className="pg-teamlogin">
-      <style dangerouslySetInnerHTML={{ __html: `.pg-teamlogin{min-height:100vh;display:grid;place-items:center;padding:40px 16px;background:radial-gradient(60% 50% at 85% 0,rgba(232,184,75,.16),transparent 60%),radial-gradient(60% 60% at 0 100%,rgba(106,74,120,.45),transparent 60%),linear-gradient(180deg,var(--p900),var(--rail))}
-.pg-teamlogin .box{width:min(440px,100%)}
-.pg-teamlogin .lock{display:flex;align-items:center;gap:10px;justify-content:center;margin-bottom:22px;color:#fff}
-.pg-teamlogin .lock .em{width:34px;height:34px}.pg-teamlogin .lock .wm{height:16px;width:82px;color:#fff}
-.pg-teamlogin .lock small{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--gold-2);border-left:1px solid rgba(255,255,255,.2);padding-left:10px}` }} />
-      <div className="box">
-        <div className="lock"><svg className="em"><use href="#emblem-foil" /></svg><svg className="wm"><use href="#wordmark" /></svg><small>Connect · Team</small></div>
+    <main id="main" tabIndex={-1} className="ui-flush">
+      <SplitAuth className="adm-auth"
+        top={<a className="adm-lock" href="/team/login" aria-label="Colatch Connect team desk"><svg className="em" aria-hidden="true"><use href="#emblem-foil" /></svg><svg className="wm" aria-hidden="true"><use href="#wordmark" /></svg><small>Connect · Team</small></a>}
+        panel={{
+            eyebrow: "Colatch Connect · Team desk",
+            title: "Every brief, deal and <em>rupee</em> on one desk.",
+            lede: "Campaigns, creators, deals and payouts for Colatch Connect. Each team member logs in with their own role, and every decision is written to the audit log.",
+            quote: { text: "Every rupee is recorded by a person, with its bank reference.", source: "The money ledger" },
+            stats: [{ value: ROLES.length, label: "Team roles", gold: true }, { value: "1", label: "Append-only ledger" }],
+          }}
+        intro={{ eyebrow: "One-time setup", title: "Set up the first Colatch <b>team login</b>.", sub: locked ? undefined : "This creates the owner account. It works once, with the setup code, for an email on the owner list." }}
+      >
         <form className="panel pad" action={setup}>
-          <h2>Set up the first Colatch team login</h2>
           <div style={{ marginBottom: 14 }}><Flash sp={searchParams} /></div>
           {locked ? (
             <div className="note bad" role="alert">Setup is locked until <b>TEAM_SETUP_CODE</b> is set in Vercel (Project → Settings → Environment Variables). Set it, redeploy, then come back here with the code.</div>
           ) : (
             <>
-              <p className="muted" style={{ margin: "-4px 0 18px" }}>This creates the owner account. It works once, with the setup code, for an email on the owner list.</p>
               <div className="stack">
                 <div className="fld"><label htmlFor="f-team-setup-code-1">Setup code</label><input id="f-team-setup-code-1" name="code" type="password" required autoComplete="off" /></div>
                 <div className="fld"><label htmlFor="f-team-setup-name-2">Your name</label><input id="f-team-setup-name-2" name="name" required autoComplete="name" /></div>
@@ -77,7 +80,7 @@ export default async function Page({ searchParams }) {
             </>
           )}
         </form>
-      </div>
-    </div>
+      </SplitAuth>
+    </main>
   );
 }

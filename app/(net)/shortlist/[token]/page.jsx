@@ -1,6 +1,6 @@
 import { notFound, redirect } from "next/navigation";
 import { headers } from "next/headers";
-import PublicShell, { Hero } from "../../_ui/PublicShell";
+import PublicShell from "../../_ui/PublicShell";
 import { MoveRow } from "../../_ui/Moves";
 import Flash, { flashUrl } from "../../_ui/flash";
 import { env } from "@/lib/net/env";
@@ -15,6 +15,16 @@ import { transition, FlowError } from "@/lib/net/dealflow";
 import { notify } from "@/lib/net/notify";
 import { audit, logError } from "@/lib/net/security";
 import { REASONS, raiseDispute, DisputeError } from "@/lib/net/disputes";
+import { currentBrand } from "@/lib/net/creatorAuth";
+import DealThread from "@/components/deal/DealThread";
+import { UsageLine, ShipmentStatus, ShipPill } from "@/components/deal/DealExtras";
+import { postMessage, notifyMessage, messagesForCampaign, unreadForCampaign, markCampaignRead, MessageError } from "@/lib/net/messages";
+import { shipmentStatusForCampaign } from "@/lib/net/shipments";
+import { syncUsageStart, usageStatus } from "@/lib/net/usage";
+import { inrShort } from "@/lib/net/dashboard";
+import { inrFull, day } from "@/components/team/labels";
+import { PageHeader, KpiStrip, StatusRail, Grid, Section, Card, AsideCard, FilterBar, FilterChips, DataTable, Cell, EmptyState, Pill, Tags, Avatar } from "@/components/ui";
+import { Facts, MiniStats } from "@/components/brand/Facts";
 
 // Checked here as well as in the page: metadata runs before the page streams, so a bad link gets a real 404 status.
 export async function generateMetadata({ params }) {
@@ -30,10 +40,6 @@ const CSS = `
 .pg-shortlist .save span{font-size:12px;font-weight:500;color:var(--accent-ink)}
 .pg-shortlist .fit{display:inline-block;margin-top:6px;font-size:11px;font-weight:600;padding:2px 9px;border-radius:99px}
 .pg-shortlist .fit.good{background:var(--soft-bg);color:var(--soft-fg)}.pg-shortlist .fit.good::before{content:"✓ "}.pg-shortlist .fit.ok{background:transparent;box-shadow:inset 0 0 0 1px var(--line-strong);color:var(--accent-ink)}.pg-shortlist .fit.bad{background:transparent;box-shadow:inset 0 0 0 1px var(--line-3);color:var(--ink-3)}.pg-shortlist .fit.bad::before{content:"– "}
-.pg-shortlist .loss{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:10px}
-.pg-shortlist .loss div{padding:12px 14px;border-radius:12px;background:var(--paper);border:1px solid var(--line)}
-.pg-shortlist .loss b{display:block;font-size:13.5px}.pg-shortlist .loss span{font-size:12px;color:var(--ink-3)}
-@media(max-width:760px){.pg-shortlist .loss{grid-template-columns:1fr}}
 `;
 
 async function campaignFor(token) {
@@ -91,6 +97,27 @@ async function rate(f) {
     ).bind(crypto.randomUUID(), dealId, "brand", stars, scrubContacts(String(f.get("note") ?? "")).text.slice(0, 300) || null).run();
   }
   redirect(back(token, "Rating saved. It helps other brands pick well."));
+}
+
+/** The brand messages the creator and the Colatch team on one booked deal of this campaign. Contact details are scrubbed. */
+async function brandMessage(f) {
+  "use server";
+  const { token, k, dealId, own } = await ownDeal(f);
+  const to = (msg, tone = "ok") => redirect(back(token, msg, tone) + `#deal-${encodeURIComponent(dealId)}`);
+  if (!own) to("That creator isn't booked on this campaign.", "err");
+  const d = await env.DB.prepare("SELECT stage, pay_status FROM creator_deals WHERE id=?").bind(dealId).first();
+  if (!d || d.stage === "cancelled" || d.pay_status === "refunded") to("This deal is closed, so messages are off. Reply to the Colatch team by email if you need anything.", "err");
+  const sender = { kind: "brand", id: k.id };
+  let r;
+  try {
+    r = await postMessage(dealId, sender, f.get("body"), f.get("mid"));
+  } catch (e) {
+    if (e instanceof MessageError) to(e.message, "err");
+    await logError("shortlist.message", e, { deal: dealId });
+    to("Something went wrong, your message wasn't sent. Try again.", "err");
+  }
+  if (r.created) await notifyMessage(dealId, r.id, sender);
+  to(!r.created ? "That message was already sent." : r.scrubbed ? "Message sent. Contact details were hidden: keep the deal on Colatch." : "Message sent.");
 }
 
 /** The brand raises a dispute on one booked deal of this campaign. Ownership is checked in raiseDispute. */
@@ -184,6 +211,8 @@ async function saveRoster(f) {
 async function decline(f) { "use server"; await decide(f, "declined"); }
 
 const initials = (s) => String(s || "").replace(/[^a-z0-9]/gi, " ").trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
+const SHOW = [["all", "All"], ["waiting", "Waiting for you"], ["approved", "Approved"], ["passed", "Passed"]];
+const istWhen = (iso) => { const t = Date.parse(String(iso || "")); return Number.isFinite(t) ? new Date(t).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit" }) + " IST" : ""; };
 
 export default async function Page({ params, searchParams }) {
   const token = params.token;
@@ -195,7 +224,6 @@ export default async function Page({ params, searchParams }) {
      FROM campaign_applications a LEFT JOIN creators c ON c.id=a.creator_id WHERE a.campaign_id=? AND a.status IN ('shortlisted','accepted') ORDER BY a.match_score DESC NULLS LAST`
   ).bind(k.id).all()).results ?? [];
   const approved = rows.filter((r) => r.client_decision === "approved");
-  const views = approved.reduce((s, r) => s + (r.avg_views || 0), 0);
   const deals = (await env.DB.prepare("SELECT d.*, c.name, c.handle, c.profile_pic FROM creator_deals d JOIN creators c ON c.id=d.creator_id WHERE d.campaign_id=? AND d.stage <> ? ORDER BY d.updated_at DESC").bind(k.id, "dropped").all()).results ?? [];
   const live = deals.filter((d) => d.live_at);
   const tSpend = deals.reduce((a, d) => a + (d.fee || 0), 0);
@@ -234,193 +262,330 @@ export default async function Page({ params, searchParams }) {
   const bookedCreators = new Set(deals.filter((d) => d.stage !== "cancelled").map((d) => d.creator_id));
   // Approved = the brand said yes, or the creator is already booked on this brief. Fees come from the booked deals.
   const approvedOrBooked = rows.filter((r) => r.client_decision === "approved" || booked.has(r.id) || (r.creator_id && bookedCreators.has(r.creator_id)));
+  // Expected views count the same creators as "Creators approved": said yes, or already booked.
+  const views = approvedOrBooked.reduce((s, r) => s + (r.avg_views || 0), 0);
   const spend = deals.filter((d) => d.stage !== "cancelled").reduce((a, d) => a + (d.fee || 0), 0) || approved.reduce((a, r) => a + (r.rate_quote || 0), 0);
   const priced = Object.fromEntries(await Promise.all(deals.map(async (d) => [d.id, await priceDeal(env, d, k).catch(() => null)])));
   const drafts = deals.filter((d) => d.draft_status === "submitted" && d.stage !== "cancelled");
   const waitingOnYou = rows.filter((r) => !r.client_decision && !booked.has(r.id) && !(r.creator_id && bookedCreators.has(r.creator_id)));
   const loyaltyGap = Math.max(0, feePct(env) - brandFee.pct);
   const origin = `https://${headers().get("host")}`;
-  const darkTag = { background: "rgba(255,255,255,.1)", color: "#F4EFE3" };
-  const lblDim = { color: "rgba(244,239,227,.6)" };
+  // Header only: a signed-in brand keeps its own nav here. Access to this page is still the share link.
+  const signedIn = await currentBrand().catch(() => null);
+  // Deal room per booked creator: messages, shipment status (never the address) and usage rights.
+  const brandReader = { kind: "brand", id: k.id };
+  for (const d of deals) await syncUsageStart(d).catch(() => false);
+  const threads = deals.length ? await messagesForCampaign(k.id).catch(() => ({})) : {};
+  const unreadBy = deals.length ? await unreadForCampaign(k.id, brandReader).catch(() => ({})) : {};
+  if (Object.keys(threads).length) await markCampaignRead(k.id, brandReader).catch(() => {});
+  const shipBy = deals.length ? await shipmentStatusForCampaign(k.id).catch(() => ({})) : {};
+  const roomDeals = deals.filter((d) => d.stage !== "cancelled" || (threads[d.id] || []).length);
+
+  // ---- Shapes for the page, all from the rows above (no extra queries).
+  const isBooked = (r) => booked.has(r.id) || (r.creator_id && bookedCreators.has(r.creator_id));
+  const stateOf = (r) => (isBooked(r) ? "booked" : r.client_decision === "approved" ? "approved" : r.client_decision === "declined" ? "passed" : "waiting");
+  const show = SHOW.some(([v]) => v === searchParams?.show) ? searchParams.show : "all";
+  const count = { all: rows.length, waiting: waitingOnYou.length, approved: rows.filter((r) => ["approved", "booked"].includes(stateOf(r))).length, passed: rows.filter((r) => stateOf(r) === "passed").length };
+  const shown = show === "all" ? rows : rows.filter((r) => (show === "approved" ? ["approved", "booked"].includes(stateOf(r)) : stateOf(r) === show));
+  const active = deals.filter((d) => d.stage !== "cancelled");
+  const unreadTotal = Object.values(unreadBy).reduce((a, n) => a + (Number(n) || 0), 0);
+  const need = k.creators_needed || rows.length;
+  const steps = [
+    ["Brief in", true],
+    ["Shortlist", rows.length > 0],
+    // Done once nobody waits on the brand, or once enough creators are approved or booked for the brief.
+    ["You approve", rows.length > 0 && approvedOrBooked.length > 0 && (waitingOnYou.length === 0 || (need > 0 && approvedOrBooked.length >= need))],
+    ["Booked and paid", active.length > 0 && active.every((d) => ["funded", "released", "paid"].includes(d.pay_status))],
+    ["Drafts approved", active.length > 0 && active.every((d) => d.draft_status === "approved" || d.live_at)],
+    ["Live", active.length > 0 && active.every((d) => d.live_at)],
+  ];
+  const nowAt = steps.findIndex(([, done]) => !done);
+  // The rail reads in order: every step after the current one stays open, even if part of it has started.
+  const rail = steps.map(([label, done], i) => ({ label, state: nowAt === -1 || i < nowAt ? "done" : i === nowAt ? "now" : "todo" }));
+  const myMoves = drafts.length + waitingOnYou.length;
+  const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+  const sel = (v) => {
+    const q = new URLSearchParams(); if (v !== "all") q.set("show", v);
+    const s = q.toString(); return `/shortlist/${encodeURIComponent(token)}${s ? "?" + s : ""}#creators`;
+  };
+  const brandName = k.brand || k.client_company || "";
+  const factItems = [
+    { label: "Creators needed", value: k.creators_needed ? String(k.creators_needed) : null },
+    { label: "Deliverables", value: k.deliverables },
+    { label: "Budget", value: k.budget_total ? inr(k.budget_total) : null },
+    { label: "Pay", value: PAY_LABEL[k.pay_type || "cash"] },
+    { label: "Apply by", value: k.deadline ? day(k.deadline) || k.deadline : null },
+    { label: "Cost-per-view target", value: promise ? `₹${promise.toFixed(2)} per view` : null },
+    { label: "Rush", value: rush ? `Yes, adds ${RUSH_PCT}% of creator fees` : null },
+  ];
 
   const hero = (
-    <Hero eyebrow={`Your Colatch shortlist · ${k.brand || k.client_company || ""}`} title={escapeHtml(k.title)}>
-      <p>Prepared for {k.client_name || k.client_company || k.brand || "you"} by the Colatch team. {rows.length} {rows.length === 1 ? "creator" : "creators"} picked. Fees shown are the creator's quote; the all-in price with Colatch's fee and GST is under each one.</p>
-      <div className="row" style={{ marginTop: 16, gap: 8 }}>{requirementChips(k).map((r) => <span key={r} className="tag" style={darkTag}>{r}</span>)}<span className="tag" style={darkTag}>{PAY_LABEL[k.pay_type || "cash"]}</span></div>
-    </Hero>
+    <PageHeader variant="hero"
+      crumbs={signedIn ? [{ label: "My campaigns", href: "/brand" }, { label: "Shortlist" }] : undefined}
+      eyebrow={`Your Colatch shortlist${brandName ? ` · ${brandName}` : ""}`}
+      title={k.title || "Your shortlist"}
+      sub={`Prepared for ${k.client_name || k.client_company || k.brand || "you"} by the Colatch team. ${rows.length} ${rows.length === 1 ? "creator" : "creators"} picked. Fees shown are the creator's quote; the all-in price with Colatch's fee and GST is under each one.`}
+      meta={[
+        { label: "Waiting for you", value: myMoves },
+        { label: "Booked", value: active.length },
+        { label: "Live", value: live.length },
+      ]}>
+      <div className="v2b-hero-tags"><Tags items={[...requirementChips(k), PAY_LABEL[k.pay_type || "cash"]]} max={8} /></div>
+    </PageHeader>
   );
 
+  const creatorCard = (r) => {
+    const b = erBand(r.engagement_rate, r.cf ?? r.followers);
+    const links = String(r.portfolio_links || "").split(/\s+/).map(safeUrl).filter(Boolean).slice(0, 3);
+    const q = allIn(r.rate_quote, r.id);
+    const fr = fees[r.id];
+    const sv = r.rate_quote ? quoteSavings(env, { rate_reel: r.crate, followers: r.cf ?? r.followers }, r.rate_quote, fr?.pct ?? pct) : null;
+    const fit = q ? budgetFit(k.budget_total, k.creators_needed, q.total) : null;
+    const st = stateOf(r);
+    const pic = safeUrl(r.profile_pic);
+    return (
+      <article key={r.id} className={`v2b-cc v2b-cc--${st}`} aria-labelledby={`cc-${r.id}`}>
+        <header className="v2b-cc__head">
+          <Avatar name={r.name || r.handle} initials={initials(r.name || r.handle)} src={pic || undefined} size={52} />
+          <div className="v2b-cc__who">
+            <h3 id={`cc-${r.id}`}>{r.name || r.handle}{r.verified ? <span className="v2b-tick" title="Instagram-verified"> ✓</span> : ""}</h3>
+            <p><a className="link" href={`https://instagram.com/${encodeURIComponent(String(r.handle || "").replace(/[^a-z0-9._]/gi, ""))}`} {...EXT}>@{r.handle}</a>{r.ccity || r.city ? ` · ${r.ccity || r.city}` : ""}</p>
+          </div>
+          <div className="v2b-cc__state">
+            {st === "booked" ? <Pill tone="done">Booked</Pill> : st === "approved" ? <Pill tone="done">Approved</Pill> : st === "passed" ? <Pill tone="off">Declined</Pill> : <Pill tone="mine">Waiting for you</Pill>}
+            <div className="score sm" style={{ "--v": r.match_score ?? 50 }} title="Match score"><i>{r.match_score ?? "—"}</i></div>
+          </div>
+        </header>
+        <dl className="v2b-cc__stats">
+          <div><dt>Followers</dt><dd><b>{compact(r.cf ?? r.followers)}</b><small>{r.verified ? "From Instagram" : "Self-reported"}</small></dd></div>
+          <div><dt>Engagement</dt><dd><b>{r.engagement_rate != null ? `${r.engagement_rate}%` : "—"}</b>{r.engagement_rate != null && <small><span className={`pill ${b.tone}`}>{b.label}</span></small>}</dd></div>
+          <div><dt>Avg reel views</dt><dd><b>{compact(r.avg_views)}</b></dd></div>
+          <div><dt>Creator quote</dt><dd><b>{inr(r.rate_quote)}</b>{r.rate_quote && r.avg_views ? <small>₹{(r.rate_quote / r.avg_views).toFixed(2)} per view</small> : null}</dd></div>
+        </dl>
+        {(q || (sv && (sv.vsMarket || sv.vsAgency)) || fit) && <div className="v2b-cc__money">
+          {q && <details><summary>All-in {inr(q.total)}</summary><p className="hint">Creator {inr(q.creatorFee)} · Colatch {q.basePct}% {inr(q.colatch - q.rushFee)}{q.rushFee ? ` · Rush ${RUSH_PCT}% ${inr(q.rushFee)}` : ""} · GST {inr(q.gstOnColatch)}{r.rate_quote && r.avg_views ? " · ₹" + (r.rate_quote / r.avg_views).toFixed(2) + " per view" : ""}{fr?.reason ? <><br /><b className="v2b-accent">{fr.reason}</b></> : null}</p></details>}
+          {sv && (sv.vsMarket || sv.vsAgency) ? <div className="save">{sv.vsMarket ? <span>{inr(sv.vsMarket)} under this creator's usual rate</span> : null}{sv.vsAgency ? <span>{inr(sv.vsAgency)} under agency pricing</span> : null}</div> : null}
+          {fit && <span className={`fit ${fit.tone}`}>{fit.label}</span>}
+        </div>}
+        {r.team_note && <p className="v2b-cc__why"><b>Why we picked them:</b> {r.team_note}</p>}
+        {!r.team_note && r.match_reasons && <p className="hint v2b-cc__reasons">{r.match_reasons}</p>}
+        {(links.length > 0 || (brandEmail && r.creator_id)) && <div className="v2b-cc__links">
+          {links.map((u, i) => <a key={u} className="btn sm" href={u} {...EXT}>Sample {i + 1} ↗</a>)}
+          {brandEmail && r.creator_id && (saved.has(r.creator_id)
+            ? <span className="hint v2b-accent">In your roster ✓</span>
+            : <form action={saveRoster}><input type="hidden" name="token" value={token} /><input type="hidden" name="creator" value={r.creator_id} /><button className="btn sm">Save to my roster</button></form>)}
+        </div>}
+        {st === "booked"
+          ? <div className="note good v2b-cc__decide">Booked. Track this creator under "Campaign progress" below.</div>
+          : <form action={approve} className="v2b-cc__decide">
+            <input type="hidden" name="token" value={token} />
+            <input type="hidden" name="app" value={r.id} />
+            <input className="in" name="note" placeholder="Note for the Colatch team" aria-label="Note for the Colatch team (optional)" defaultValue={r.client_note ?? ""} />
+            <div className="v2b-cc__btns">
+              <button className="btn" formAction={decline}>Not for us</button>
+              {r.rate_quote ? <button className="btn plum">Approve</button> : <span className="hint">Fee being confirmed by the Colatch team</span>}
+            </div>
+          </form>}
+      </article>
+    );
+  };
+
+  const dealColumns = [
+    { key: "who", label: "Creator", render: (d) => (
+      <span className="v2b-who"><Avatar name={d.name || d.handle} initials={initials(d.name || d.handle)} src={safeUrl(d.profile_pic) || undefined} size={32} ring={false} /><Cell title={d.name || d.handle} sub={d.deliverable} /></span>
+    ) },
+    { key: "progress", label: "Progress", primary: true, render: (d) => {
+      const done = railDone(d);
+      const at = done.lastIndexOf(true);
+      return (<>
+        <span className="dots" role="img" aria-label={`${done.filter(Boolean).length} of ${RAIL.length} steps done`}>{RAIL.map((r, i) => <i key={r.key} className={done[i] ? "on" : ""} title={r.label} />)}</span>
+        <div className="hint">{d.stage === "cancelled" ? "Cancelled" : at < 0 ? "Waiting for the creator to accept terms" : RAIL[at].label}</div>
+        {priced[d.id] && <div className="hint">All-in {inr(priced[d.id].total)}{priced[d.id].frozen ? " (as paid)" : ""}</div>}
+      </>);
+    } },
+    { key: "views", label: "Views", num: true, render: (d) => compact(d.actual_views) },
+    { key: "cpv", label: "CPV", num: true, render: (d) => (d.fee && d.actual_views ? "₹" + (d.fee / d.actual_views).toFixed(2) : "—") },
+    { key: "clicks", label: "Clicks", num: true, render: (d) => d.clicks },
+    { key: "post", label: "Post", className: "wide", render: (d) => {
+      const post = d.live_at ? safeUrl(d.post_url) : null;
+      return (<div className="v2b-post">
+        {post ? <a className="link" href={post} {...EXT}>View ↗</a> : d.live_at && d.post_url ? <span className="hint">{String(d.post_url).slice(0, 60)}</span> : <span className="hint">Not live yet</span>}
+        {d.live_at && !d.brand_signoff_at && <form action={signoff} style={{ marginTop: 6 }}><input type="hidden" name="token" value={token} /><input type="hidden" name="deal" value={d.id} /><label className="hint v2b-check"><input type="checkbox" name="public" value="1" defaultChecked /> creator may show it as proof</label><button className="btn sm plum">Sign off work</button></form>}
+        {d.brand_signoff_at && <div className="hint v2b-accent">Signed off ✓</div>}
+        {d.stage !== "cancelled" && (disputes[d.id]?.status === "open"
+          ? <div style={{ marginTop: 6 }}><span className="pill mine">Dispute open</span></div>
+          : <details style={{ marginTop: 6 }}>
+              <summary className="hint" style={{ cursor: "pointer", minHeight: 44, display: "flex", alignItems: "center" }}>Something wrong? Raise a dispute</summary>
+              {disputes[d.id] && <div className="hint" style={{ margin: "4px 0", maxWidth: 280 }}><span className={`pill ${disputes[d.id].status === "resolved" ? "good" : "low"}`}>{disputes[d.id].status === "resolved" ? "Resolved" : "Not upheld"}</span> {disputes[d.id].resolution}</div>}
+              <form action={dispute} className="stack" style={{ gap: 6, marginTop: 6, minWidth: 0 }}>
+                <input type="hidden" name="token" value={token} /><input type="hidden" name="deal" value={d.id} />
+                <label className="hint" htmlFor={`dr-${d.id}`}>What it's about</label>
+                <select className="in" id={`dr-${d.id}`} name="reason" required defaultValue="">{[<option key="" value="" disabled>Choose one</option>, ...Object.entries(REASONS).map(([key, l]) => <option key={key} value={key}>{l}</option>)]}</select>
+                <label className="hint" htmlFor={`dd-${d.id}`}>What happened</label>
+                <textarea className="in" id={`dd-${d.id}`} name="detail" rows={3} required minLength={10} maxLength={2000} placeholder="Dates, what was agreed, and what went wrong." />
+                <button className="btn sm" style={{ minHeight: 44 }}>Send dispute</button>
+              </form>
+            </details>)}
+        {d.live_at && !rated.has(d.id) && <form action={rate} className="row" style={{ gap: 4, marginTop: 6, flexWrap: "nowrap" }}><input type="hidden" name="token" value={token} /><input type="hidden" name="deal" value={d.id} /><select className="in" name="stars" aria-label="Your rating" style={{ width: "auto", padding: "4px 6px", fontSize: 12 }}>{[5, 4, 3, 2, 1].map((n) => <option key={n} value={n}>{"★".repeat(n)}</option>)}</select><button className="btn sm">Rate</button></form>}
+      </div>);
+    } },
+  ];
+
+  const aside = (<>
+    {deals.some((d) => d.live_at) && (
+      <AsideCard tone="night" eyebrow="Value delivered by Colatch" title={<span className="v2b-big ui-foil">{inr(tot.saved + tot.adsEquivalent + tot.sales)}</span>}>
+        <Facts label="How the value adds up" items={[
+          { label: "Saved vs market rates", value: inr(tot.savedVsMarket) },
+          { label: `Saved vs ${base.agencyPct}% agency markup`, value: inr(tot.savedVsAgency) },
+          { label: "Views, as paid-ads value", value: <>{inr(tot.adsEquivalent)}{tot.adsMultiple ? <small>{tot.adsMultiple.toFixed(1)}× your creator spend</small> : null}</> },
+          { label: "Sales from creator codes", value: <>{inr(tot.sales)}{tot.roas ? <small>{tot.roas.toFixed(1)}× return</small> : null}</> },
+        ]} />
+        <p className="small">How we count: market rate is each creator's own rate card, or the typical rate for their size. Agency markup baseline is {base.agencyPct}% (typical range 15–30%) against Colatch's {pct}%. Paid-ads value uses ₹{base.cpm} per 1,000 views. Sales come from the tracked codes and links.</p>
+      </AsideCard>
+    )}
+    <AsideCard eyebrow="The brief" title="What you asked for">
+      <Tags items={[...requirementChips(k), PAY_LABEL[k.pay_type || "cash"]]} max={8} />
+      <Facts label="Brief details" items={factItems} />
+    </AsideCard>
+    {(rows.length > 0 || deals.length > 0) && (
+      <AsideCard eyebrow="Booking through Colatch" title="What you'd give up going direct"
+        foot={brandEmail ? <a href={`/roster/${encodeURIComponent(token)}`}>My roster{saved.size ? ` (${saved.size})` : ""}</a> : null}>
+        <ul className="v2b-loss">
+          <li><b>Payment held until verified</b><span>{atStake ? `${inr(atStake)} of your payments recorded and held; each creator is paid only after their post is checked live` : "Creators are paid only after their post is checked live by the Colatch team"}</span></li>
+          <li><b>Replacement help</b><span>If a creator drops out before posting, we suggest a matched replacement</span></li>
+          {k.promised_cpv ? <li><b>Agreed cost-per-view target</b><span>₹{Number(k.promised_cpv).toFixed(2)} per view, as agreed for this campaign</span></li> : null}
+          <li><b>Signed proof of work</b><span>Dated certificate with views, value and both sign-offs</span></li>
+          <li><b>Repeat booking rate</b><span>Rebook any creator through Colatch at 12% instead of {feePct(env)}%</span></li>
+          <li><b>Loyalty rate</b><span>{loyaltyGap > 0 ? `You're on ${brandFee.pct}% already (${brandFee.reason})` : "1 point off our fee for every ₹5L you spend in a year, down to 10%"}</span></li>
+        </ul>
+      </AsideCard>
+    )}
+    {myCode && (
+      <AsideCard eyebrow="Refer a brand" title="Know another brand that needs creators?">
+        <p className="small">Share <code className="k v2b-code">{origin}/r/{myCode}</code>. For 12 months you get credit off your Colatch invoices on every campaign they run.</p>
+      </AsideCard>
+    )}
+  </>);
+
   return (
-    <PublicShell mode="client" hero={hero}>
-      <div className="pg-shortlist">
+    <PublicShell mode="client" brandName={signedIn ? signedIn.name || signedIn.email : null} hero={hero}>
+      <div className="pg-shortlist v2b">
         <style dangerouslySetInnerHTML={{ __html: CSS }} />
-        <div style={{ marginBottom: 16 }}><Flash sp={searchParams} /></div>
-        {(drafts.length > 0 || waitingOnYou.length > 0) ? (
-          <section className="sheet" aria-labelledby="brand-move" style={{ marginBottom: 28 }}>
-            <div className="sheet__h"><h2 id="brand-move">Your move</h2><span className="n">{drafts.length + waitingOnYou.length}</span></div>
-            {drafts.length > 0 && <MoveRow kind="mine" href="#drafts" title={drafts.length === 1 ? "Review 1 draft" : `Review ${drafts.length} drafts`} sub={drafts.map((d) => d.name || d.handle).join(", ")} cta="Review" />}
-            {waitingOnYou.length > 0 && <MoveRow kind="mine" href="#creators" title={waitingOnYou.length === 1 ? "Approve or pass on 1 creator" : `Approve or pass on ${waitingOnYou.length} creators`} sub={waitingOnYou.map((r) => r.name || r.handle).slice(0, 4).join(", ") + (waitingOnYou.length > 4 ? ` and ${waitingOnYou.length - 4} more` : "")} cta="Decide" />}
-          </section>
-        ) : rows.length > 0 ? (
-          <div className="allclear" style={{ marginBottom: 28 }}><b>Nothing needs you right now.</b> We'll email you when a draft is ready or a new creator is added.</div>
-        ) : null}
-        {drafts.length > 0 && <div className="panel pad" style={{ marginBottom: 22 }} id="drafts">
-          <h2 style={{ marginTop: 0 }}>Drafts waiting for your review</h2>
-          <div className="stack">{drafts.map((d) => {
-            const u = safeUrl(d.draft_url);
-            const left = Math.max(0, Number(d.revisions_included || 0) - Number(d.revisions_used || 0));
-            return (
-              <div key={d.id} className="box" style={{ padding: 14 }}>
-                <div className="spread"><b>{d.name || d.handle}</b><span className="hint">{d.auto_approve_at ? `Approved automatically after ${String(d.auto_approve_at).slice(0, 16).replace("T", " ")} UTC if you don't reply` : ""}</span></div>
-                <div style={{ margin: "8px 0" }}>{u ? <a className="btn sm" href={u} {...EXT}>Open the draft ↗</a> : <span className="hint">Draft link: {String(d.draft_url || "").slice(0, 120)}</span>}</div>
-                <form action={approveDraft} className="row" style={{ gap: 8 }}><input type="hidden" name="token" value={token} /><input type="hidden" name="deal" value={d.id} /><button className="btn sm plum">Approve draft</button></form>
-                <form action={requestChanges} className="row" style={{ gap: 8, marginTop: 8 }}><input type="hidden" name="token" value={token} /><input type="hidden" name="deal" value={d.id} />
-                  <input className="in" name="note" required minLength={3} style={{ flex: 1, minWidth: 200 }} placeholder="What should change?" />
-                  <button className="btn sm">Request changes</button></form>
-                <div className="hint" style={{ marginTop: 6 }}>{left > 0 ? `${left} revision ${left === 1 ? "round" : "rounds"} included` : "Included revision rounds are used up; more rounds are logged as extra."}</div>
+        <div className="v2b-flash"><Flash sp={searchParams} /></div>
+
+        <StatusRail label="Campaign progress" steps={rail}
+          badge={myMoves > 0 ? <Pill tone="mine">Your move</Pill> : rows.length ? <Pill tone="wait">With Colatch</Pill> : null}
+          note={drafts.length ? <>Next: <a className="link" href="#drafts">review {plural(drafts.length, "draft", "drafts")}</a>{waitingOnYou.length ? <>, then <a className="link" href="#creators">decide on {plural(waitingOnYou.length, "creator", "creators")}</a></> : null}.</>
+            : waitingOnYou.length ? <>Next: <a className="link" href="#creators">approve or pass on {plural(waitingOnYou.length, "creator", "creators")}</a>.</>
+            : !rows.length ? "The Colatch team is picking creators who fit. This page updates as soon as they're added."
+            : active.length && live.length < active.length ? "With the creators and the Colatch team now. We'll email you when a draft is ready."
+            : null} />
+
+        <KpiStrip label="Campaign at a glance" items={[
+          { label: "Creators approved", value: `${approvedOrBooked.length} / ${need || 0}`, foot: waitingOnYou.length ? `${waitingOnYou.length} waiting for you` : "creators, including booked", href: "#creators" },
+          { featured: true, label: "Creator fees committed", value: inrShort(spend), title: inrFull(spend), foot: "before Colatch fee + GST" },
+          live.length
+            ? { label: "Views", value: compact(tViews), foot: `${live.length} of ${deals.length} posts live` }
+            : { label: "Expected views", value: compact(views), foot: spend && views ? `≈ ₹${(spend / views).toFixed(2)} per view` : "from avg reel views" },
+          { label: "Cost per view", value: actualCpv != null ? "₹" + actualCpv.toFixed(2) : "—", foot: promiseLine },
+        ]} />
+
+        <Grid aside={aside}>
+          {myMoves > 0 ? (
+            <Section id="brand-move" title="Your move" sub={`${plural(myMoves, "thing needs", "things need")} you. Everything else is with the creators and the Colatch team.`}>
+              <div className="sheet">
+                {drafts.length > 0 && <MoveRow kind="mine" href="#drafts" title={drafts.length === 1 ? "Review 1 draft" : `Review ${drafts.length} drafts`} sub={drafts.map((d) => d.name || d.handle).join(", ")} cta="Review" />}
+                {waitingOnYou.length > 0 && <MoveRow kind="mine" href="#creators" title={waitingOnYou.length === 1 ? "Approve or pass on 1 creator" : `Approve or pass on ${waitingOnYou.length} creators`} sub={waitingOnYou.map((r) => r.name || r.handle).slice(0, 4).join(", ") + (waitingOnYou.length > 4 ? ` and ${waitingOnYou.length - 4} more` : "")} cta="Decide" />}
               </div>
-            );
-          })}</div>
-        </div>}
-        <section id="creators" aria-labelledby="creators-h" style={{ marginBottom: 34 }}>
-        <div className="sheet__h"><h2 id="creators-h">Creators for this brief</h2><span className="n">{rows.length}</span></div>
-        <div className="stack">
-          {rows.map((r) => {
-            const b = erBand(r.engagement_rate, r.cf ?? r.followers);
-            const links = String(r.portfolio_links || "").split(/\s+/).map(safeUrl).filter(Boolean).slice(0, 3);
-            const q = allIn(r.rate_quote, r.id);
-            const fr = fees[r.id];
-            const sv = r.rate_quote ? quoteSavings(env, { rate_reel: r.crate, followers: r.cf ?? r.followers }, r.rate_quote, fr?.pct ?? pct) : null;
-            const fit = q ? budgetFit(k.budget_total, k.creators_needed, q.total) : null;
-            return (
-              <div key={r.id} className="panel pad">
-                <div className="spread" style={{ alignItems: "flex-start" }}>
-                  <div className="who"><div className="ava" style={{ width: 56, height: 56 }}>{safeUrl(r.profile_pic) ? <img src={safeUrl(r.profile_pic)} alt="" /> : initials(r.name || r.handle)}</div>
-                    <div><b style={{ fontSize: 17 }}>{r.name || r.handle}{r.verified ? " ✓" : ""}</b><span><a className="link" href={`https://instagram.com/${encodeURIComponent(String(r.handle || "").replace(/[^a-z0-9._]/gi, ""))}`} {...EXT}>@{r.handle}</a>{r.ccity || r.city ? ` · ${r.ccity || r.city}` : ""}</span></div></div>
-                  <div className="row" style={{ gap: 8 }}>
-                    {booked.has(r.id) || (r.creator_id && bookedCreators.has(r.creator_id)) ? <span className="pill good">Booked</span> : r.client_decision === "approved" ? <span className="pill good">Approved</span> : r.client_decision === "declined" ? <span className="pill low">Declined</span> : <span className="pill ok">Waiting for you</span>}
-                    <div className="score sm" style={{ "--v": r.match_score ?? 50 }} title="Match score"><i>{r.match_score ?? "—"}</i></div>
-                  </div>
-                </div>
-                <div className="grid4" style={{ marginTop: 16 }}>
-                  <div><div className="lbl">Followers</div><b>{compact(r.cf ?? r.followers)}</b>{r.verified ? <div className="hint">From Instagram</div> : <div className="hint">Self-reported</div>}</div>
-                  <div><div className="lbl">Engagement</div><b>{r.engagement_rate != null ? `${r.engagement_rate}%` : "—"}</b> {r.engagement_rate != null && <span className={`pill ${b.tone}`}>{b.label}</span>}</div>
-                  <div><div className="lbl">Avg reel views</div><b>{compact(r.avg_views)}</b></div>
-                  <div><div className="lbl">Creator quote</div><b>{inr(r.rate_quote)}</b>{q && <details style={{ marginTop: 4 }}><summary className="hint" style={{ cursor: "pointer" }}>All-in {inr(q.total)}</summary><div className="hint" style={{ marginTop: 4 }}>Creator {inr(q.creatorFee)} · Colatch {q.basePct}% {inr(q.colatch - q.rushFee)}{q.rushFee ? ` · Rush ${RUSH_PCT}% ${inr(q.rushFee)}` : ""} · GST {inr(q.gstOnColatch)}{r.rate_quote && r.avg_views ? " · ₹" + (r.rate_quote / r.avg_views).toFixed(2) + " per view" : ""}{fr?.reason ? <><br /><b style={{ color: "var(--good)" }}>{fr.reason}</b></> : null}</div></details>}
-                    {sv && (sv.vsMarket || sv.vsAgency) ? <div className="save">{sv.vsMarket ? <span>{inr(sv.vsMarket)} under this creator's usual rate</span> : null}{sv.vsAgency ? <span>{inr(sv.vsAgency)} under agency pricing</span> : null}</div> : null}
-                    {fit && <span className={`fit ${fit.tone}`}>{fit.label}</span>}</div>
-                </div>
-                {r.team_note && <div className="note info" style={{ marginTop: 14 }}><b>Why we picked them:</b> {r.team_note}</div>}
-                {!r.team_note && r.match_reasons && <p className="hint" style={{ margin: "12px 0 0" }}>{r.match_reasons}</p>}
-                <div className="row" style={{ marginTop: 12, gap: 8 }}>
-                  {links.map((u, i) => <a key={u} className="btn sm" href={u} {...EXT}>Sample {i + 1} ↗</a>)}
-                  {brandEmail && r.creator_id && (saved.has(r.creator_id)
-                    ? <span className="hint" style={{ color: "var(--good)" }}>In your roster ✓</span>
-                    : <form action={saveRoster}><input type="hidden" name="token" value={token} /><input type="hidden" name="creator" value={r.creator_id} /><button className="btn sm">Save to my roster</button></form>)}
-                </div>
-                {booked.has(r.id) || (r.creator_id && bookedCreators.has(r.creator_id))
-                  ? <div className="note good" style={{ marginTop: 16 }}>Booked. Track this creator under "Campaign progress" below.</div>
-                  : <form action={approve} className="row" style={{ marginTop: 16 }}>
-                  <input type="hidden" name="token" value={token} />
-                  <input type="hidden" name="app" value={r.id} />
-                  <input className="in" name="note" style={{ flex: 1, minWidth: 200 }} placeholder="Comment for the Colatch team (optional)" defaultValue={r.client_note ?? ""} />
-                  <button className="btn" formAction={decline}>Not for us</button>
-                  {r.rate_quote ? <button className="btn plum">Approve</button> : <span className="hint">Fee being confirmed by the Colatch team</span>}
-                </form>}
-              </div>
-            );
-          })}
-          {!rows.length && <div className="panel empty"><b>Your shortlist is being prepared.</b>The Colatch team will add creators here. This page updates as soon as they do.</div>}
-        </div>
-        </section>
-        {deals.length > 0 && <div style={{ marginBottom: 34 }}>
-          <div className="spread" style={{ marginBottom: 12 }}><div className="h2" style={{ margin: 0 }}>Campaign progress</div><div className="row" style={{ gap: 8 }}><a className="btn sm" href={`/receipt/${params.token}`}>Value receipt</a><a className="btn sm" href={`/brief?again=${encodeURIComponent(token)}`}>Book again</a></div></div>
-          <div className="grid3">
-            <div className="panel kpi"><div className="k">Booked</div><div className="v">{inr(tSpend)}</div><div className="s">creator fees, {deals.length} {deals.length === 1 ? "creator" : "creators"}</div></div>
-            <div className="panel kpi"><div className="k">Views</div><div className="v">{compact(tViews)}</div><div className="s">{live.length} of {deals.length} posts live</div></div>
-            <div className="panel kpi"><div className="k">Cost per view</div><div className="v">{actualCpv != null ? "₹" + actualCpv.toFixed(2) : "—"}</div><div className="s">{promiseLine}</div></div>
-            <div className="panel kpi"><div className="k">Engagement</div><div className="v">{compact(tEng)}</div><div className="s">{tEng && liveSpend ? "₹" + (liveSpend / tEng).toFixed(2) + " per engagement" : "likes + comments"}</div></div>
-            <div className="panel kpi"><div className="k">Link clicks</div><div className="v">{compact(tClicks)}</div><div className="s">from tracked creator links</div></div>
-            <div className="panel kpi"><div className="k">Orders</div><div className="v">{tOrders || "—"}</div><div className="s">from creator codes</div></div>
-          </div>
-          <div className="panel scroll-x" style={{ marginTop: 14 }}><table className="tbl">
-            <thead><tr><th>Creator</th><th>Progress</th><th className="num">Views</th><th className="num">CPV</th><th className="num">Clicks</th><th>Post</th></tr></thead>
-            <tbody>{deals.map((d) => {
-              const done = railDone(d);
-              const at = done.lastIndexOf(true);
-              const post = d.live_at ? safeUrl(d.post_url) : null;
-              return (
-                <tr key={d.id}>
-                  <td><div className="who"><div className="ava" style={{ width: 32, height: 32, fontSize: 11 }}>{safeUrl(d.profile_pic) ? <img src={safeUrl(d.profile_pic)} alt="" /> : initials(d.name || d.handle)}</div><div><b>{d.name || d.handle}</b><span>{d.deliverable}</span></div></div></td>
-                  <td><span className="dots">{RAIL.map((r, i) => <i key={r.key} className={done[i] ? "on" : ""} title={r.label} />)}</span><div className="hint">{d.stage === "cancelled" ? "Cancelled" : at < 0 ? "Waiting for the creator to accept terms" : RAIL[at].label}</div>{priced[d.id] && <div className="hint">All-in {inr(priced[d.id].total)}{priced[d.id].frozen ? " (as paid)" : ""}</div>}</td>
-                  <td className="num">{compact(d.actual_views)}</td>
-                  <td className="num">{d.fee && d.actual_views ? "₹" + (d.fee / d.actual_views).toFixed(2) : "—"}</td>
-                  <td className="num">{d.clicks}</td>
-                  <td>
-                    {post ? <a className="link" href={post} {...EXT}>View ↗</a> : d.live_at && d.post_url ? <span className="hint">{String(d.post_url).slice(0, 60)}</span> : <span className="hint">Not live yet</span>}
-                    {d.live_at && !d.brand_signoff_at && <form action={signoff} style={{ marginTop: 6 }}><input type="hidden" name="token" value={token} /><input type="hidden" name="deal" value={d.id} /><label className="hint" style={{ display: "block" }}><input type="checkbox" name="public" value="1" defaultChecked /> creator may show it as proof</label><button className="btn sm plum">Sign off work</button></form>}
-                    {d.brand_signoff_at && <div className="hint" style={{ color: "var(--good)" }}>Signed off ✓</div>}
-                    {d.stage !== "cancelled" && (disputes[d.id]?.status === "open"
-                      ? <div style={{ marginTop: 6 }}><span className="pill mine">Dispute open</span></div>
-                      : <details style={{ marginTop: 6 }}>
-                          <summary className="hint" style={{ cursor: "pointer", minHeight: 44, display: "flex", alignItems: "center" }}>Something wrong? Raise a dispute</summary>
-                          {disputes[d.id] && <div className="hint" style={{ margin: "4px 0", maxWidth: 280 }}><span className={`pill ${disputes[d.id].status === "resolved" ? "good" : "low"}`}>{disputes[d.id].status === "resolved" ? "Resolved" : "Not upheld"}</span> {disputes[d.id].resolution}</div>}
-                          <form action={dispute} className="stack" style={{ gap: 6, marginTop: 6, minWidth: 240 }}>
-                            <input type="hidden" name="token" value={token} /><input type="hidden" name="deal" value={d.id} />
-                            <label className="hint" htmlFor={`dr-${d.id}`}>What it's about</label>
-                            <select className="in" id={`dr-${d.id}`} name="reason" required defaultValue="">{[<option key="" value="" disabled>Choose one</option>, ...Object.entries(REASONS).map(([key, l]) => <option key={key} value={key}>{l}</option>)]}</select>
-                            <label className="hint" htmlFor={`dd-${d.id}`}>What happened</label>
-                            <textarea className="in" id={`dd-${d.id}`} name="detail" rows={3} required minLength={10} maxLength={2000} placeholder="Dates, what was agreed, and what went wrong." />
-                            <button className="btn sm" style={{ minHeight: 44 }}>Send dispute</button>
-                          </form>
-                        </details>)}
-                    {d.live_at && !rated.has(d.id) && <form action={rate} className="row" style={{ gap: 4, marginTop: 6, flexWrap: "nowrap" }}><input type="hidden" name="token" value={token} /><input type="hidden" name="deal" value={d.id} /><select className="in" name="stars" style={{ width: "auto", padding: "4px 6px", fontSize: 12 }}>{[5, 4, 3, 2, 1].map((n) => <option key={n} value={n}>{"★".repeat(n)}</option>)}</select><button className="btn sm">Rate</button></form>}
-                  </td>
-                </tr>
-              );
-            })}</tbody>
-          </table></div>
-          {ranked.length > 1 && <p className="hint" style={{ margin: "10px 0 0" }}>Best value so far: <b>{ranked[0].name || ranked[0].handle}</b> at ₹{(ranked[0].fee / ranked[0].actual_views).toFixed(2)} per view.</p>}
-        </div>}
+            </Section>
+          ) : rows.length > 0 ? (
+            <div className="allclear"><b>Nothing needs you right now.</b> We'll email you when a draft is ready or a new creator is added.</div>
+          ) : null}
 
-        <div className="grid3" style={{ marginBottom: 22 }}>
-          <div className="panel kpi"><div className="k">Approved</div><div className="v">{approvedOrBooked.length} / {k.creators_needed || rows.length}</div><div className="s">creators, including booked</div></div>
-          <div className="panel kpi"><div className="k">Creator fees committed</div><div className="v">{inr(spend)}</div><div className="s">before Colatch fee + GST</div></div>
-          <div className="panel kpi"><div className="k">Expected views</div><div className="v">{compact(views)}</div><div className="s">{spend && views ? `≈ ₹${(spend / views).toFixed(2)} per view` : "from avg reel views"}</div></div>
-        </div>
+          {drafts.length > 0 && (
+            <Section id="drafts" title="Drafts waiting for your review" sub="Approve to let the creator post, or say what should change.">
+              <div className="v2b-drafts">{drafts.map((d) => {
+                const u = safeUrl(d.draft_url);
+                const left = Math.max(0, Number(d.revisions_included || 0) - Number(d.revisions_used || 0));
+                return (
+                  <Card key={d.id} className="v2b-draft">
+                    <div className="v2b-draft__head">
+                      <Avatar name={d.name || d.handle} initials={initials(d.name || d.handle)} src={safeUrl(d.profile_pic) || undefined} size={40} />
+                      <div className="v2b-draft__who"><b>{d.name || d.handle}</b><span className="hint">{d.deliverable}</span></div>
+                      {u ? <a className="btn sm" href={u} {...EXT}>Open the draft ↗</a> : null}
+                    </div>
+                    {!u && <p className="hint">Draft link: {String(d.draft_url || "").slice(0, 120)}</p>}
+                    {d.auto_approve_at && <p className="hint v2b-draft__auto">Approved automatically after {istWhen(d.auto_approve_at) || String(d.auto_approve_at).slice(0, 16).replace("T", " ") + " UTC"} if you don't reply</p>}
+                    <div className="v2b-draft__acts">
+                      <form action={approveDraft}><input type="hidden" name="token" value={token} /><input type="hidden" name="deal" value={d.id} /><button className="btn sm plum">Approve draft</button></form>
+                      <form action={requestChanges} className="v2b-draft__change"><input type="hidden" name="token" value={token} /><input type="hidden" name="deal" value={d.id} />
+                        <input className="in" name="note" required minLength={3} placeholder="What should change?" aria-label={`What should change in ${d.name || d.handle}'s draft?`} />
+                        <button className="btn sm">Request changes</button></form>
+                    </div>
+                    <p className="hint">{left > 0 ? `${left} revision ${left === 1 ? "round" : "rounds"} included` : "Included revision rounds are used up; more rounds are logged as extra."}</p>
+                  </Card>
+                );
+              })}</div>
+            </Section>
+          )}
 
-        {deals.some((d) => d.live_at) && <div className="panel pad" style={{ marginBottom: 22, background: "linear-gradient(135deg,#2E1B36,#1E1128)", color: "#F4EFE3", border: 0 }}>
-          <div className="lbl" style={{ color: "var(--gold-2)" }}>Value delivered by Colatch</div>
-          <div style={{ fontSize: 34, fontWeight: 300, marginTop: 6 }}>{inr(tot.saved + tot.adsEquivalent + tot.sales)}</div>
-          <div className="grid4" style={{ marginTop: 14 }}>
-            <div><div className="lbl" style={lblDim}>Saved vs market rates</div><b style={{ fontSize: 18 }}>{inr(tot.savedVsMarket)}</b></div>
-            <div><div className="lbl" style={lblDim}>Saved vs {base.agencyPct}% agency markup</div><b style={{ fontSize: 18 }}>{inr(tot.savedVsAgency)}</b></div>
-            <div><div className="lbl" style={lblDim}>Views, as paid-ads value</div><b style={{ fontSize: 18 }}>{inr(tot.adsEquivalent)}</b>{tot.adsMultiple ? <div className="small" style={{ opacity: 0.7 }}>{tot.adsMultiple.toFixed(1)}× your creator spend</div> : null}</div>
-            <div><div className="lbl" style={lblDim}>Sales from creator codes</div><b style={{ fontSize: 18 }}>{inr(tot.sales)}</b>{tot.roas ? <div className="small" style={{ opacity: 0.7 }}>{tot.roas.toFixed(1)}× return</div> : null}</div>
-          </div>
-          <p className="small" style={{ margin: "14px 0 0", opacity: 0.65 }}>How we count: market rate is each creator's own rate card, or the typical rate for their size. Agency markup baseline is {base.agencyPct}% (typical range 15–30%) against Colatch's {pct}%. Paid-ads value uses ₹{base.cpm} per 1,000 views. Sales come from the tracked codes and links.</p>
-        </div>}
-        {(rows.length > 0 || deals.length > 0) && <div className="panel pad" style={{ marginBottom: 18, background: "var(--ivory-2)", boxShadow: "none" }}>
-          <div className="spread"><h2 style={{ margin: 0 }}>What you'd give up going direct</h2>{brandEmail && <a className="btn sm" href={`/roster/${encodeURIComponent(token)}`}>My roster{saved.size ? ` (${saved.size})` : ""}</a>}</div>
-          <div className="loss">
-            <div><b>Payment held until verified</b><span>{atStake ? `${inr(atStake)} of your payments recorded and held; each creator is paid only after their post is checked live` : "Creators are paid only after their post is checked live by the Colatch team"}</span></div>
-            <div><b>Replacement help</b><span>If a creator drops out before posting, we suggest a matched replacement</span></div>
-            {k.promised_cpv ? <div><b>Agreed cost-per-view target</b><span>₹{Number(k.promised_cpv).toFixed(2)} per view, as agreed for this campaign</span></div> : null}
-            <div><b>Signed proof of work</b><span>Dated certificate with views, value and both sign-offs</span></div>
-            <div><b>Repeat booking rate</b><span>Rebook any creator through Colatch at 12% instead of {feePct(env)}%</span></div>
-            <div><b>Loyalty rate</b><span>{loyaltyGap > 0 ? `You're on ${brandFee.pct}% already (${brandFee.reason})` : "1 point off our fee for every ₹5L you spend in a year, down to 10%"}</span></div>
-          </div>
-        </div>}
-        {myCode && <div className="note info" style={{ marginBottom: 18 }}>Know another brand that needs creators? Share <code className="k">{origin}/r/{myCode}</code>. For 12 months you get credit off your Colatch invoices on every campaign they run.</div>}
+          <Section id="creators" title="Creators for this brief" sub={rows.length ? `${plural(rows.length, "creator", "creators")} picked by the Colatch team, best match first.` : undefined}>
+            {rows.length > 0 && <FilterBar label="Filter creators">
+              <FilterChips name="show" label="Show creators" current={show} hrefFor={sel} options={SHOW.map(([value, label]) => ({ value, label, count: count[value] }))} />
+            </FilterBar>}
+            {!rows.length
+              ? <EmptyState title="Your shortlist is being prepared." body="The Colatch team will add creators here. This page updates as soon as they do." action={<a className="btn sm" href="/faq">How shortlists work</a>} />
+              : !shown.length
+                ? <EmptyState title="No creators here." body="Nobody on your shortlist is in this group right now." action={<a className="btn sm" href={sel("all")}>Show all creators</a>} />
+                : <div className="v2b-cards">{shown.map(creatorCard)}</div>}
+          </Section>
 
+          {deals.length > 0 && (
+            <Section id="progress" title="Campaign progress" sub={`${plural(deals.length, "creator", "creators")} booked · ${live.length} live`}
+              actions={<><a className="btn sm" href={`/receipt/${params.token}`}>Value receipt</a><a className="btn sm" href={`/brief?again=${encodeURIComponent(token)}`}>Book again</a></>}>
+              <MiniStats label="Results so far" items={[
+                { label: "Booked", value: inrShort(tSpend), title: inrFull(tSpend), note: `creator fees, ${plural(deals.length, "creator", "creators")}` },
+                { label: "Engagement", value: compact(tEng), note: tEng && liveSpend ? "₹" + (liveSpend / tEng).toFixed(2) + " per engagement" : "likes + comments" },
+                { label: "Link clicks", value: compact(tClicks), note: "from tracked creator links" },
+                { label: "Orders", value: tOrders || "—", note: "from creator codes" },
+              ]} />
+              <DataTable caption="Booked creators" rows={deals} columns={dealColumns} />
+              {ranked.length > 1 && <p className="hint v2b-best">Best value so far: <b>{ranked[0].name || ranked[0].handle}</b> at ₹{(ranked[0].fee / ranked[0].actual_views).toFixed(2)} per view.</p>}
+            </Section>
+          )}
 
-
-
+          {roomDeals.length > 0 && (
+            <Section id="room" className="dr-room" title="Messages, products and usage" sub={unreadTotal ? `${plural(unreadTotal, "new message", "new messages")}` : "One thread per booked creator, with the Colatch team in it."}>
+              <div className="stack">{roomDeals.map((d) => {
+                const unread = unreadBy[d.id] || 0;
+                const ships = shipBy[d.id] || [];
+                const u = usageStatus(d);
+                const closedDeal = d.stage === "cancelled" || d.pay_status === "refunded";
+                return (
+                  <details key={d.id} id={`deal-${d.id}`} className="panel pad dr-panel" open={unread > 0}>
+                    <summary className="dr-sum">
+                      <span className="dr-sum-who"><b>{d.name || d.handle}</b><span className="hint">{d.deliverable}</span></span>
+                      <span className="row" style={{ gap: 6 }}>
+                        {unread > 0 && <span className="pill dr-new">{unread} new</span>}
+                        {ships.length > 0 && <ShipPill status={ships[ships.length - 1].status} />}
+                        {u.state === "expired" && <span className="dr-ship dr-ship-returned">Usage expired</span>}
+                      </span>
+                    </summary>
+                    <div className="dr-room-body">
+                      {(ships.length > 0 || u.state !== "none") && <div className="dr-room-side">
+                        <ShipmentStatus shipments={ships} showCarrier={false} title={ships.length ? "Product" : ""} />
+                        {u.state !== "none" && <UsageLine d={d} style={{ marginTop: ships.length ? 12 : 0 }} />}
+                      </div>}
+                      <DealThread id={`thread-${d.id}`} messages={threads[d.id] || []} me="brand" unread={unread} action={brandMessage} canPost={!closedDeal} compact
+                        hidden={[["token", token], ["deal", d.id]]} mid={crypto.randomUUID()} names={{ creator: d.name || d.handle }} readOnlyNote="This deal is closed, so messages are off." />
+                    </div>
+                  </details>
+                );
+              })}</div>
+            </Section>
+          )}
+        </Grid>
       </div>
     </PublicShell>
   );
-}
-
-function escapeHtml(s) {
-  return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }

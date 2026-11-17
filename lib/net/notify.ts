@@ -14,7 +14,10 @@ export type Template =
   | 'creator_approved' | 'creator_declined' | 'deal_created' | 'draft_submitted' | 'changes_requested'
   | 'draft_approved' | 'post_live' | 'payout_eligible' | 'payout_sent' | 'brand_payment_recorded'
   | 'referral_earned' | 'password_reset' | 'team_invite' | 'account_alert'
-  | 'verify_email' | 'brand_welcome' | 'new_brand' | 'dispute_opened' | 'dispute_resolved';
+  | 'verify_email' | 'brand_welcome' | 'new_brand' | 'dispute_opened' | 'dispute_resolved'
+  // Scheduled reminders (lib/net/jobs.ts)
+  | 'reminder_brand_unpaid' | 'reminder_brand_unpaid_team' | 'reminder_draft_due' | 'reminder_post_due' | 'reminder_payout_stuck'
+  | 'usage_expiring' | 'usage_expired';
 
 type Rendered = { subject: string; text: string };
 
@@ -51,6 +54,14 @@ export function render(t: Template, p: Record<string, any>): Rendered {
     case 'dispute_opened': return { subject: `Dispute raised: ${p.title}`, text: `${p.by} raised a dispute on "${p.title}": ${p.reason}\n\n${p.detail || ''}\n\nReview it: ${u('/team/disputes')}` };
     case 'dispute_resolved': return { subject: `Dispute ${p.outcome}: ${p.title}`, text: `Hi ${p.name || 'there'},\n\nThe Colatch team ${p.outcome} the dispute on "${p.title}".\n\n${p.resolution || ''}${sign}` };
     case 'account_alert': return { subject: p.subject || 'Colatch account alert', text: `${p.text || ''}${sign}` };
+    // Scheduled reminders (lib/net/jobs.ts). Each is sent once per deal and date.
+    case 'reminder_brand_unpaid': return { subject: `Payment pending: ${p.title}`, text: `Hi ${p.name || 'there'},\n\nThe creator accepted the terms for "${p.title}" ${p.days} day${Number(p.days) === 1 ? '' : 's'} ago. Work starts once your payment is received, so the post date doesn't slip.\n\nPayment details and your campaign: ${u(`/shortlist/${p.token}`)}\n\nAlready paid? Reply with the bank reference (UTR) and we'll match it.${sign}` };
+    case 'reminder_brand_unpaid_team': return { subject: `Brand hasn't paid: ${p.title}`, text: `${p.creator} accepted the terms for "${p.title}" ${p.days} day${Number(p.days) === 1 ? '' : 's'} ago and the brand payment is not recorded yet. The brand was reminded too.\n\nFollow up: ${u(`/team/deals/${p.dealId}`)}` };
+    case 'reminder_draft_due': return { subject: `Draft due soon: ${p.title}`, text: `Hi ${p.name || 'there'},\n\nYour draft for "${p.title}" is due before the go-live date${p.due ? ` (${p.due})` : ''}. Upload it so the brand has time to review: ${u(`/creator/deals/${p.dealId}`)}${sign}` };
+    case 'reminder_post_due': return { subject: `Time to post: ${p.title}`, text: `Hi ${p.name || 'there'},\n\nYour draft for "${p.title}" is approved and the go-live date${p.due ? ` (${p.due})` : ''} is here. Post it and paste the live link so we can verify it and release your payment: ${u(`/creator/deals/${p.dealId}`)}${sign}` };
+    case 'reminder_payout_stuck': return { subject: `Payout approved, not sent: ${p.creator}`, text: `The payout of ${p.amount} to ${p.creator} for "${p.title}" was approved ${p.days} day${Number(p.days) === 1 ? '' : 's'} ago but is not recorded as sent.\n\nSend it and record the UTR: ${u(`/team/deals/${p.dealId}`)}` };
+    case 'usage_expiring': return { subject: `Usage rights end in ${p.days} day${Number(p.days) === 1 ? '' : 's'}: ${p.title}`, text: `${p.team ? '' : `Hi ${p.name || 'there'},\n\n`}The usage rights for ${p.creator}'s content on "${p.title}" end on ${p.expires}${p.channels ? ` (${p.channels})` : ''}. After that date the content should come down from paid and owned channels, unless the rights are extended.\n\n${p.team ? `Deal: ${u(`/team/deals/${p.dealId}`)}` : `To extend, reply to this email. Your campaign: ${u(`/shortlist/${p.token}`)}${sign}`}` };
+    case 'usage_expired': return { subject: `Usage rights ended: ${p.title}`, text: `${p.team ? '' : `Hi ${p.name || 'there'},\n\n`}The usage rights for ${p.creator}'s content on "${p.title}" ended on ${p.expires}${p.channels ? ` (${p.channels})` : ''}. Please take the content down from ads and owned channels, or ask us to extend the rights.\n\n${p.team ? `Deal: ${u(`/team/deals/${p.dealId}`)}` : `Your campaign: ${u(`/shortlist/${p.token}`)}${sign}`}` };
   }
 }
 

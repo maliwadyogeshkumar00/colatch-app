@@ -1,5 +1,7 @@
 import { redirect } from "next/navigation";
 import PublicShell from "../../_ui/PublicShell";
+import { PageHeader, Section, Card, AsideCard } from "@/components/ui";
+import { StatusTiles, istDay } from "@/components/creator/Parts";
 import Flash, { flashUrl } from "../../_ui/flash";
 import { env } from "@/lib/net/env";
 import { currentBrand, revokeSessions, startBrandSession } from "@/lib/net/creatorAuth";
@@ -70,53 +72,89 @@ async function resend() {
 
 export default async function Page({ searchParams }) {
   const b = await me();
-  const a = await env.DB.prepare("SELECT name, company, phone, website, gstin, verified_by FROM brand_accounts WHERE id=?").bind(b.id).first();
+  const a = await env.DB.prepare("SELECT name, company, phone, website, gstin, verified_by, last_login_at, created_at FROM brand_accounts WHERE id=?").bind(b.id).first();
+  // Read-only, for the status strip: campaigns on this account and the last security change. Failures only hide a figure.
+  const camps = (await env.DB.prepare("SELECT COUNT(*) n FROM campaigns WHERE brand_account_id=?").bind(b.id).first().catch(() => null))?.n ?? null;
+  const sec = await env.DB.prepare("SELECT action, at FROM audit_log WHERE actor_kind='brand' AND actor_id=? AND action IN ('brand.password_changed','brand.sessions_revoked') ORDER BY at DESC LIMIT 1").bind(b.id).first().catch(() => null);
+  const details = [a?.name, a?.company, a?.phone, a?.website, a?.gstin].filter(Boolean).length;
+  const tiles = [
+    { label: "Email", value: b.verified ? "Confirmed" : "Not confirmed", tone: b.verified ? "ok" : "todo", note: b.verified ? b.email : "Confirm it to see your campaigns", href: b.verified ? undefined : "#email" },
+    { label: "Brand check", value: a?.verified_by ? "Verified" : "Not yet verified", tone: a?.verified_by ? "ok" : "todo", note: a?.verified_by ? "Checked by the Colatch team" : a?.website ? "The team checks your website" : "Add your website so the team can check", href: a?.verified_by ? undefined : "#profile" },
+    { label: "Invoice details", value: a?.gstin ? "GSTIN added" : "No GSTIN", tone: a?.gstin ? "ok" : "info", note: `${details} of 5 details filled in`, href: "#profile" },
+    { label: "Security", value: sec ? (sec.action === "brand.password_changed" ? "Password changed" : "Signed out everywhere") : "Password set", tone: "info",
+      note: sec ? istDay(sec.at) : a?.last_login_at ? `Last sign-in ${istDay(a.last_login_at)}` : a?.created_at ? `Account since ${istDay(a.created_at)}` : null, href: "#password" },
+  ];
+  const hero = (
+    <PageHeader variant="hero" crumbs={[{ label: "My campaigns", href: "/brand" }, { label: "Settings" }]}
+      eyebrow={a?.company || b.company || "Your brand"} title="Account <b>settings</b>" sub="Your details for invoices, your sign-in and the devices you're signed in on."
+      meta={[
+        ...(camps != null ? [{ label: "Campaigns", value: Number(camps) }] : []),
+        { label: "Details", value: `${details}/5` },
+      ]} />
+  );
   return (
-    <PublicShell mode="client" brandName={b.name || b.email} path="/brand/settings">
-      <div className="wrap narrow" style={{ maxWidth: 620, padding: "20px 0 0" }}>
-        <h1 style={{ margin: "0 0 16px" }}>Settings</h1>
-        <div style={{ marginBottom: 16 }}><Flash sp={searchParams} /></div>
+    <PublicShell mode="client" brandName={b.name || b.email} path="/brand/settings" hero={hero}>
+      <div className="v2b v2b-own-cta">
+        <div className="v2b-flash"><Flash sp={searchParams} /></div>
+        <StatusTiles label="Your account at a glance" items={tiles} />
+        <div className="v2b-setcols">
+          <div className="v2b-setcol">
+          <Section id="email" title="Email" sub="Briefs sent from this address show up in your campaigns once it's confirmed.">
+            <Card>
+              <p className="row" style={{ gap: 10, alignItems: "center", flexWrap: "wrap", margin: 0 }}>
+                <span>{b.email}</span>
+                {b.verified ? <span className="pill good">Confirmed</span> : <span className="pill ok">Not confirmed</span>}
+                {a?.verified_by && <span className="pill mine">Brand verified by Colatch</span>}
+              </p>
+              {!b.verified && <form action={resend} style={{ marginTop: 12 }}>
+                <p className="hint">Confirm your email to see campaigns you've sent from it.</p>
+                <button className="btn plum" style={{ minHeight: 44 }}>Send confirmation link</button>
+              </form>}
+            </Card>
+          </Section>
 
-        <section className="panel pad" aria-labelledby="h-email" style={{ marginBottom: 20 }}>
-          <h2 id="h-email">Email</h2>
-          <p className="row" style={{ gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-            <span>{b.email}</span>
-            {b.verified ? <span className="pill good">Confirmed</span> : <span className="pill ok">Not confirmed</span>}
-            {a?.verified_by && <span className="pill mine">Brand verified by Colatch</span>}
-          </p>
-          {!b.verified && <form action={resend}>
-            <p className="hint">Confirm your email to see campaigns you've sent from it.</p>
-            <button className="btn plum" style={{ minHeight: 44 }}>Send confirmation link</button>
-          </form>}
-        </section>
+          <Section id="profile" title="Your details" sub="Used on your shortlists and invoices.">
+            <Card>
+              <form action={saveProfile} aria-label="Your details">
+                <div className="form-grid">
+                  <div className="fld"><label htmlFor="f-bs-name">Your name</label><input id="f-bs-name" name="name" required maxLength={120} defaultValue={a?.name ?? ""} autoComplete="name" /></div>
+                  <div className="fld"><label htmlFor="f-bs-company">Company or brand</label><input id="f-bs-company" name="company" required maxLength={160} defaultValue={a?.company ?? ""} autoComplete="organization" /></div>
+                  <div className="fld"><label htmlFor="f-bs-phone">Phone <span className="opt">— optional</span></label><input id="f-bs-phone" name="phone" type="tel" defaultValue={a?.phone ?? ""} autoComplete="tel" /></div>
+                  <div className="fld"><label htmlFor="f-bs-site">Website <span className="opt">— optional</span></label><input id="f-bs-site" name="site" defaultValue={a?.website ?? ""} placeholder="yourbrand.com" autoComplete="url" /></div>
+                  <div className="fld"><label htmlFor="f-bs-gstin">GSTIN <span className="opt">— optional, for invoices</span></label><input id="f-bs-gstin" name="gstin" maxLength={15} defaultValue={a?.gstin ?? ""} style={{ textTransform: "uppercase" }} /></div>
+                </div>
+                <button className="btn-foil" style={{ marginTop: 18 }}>Save details</button>
+              </form>
+            </Card>
+          </Section>
 
-        <form className="panel pad" action={saveProfile} aria-labelledby="h-profile" style={{ marginBottom: 20 }}>
-          <h2 id="h-profile">Your details</h2>
-          <div className="form-grid">
-            <div className="fld"><label htmlFor="f-bs-name">Your name</label><input id="f-bs-name" name="name" required maxLength={120} defaultValue={a?.name ?? ""} autoComplete="name" /></div>
-            <div className="fld"><label htmlFor="f-bs-company">Company or brand</label><input id="f-bs-company" name="company" required maxLength={160} defaultValue={a?.company ?? ""} autoComplete="organization" /></div>
-            <div className="fld"><label htmlFor="f-bs-phone">Phone <span className="opt">— optional</span></label><input id="f-bs-phone" name="phone" type="tel" defaultValue={a?.phone ?? ""} autoComplete="tel" /></div>
-            <div className="fld"><label htmlFor="f-bs-site">Website <span className="opt">— optional</span></label><input id="f-bs-site" name="site" defaultValue={a?.website ?? ""} placeholder="yourbrand.com" autoComplete="url" /></div>
-            <div className="fld"><label htmlFor="f-bs-gstin">GSTIN <span className="opt">— optional, for invoices</span></label><input id="f-bs-gstin" name="gstin" maxLength={15} defaultValue={a?.gstin ?? ""} style={{ textTransform: "uppercase" }} /></div>
           </div>
-          <button className="btn-foil" style={{ marginTop: 18 }}>Save details</button>
-        </form>
+          <div className="v2b-setcol">
+          <Section id="password" title="Change password" sub="Changing it signs you out on every other device.">
+            <Card>
+              <form action={changePassword} aria-label="Change password">
+                <div className="stack">
+                  <div className="fld"><label htmlFor="f-bs-current">Current password</label><input id="f-bs-current" name="current" type="password" required autoComplete="current-password" /></div>
+                  <div className="fld"><label htmlFor="f-bs-new">New password <span className="opt">— at least 10 characters</span></label><input id="f-bs-new" name="password" type="password" required minLength={10} autoComplete="new-password" /></div>
+                  <div className="fld"><label htmlFor="f-bs-confirm">Type it again</label><input id="f-bs-confirm" name="confirm" type="password" required minLength={10} autoComplete="new-password" /></div>
+                </div>
+                <button className="btn plum" style={{ marginTop: 18, minHeight: 44 }}>Change password</button>
+              </form>
+            </Card>
+          </Section>
 
-        <form className="panel pad" action={changePassword} aria-labelledby="h-pw" style={{ marginBottom: 20 }}>
-          <h2 id="h-pw">Change password</h2>
-          <div className="stack">
-            <div className="fld"><label htmlFor="f-bs-current">Current password</label><input id="f-bs-current" name="current" type="password" required autoComplete="current-password" /></div>
-            <div className="fld"><label htmlFor="f-bs-new">New password <span className="opt">— at least 10 characters</span></label><input id="f-bs-new" name="password" type="password" required minLength={10} autoComplete="new-password" /></div>
-            <div className="fld"><label htmlFor="f-bs-confirm">Type it again</label><input id="f-bs-confirm" name="confirm" type="password" required minLength={10} autoComplete="new-password" /></div>
+          <Section id="out" title="Signed in somewhere else?" sub="Signs you out on every phone and computer, including this one.">
+            <Card>
+              <form action={signOutEverywhere}>
+                <button className="btn" style={{ minHeight: 44 }}>Sign out everywhere</button>
+              </form>
+            </Card>
+          </Section>
+          <AsideCard tone="night" eyebrow="Why it matters" title="Verified brands get more applicants" foot={<><a href="/brand">My campaigns</a><a href="/faq">FAQ</a></>}>
+            <p className="small">A confirmed email links the briefs you sent from it. Add your website and GSTIN so the Colatch team can verify your brand and invoice you correctly.</p>
+          </AsideCard>
           </div>
-          <button className="btn plum" style={{ marginTop: 18, minHeight: 44 }}>Change password</button>
-        </form>
-
-        <form className="panel pad" action={signOutEverywhere} aria-labelledby="h-out">
-          <h2 id="h-out">Signed in somewhere else?</h2>
-          <p className="muted">Signs you out on every phone and computer, including this one.</p>
-          <button className="btn" style={{ minHeight: 44 }}>Sign out everywhere</button>
-        </form>
+        </div>
       </div>
     </PublicShell>
   );

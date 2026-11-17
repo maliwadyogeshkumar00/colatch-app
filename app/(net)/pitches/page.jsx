@@ -1,4 +1,7 @@
-import PublicShell, { Hero } from "../_ui/PublicShell";
+import PublicShell from "../_ui/PublicShell";
+import { PageHeader, KpiStrip, Grid, Section, AsideCard, FilterBar, FilterChips, EmptyState, Avatar } from "@/components/ui";
+import { ShareBar } from "@/components/brand/Facts";
+import { inrShort } from "@/lib/net/dashboard";
 import { env } from "@/lib/net/env";
 import { inr, compact } from "@/lib/net/creators";
 import { scrubContacts } from "@/lib/net/guard";
@@ -16,9 +19,9 @@ const CSS = `
 .pg-ideas .frow .fl{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--ink-4);font-weight:700;min-width:70px}
 .pg-ideas .fc{font-size:12.5px;padding:6px 12px;border-radius:999px;border:1px solid var(--line-3);color:var(--ink-2);background:var(--paper);font-weight:500}
 .pg-ideas .fc.on{background:var(--p900);color:#fff;border-color:var(--p900)}
-.pg-ideas .board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px}
-@media(max-width:1000px){.pg-ideas .board{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(max-width:640px){.pg-ideas .board{grid-template-columns:1fr}}
+.pg-ideas .ideas-board{display:grid;grid-template-columns:minmax(0,1fr);gap:16px}
+.pg-ideas .idea{min-width:0}
+@media(min-width:700px){.pg-ideas .ideas-board{grid-template-columns:repeat(2,minmax(0,1fr))}}
 .pg-ideas .idea{display:flex;flex-direction:column;background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:20px;box-shadow:var(--sh-2);transition:transform .2s var(--ease),box-shadow .2s var(--ease)}
 .pg-ideas .idea:hover{transform:translateY(-3px);box-shadow:var(--sh-3)}
 .pg-ideas .occ{align-self:flex-start;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:700;color:var(--gold-deep);background:rgba(232,184,75,.14);padding:4px 10px;border-radius:999px}
@@ -27,7 +30,7 @@ const CSS = `
 .pg-ideas .by{display:flex;gap:10px;align-items:center;margin-top:auto;padding-top:14px;border-top:1px solid var(--line-2)}
 .pg-ideas .by .ava{width:34px;height:34px;font-size:12px}
 .pg-ideas .by b{display:block;font-size:13.5px}
-.pg-ideas .by span{display:block;font-size:12px;color:var(--ink-4)}
+.pg-ideas .by div span{display:block;font-size:12px;color:var(--ink-4)}
 .pg-ideas .price{display:flex;justify-content:space-between;align-items:center;margin-top:14px}
 .pg-ideas .price .amt{font-size:22px;font-weight:300;letter-spacing:-.02em;color:var(--head)}
 .pg-ideas .price small{display:block;font-size:11px;color:var(--ink-4)}
@@ -50,49 +53,72 @@ export default async function Page({ searchParams }) {
   const rows = (await env.DB.prepare(`${PITCH_SELECT}${where.length ? " AND " + where.join(" AND ") : ""} ORDER BY p.created_at DESC LIMIT 60`).bind(...binds).all()).results ?? [];
   const cats = ((await env.DB.prepare("SELECT DISTINCT category FROM creator_pitches WHERE status='live' AND category IS NOT NULL ORDER BY category").all()).results ?? []).map((r) => r.category);
 
+  const filtered = Boolean(sp.cat || sp.occ || sp.fmt);
+  const prices = rows.map((p) => Number(p.price) || 0).filter((n) => n > 0).sort((a, b) => a - b);
+  const verified = rows.filter((p) => p.verified).length;
+  const fmtParts = PITCH_FORMATS.map((f) => ({ label: f, n: rows.filter((p) => p.format === f).length, href: chipHref({ ...sp, fmt: undefined }, "fmt", f) }));
   const hero = (
-    <Hero eyebrow="The Colatch idea board" title="Ideas creators are <b>dying to make.</b>">
-      <p>Every card is a creator's own pitch, with the price up front. Book the one that fits your brand and Colatch handles the rest: the creator, the contract, the payment and the proof. No briefing calls, no back and forth.</p>
-    </Hero>
+    <PageHeader variant="hero" eyebrow="The Colatch idea board" title="Ideas creators are <b>dying to make.</b>"
+      sub="Every card is a creator's own pitch, with the price up front. Book the one that fits your brand and Colatch handles the rest: the creator, the contract, the payment and the proof. No briefing calls, no back and forth." />
   );
-
-  const Row = ({ label, k, opts }) => (
-    <div className="frow"><span className="fl">{label}</span>
-      <a className={`fc ${!sp[k] ? "on" : ""}`} href={chipHref(sp, k, "")}>All</a>
-      {opts.map((o) => <a key={o} className={`fc ${sp[k] === o ? "on" : ""}`} href={chipHref(sp, k, o)}>{o}</a>)}
-    </div>
+  const Chips = ({ label, k, opts }) => (
+    <FilterChips name={k} label={`Filter by ${label.toLowerCase()}`} current={sp[k] || ""} hrefFor={(v) => chipHref(sp, k, v)}
+      options={[{ value: "", label: `${label}: all` }, ...opts.map((o) => ({ value: o, label: o }))]} />
   );
 
   return (
     <PublicShell mode="client" hero={hero}>
-      <div className="pg-ideas">
+      <div className="pg-ideas v2b">
         <style dangerouslySetInnerHTML={{ __html: CSS }} />
-        <div className="filters">
-          <Row label="Moment" k="occ" opts={PITCH_OCCASIONS} />
-          <Row label="Format" k="fmt" opts={PITCH_FORMATS} />
-          {cats.length > 0 && <Row label="Brand" k="cat" opts={cats} />}
-        </div>
-        {rows.length === 0 ? (
-          <div className="panel empty"><b>No ideas match that yet.</b>Clear a filter, or <a className="link" href="/brief">post your own brief</a> and we usually send a shortlist within 2 working days.</div>
-        ) : (
-          <div className="board">{rows.map((p) => {
-            const who = firstName(p.name);
-            const facts = [p.followers ? compact(p.followers) + " followers" : null, p.city, String(p.niche || "").split(",")[0].trim() || null].filter(Boolean).join(" · ");
-            return (
-              <a key={p.id} className="idea" href={`/pitches/${p.id}`}>
-                <span className="occ">{p.occasion || "Any time"} · {p.format}</span>
-                <h3>{scrubContacts(p.title).text}</h3>
-                <p>{scrubContacts(p.idea).text}</p>
-                <div className="by">
-                  <div className="ava">{who[0]}</div>
-                  <div><b>{who}{p.verified ? " ✓" : ""}</b><span>{facts || "Colatch creator"}</span></div>
-                  {p.rating != null && <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 600 }}>★ {Number(p.rating).toFixed(1)}</span>}
-                </div>
-                <div className="price"><div><div className="amt">{inr(p.price)}</div><small>creator's price{p.category ? ` · for ${p.category.toLowerCase()} brands` : ""}</small></div><span className="btn sm plum">Book this idea</span></div>
-              </a>
-            );
-          })}</div>
-        )}
+        {rows.length > 0 && <KpiStrip label="Ideas at a glance" items={[
+          { label: filtered ? "Ideas matching" : "Ideas live", value: rows.length, foot: filtered ? "with these filters" : "newest first" },
+          { featured: true, label: "Prices from", value: inrShort(prices[0] || 0), title: inr(prices[0] || 0), foot: prices.length > 1 ? `up to ${inrShort(prices[prices.length - 1])}, creator's price` : "creator's price" },
+          { label: "Instagram-verified", value: verified, foot: `of ${rows.length} creators` },
+          { label: "Booked by brands", value: rows.reduce((a, p) => a + (Number(p.requests) || 0), 0), foot: "booking requests so far" },
+        ]} />}
+        <Grid aside={<>
+          <AsideCard tone="night" eyebrow="How booking works" title="Pick an idea. We do the rest." foot={<a href="/faq">What brands pay</a>}>
+            <ol className="v2b-steps"><li>Book the idea with your name and work email. No payment now.</li><li>We confirm the creator's dates, usually within 2 working days.</li><li>You approve, fund the deal through Colatch and see the post, views and proof in one place.</li></ol>
+          </AsideCard>
+          {rows.length > 0 && <AsideCard eyebrow="On the board" title="Ideas by format">
+            <ShareBar label="Ideas by format" parts={fmtParts.map((f) => ({ label: f.label, n: f.n, text: String(f.n) }))} />
+          </AsideCard>}
+          <AsideCard eyebrow="Don't see it?" title="Send your own brief" foot={<a href="/join">I'm a creator: pitch an idea</a>}>
+            <p className="small">Describe what you need and the Colatch team usually sends a shortlist of matched creators within 2 working days.</p>
+            <p><a className="btn sm" href="/brief">Post a brief</a></p>
+          </AsideCard>
+        </>}>
+          <Section id="ideas" title="Creator ideas" sub={filtered ? "Filtered. Tap a chip again to clear it." : "Every price is the creator's own. Colatch's fee and GST are shown before you book."}>
+            <FilterBar label="Filter ideas">
+              <Chips label="Moment" k="occ" opts={PITCH_OCCASIONS} />
+              <Chips label="Format" k="fmt" opts={PITCH_FORMATS} />
+              {cats.length > 0 && <Chips label="Brand" k="cat" opts={cats} />}
+            </FilterBar>
+            {rows.length === 0 ? (
+              filtered
+                ? <EmptyState title="No ideas match that yet." body="Clear the filters to see every idea, or post your own brief and we usually send a shortlist within 2 working days." action={<><a className="btn sm" href="/pitches">Clear the filters</a><a className="btn sm plum" href="/brief">Post a brief</a></>} />
+                : <EmptyState title="No ideas posted yet." body="Creator pitches show up here with their price as soon as they're posted. You don't have to wait: post a brief and the Colatch team usually sends a shortlist of matched creators within 2 working days." action={<><a className="btn sm plum" href="/brief">Post a brief</a><a className="btn sm" href="/join">I'm a creator: join free</a></>} />
+            ) : (
+              <div className="ideas-board">{rows.map((p) => {
+                const who = firstName(p.name);
+                const facts = [p.followers ? compact(p.followers) + " followers" : null, p.city, String(p.niche || "").split(",")[0].trim() || null].filter(Boolean).join(" · ");
+                return (
+                  <a key={p.id} className="idea" href={`/pitches/${p.id}`}>
+                    <span className="occ">{p.occasion || "Any time"} · {p.format}</span>
+                    <h3>{scrubContacts(p.title).text}</h3>
+                    <p>{scrubContacts(p.idea).text}</p>
+                    <div className="by">
+                      <Avatar name={who} size={34} />
+                      <div><b>{who}{p.verified ? " ✓" : ""}</b><span>{facts || "Colatch creator"}</span></div>
+                      {p.rating != null && <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 600 }}>★ {Number(p.rating).toFixed(1)}</span>}
+                    </div>
+                    <div className="price"><div><div className="amt">{inr(p.price)}</div><small>creator's price{p.category ? ` · for ${p.category.toLowerCase()} brands` : ""}</small></div><span className="btn sm plum">Book this idea</span></div>
+                  </a>
+                );
+              })}</div>
+            )}
+          </Section>
+        </Grid>
       </div>
     </PublicShell>
   );

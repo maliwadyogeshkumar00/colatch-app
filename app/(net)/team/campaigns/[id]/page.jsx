@@ -16,6 +16,9 @@ import { marketRate } from "@/lib/net/value";
 import { colatchScore } from "@/lib/net/score";
 import { notify } from "@/lib/net/notify";
 import { audit, logError } from "@/lib/net/security";
+import { APP_STATUS_OPTIONS, appStatusLabel, plural, day } from "@/components/team/labels";
+import { inrShort } from "@/lib/net/dashboard";
+import { PageHeader, KpiStrip, StatusRail, DataTable, Grid, Section, Card, AsideCard, Pill, Tags, Split } from "@/components/ui";
 
 export const metadata = { title: "Campaign", robots: { index: false, follow: false } };
 
@@ -41,6 +44,8 @@ async function handle(fd, forced) {
          creators_needed=?, budget_note=?, budget_total=?, deadline=?, shoot_date=?, pay_type=?, revisions=?, usage_rights=?, payment_days=?, approve_hours=?, mandatories=?, exclusions=?, brand_url=?, promised_cpv=?, brand_category=?, reward_value=?, commission_pct=?, funded=? ${action === "approve" ? ", status='open', is_open=CASE WHEN pitch_id IS NULL THEN 1 ELSE 0 END" : ""} WHERE id=?`
       ).bind(v.title, v.brand, v.brief, v.deliverables, v.talent_types, v.niche, v.city, v.languages, v.gender, v.min_followers, v.max_followers,
         v.creators_needed, v.budget_note, v.budget_total, v.deadline, v.shoot_date, v.pay_type, v.revisions, v.usage_rights, v.payment_days, v.approve_hours, v.mandatories, v.exclusions, v.brand_url, v.promised_cpv, v.brand_category, v.reward_value, v.commission_pct, v.funded, id).run();
+      // Recorded so Icon early access counts its 24 hours from publication, not from when the brief was written.
+      if (action === "approve") await audit(actor, "campaign.approve", "campaign", id, null);
       msg = (action === "approve" ? "Published. Matching creators can see it now." : "Saved.") + (sb.found ? ` ${sb.found} contact detail(s) were hidden from the creator brief.` : "");
     } else if (["close", "reject", "reopen"].includes(action)) {
       const st = action === "close" ? "closed" : action === "reject" ? "rejected" : "open";
@@ -146,7 +151,13 @@ export default async function Page({ params, searchParams }) {
   try { ai = JSON.parse(k.ai_notes || "{}"); } catch {}
   const flags = checkBrief([k.raw_brief, k.brief, k.title, k.brand].join(" "));
   const slApps = apps.filter((a) => ["shortlisted", "accepted"].includes(a.status));
-  const slTotal = slApps.length, slOk = slApps.filter((a) => a.client_decision === "approved").length, slNo = slApps.filter((a) => a.client_decision === "declined").length;
+  // Same rule as the brand's shortlist page: a booked creator counts as approved even without a client_decision.
+  const dealRows = (await env.DB.prepare("SELECT application_id, creator_id, stage FROM creator_deals WHERE campaign_id=?").bind(id).all().catch(() => null))?.results ?? [];
+  const bookedApps = new Set(dealRows.filter((x) => x.stage !== "cancelled" && x.application_id).map((x) => x.application_id));
+  const bookedCreators = new Set(dealRows.filter((x) => x.stage !== "cancelled").map((x) => x.creator_id));
+  const isBooked = (a) => bookedApps.has(a.id) || Boolean(a.creator_id && bookedCreators.has(a.creator_id));
+  const slTotal = slApps.length, slOk = slApps.filter((a) => a.client_decision === "approved" || isBooked(a)).length, slNo = slApps.filter((a) => a.client_decision === "declined" && !isBooked(a)).length;
+  const slBooked = slApps.filter(isBooked).length;
   const h = headers();
   const origin = `${h.get("x-forwarded-proto") || "https"}://${h.get("host")}`;
   const inviteText = (name) => `Hi ${name}! Colatch here. We have a paid opportunity that fits your profile: "${k.title}"${k.budget_note ? ` (${k.budget_note})` : ""}. See the brief and apply: ${origin}/creator/o/${k.slug}`;
@@ -158,14 +169,88 @@ export default async function Page({ params, searchParams }) {
   const esc = (s) => String(s).replace(/</g, "&lt;");
   const nowTs = new Date().toISOString().replace("T", " ").slice(0, 19);
 
+  // Read-only roll-up of the deals on this brief for the KPI strip and the progress rail. A failure only blanks those figures.
+  const booked = (await env.DB.prepare("SELECT COUNT(*) n, COALESCE(SUM(fee),0) fee, SUM(CASE WHEN live_at IS NOT NULL THEN 1 ELSE 0 END) live FROM creator_deals WHERE campaign_id=? AND stage NOT IN ('cancelled','dropped')").bind(id).first().catch(() => null)) || { n: 0, fee: 0, live: 0 };
+  const bookedN = Number(booked.n || 0), bookedFee = Number(booked.fee || 0), liveN = Number(booked.live || 0);
+  const STATUS_TONE = { open: "done", pending: "wait", closed: "off", rejected: "off" };
+  // "Booked" stays the current step until a post is live, so the rail never marks Live while nothing is live.
+  const reached = [k.status !== "pending", ["open", "closed"].includes(k.status), slTotal > 0, bookedN > 0 && liveN > 0, liveN > 0 && liveN >= bookedN];
+  const firstTodo = reached.findIndex((x) => !x);
+  const railSteps = ["Draft", "Approved", "Shortlist", "Booked", "Live"].map((label, i) => ({
+    label, state: k.status === "rejected" ? (i === 0 ? "done" : "todo") : reached[i] ? "done" : i === firstTodo && (i < 4 || liveN > 0) ? "now" : "todo",
+  }));
+  const railNote = k.status === "rejected" ? "This brief was rejected. Reopen it to publish again."
+    : k.status === "pending" ? "Check the needs below, then approve to publish it to matching creators."
+    : !slTotal ? (apps.length ? "Shortlist the best applicants below. The client then approves them on the shortlist link." : "Waiting for applicants. Invite the matching creators below.")
+    : !bookedN ? `${plural(slTotal, "creator")} on the shortlist. Use Create deal once the terms are agreed.`
+    : !liveN ? `${plural(bookedN, "deal")} booked. Open each deal to move it to live.`
+    : `${liveN} of ${plural(bookedN, "deal")} live.${k.status === "closed" ? " The brief is closed." : ""}`;
+  const editOpen = k.status !== "open" || Boolean(searchParams?.new);
+  const who = (a) => (
+    <>
+      <a className="who" href={a.creator_id ? `/team/creators/${a.creator_id}` : `https://instagram.com/${a.handle}`}><div className="ava">{a.profile_pic ? <img src={a.profile_pic} alt="" /> : initials(a.name || a.handle)}</div><div><b>{a.name || a.handle}{a.verified ? " ✓" : ""}{a.creator_id && tiers.get(a.creator_id) && tiers.get(a.creator_id) !== "Rising" ? <span className="pill good" style={{ marginLeft: 6 }}>{tiers.get(a.creator_id)}</span> : null}</b><span>@{a.handle}{a.ccity || a.city ? ` · ${a.ccity || a.city}` : ""}</span></div></a>
+    </>
+  );
+  const appCols = [
+    { key: "creator", label: "Creator", render: ({ a, m }) => (
+      <div className="tr-app">
+        <div className="score sm" style={{ "--v": a.match_score ?? m.score }} title="Score saved when they applied: the one the brand sees"><i>{a.match_score ?? m.score}</i></div>
+        <div className="tr-app__who">{who(a)}{a.pitch && <div className="hint tr-pitch">"{a.pitch}"</div>}</div>
+      </div>
+    ) },
+    { key: "followers", label: "Followers", num: true, render: ({ a }) => compact(a.cf ?? a.followers) },
+    { key: "er", label: "ER", num: true, render: ({ a }) => (a.engagement_rate != null ? `${a.engagement_rate}%` : "—") },
+    { key: "quote", label: "Quote", num: true, render: ({ a }) => (a.rate_quote ? inr(a.rate_quote) : "—") },
+    { key: "why", label: "Why", render: ({ m }) => <span className="tr-why">{m.reasons.slice(0, 2).map((r) => <span key={r} className="tag">{r}</span>)}{m.blockers.map((b) => <span key={b} className="tag tr-blocker">✕ {b}</span>)}</span> },
+    { key: "status", label: "Status", primary: true, className: "cell-stack tr-appact", render: ({ a }) => (<>
+      {a.client_decision && <span className={`pill ${a.client_decision === "approved" ? "good" : "low"}`} style={{ marginBottom: 6 }}>Client {a.client_decision}</span>}{a.client_note && <div className="hint" style={{ maxWidth: 220 }}>"{a.client_note}"</div>}
+      {["shortlisted", "accepted"].includes(a.status) && <form action={act} className="row tr-appnote">{hidden("note")}<input type="hidden" name="app" value={a.id} /><input className="in" name="team_note" aria-label={`Why we picked ${a.name || a.handle}`} defaultValue={a.team_note ?? ""} placeholder="Why we picked them" /><button className="btn sm">Save</button></form>}
+      {deals.get(a.id) ? <a className="btn sm" href={`/team/deals/${deals.get(a.id)}`} style={{ marginBottom: 6 }}>Open deal</a>
+        : ["shortlisted", "accepted"].includes(a.status) && a.creator_id && <form action={act} style={{ marginBottom: 6 }}>{hidden("deal")}<input type="hidden" name="app" value={a.id} /><button className="btn sm">Create deal</button></form>}
+      <form action={act} className="tr-appstatus">{hidden("app")}<input type="hidden" name="app" value={a.id} />
+        {/* A creator with a deal can't be rejected (the server refuses it), so the reason picker only shows when it can be used. */}
+        {!deals.get(a.id) && <select className="in" name="reason" defaultValue={a.reject_reason ?? ""} aria-label="Reason if not selecting"><option value="">Reason if not selecting…</option>{Object.entries(REJECT_REASONS).map(([key, val]) => <option key={key} value={key}>{val[0]}</option>)}</select>}
+        <AutoSelect className="in" name="status" defaultValue={a.status} aria-label={`Status: ${appStatusLabel(a.status)}`}>{APP_STATUS_OPTIONS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</AutoSelect></form>
+    </>) },
+  ];
+  const poolCols = [
+    { key: "creator", label: "Creator", render: ({ c, m }) => (
+      <div className="tr-app">
+        <div className="score sm" style={{ "--v": m.score }}><i>{m.score}</i></div>
+        <a className="who" href={`/team/creators/${c.id}`}><div className="ava">{c.profile_pic ? <img src={c.profile_pic} alt="" loading="lazy" /> : initials(c.name || c.handle)}</div><div><b>{c.name || c.handle}</b><span>@{c.handle}{c.city ? ` · ${c.city}` : ""}</span></div></a>
+      </div>
+    ) },
+    { key: "followers", label: "Followers", num: true, render: ({ c }) => compact(c.followers) },
+    { key: "er", label: "ER", num: true, render: ({ c }) => (c.engagement_rate != null ? `${c.engagement_rate}%` : "—") },
+    { key: "rate", label: "Reel rate", num: true, render: ({ c }) => (c.rate_reel ? inr(c.rate_reel) : "—") },
+    { key: "why", label: "Why", hidePhone: true, render: ({ m }) => <span className="tr-why">{m.reasons.slice(0, 2).map((r) => <span key={r} className="tag">{r}</span>)}</span> },
+    { key: "invite", label: "Invite", labelHidden: true, primary: true, render: ({ c }) => (k.status === "open" ? (wa(c.phone, c.name || c.handle) ? <a className="btn sm" href={wa(c.phone, c.name || c.handle)} target="_blank" rel="noopener">Invite on WhatsApp</a> : <a className="btn sm" href={`https://ig.me/m/${c.handle}`} target="_blank" rel="noopener">Invite on Instagram</a>) : <span className="hint">Publish first</span>) },
+  ];
+
   return (
-    <TeamShell active="campaigns" eyebrow={CAMPAIGN_STATUS_LABEL[k.status] || k.status} title={esc(k.title)} email={me.email}
-      actions={<>
-        {k.status === "open" && <a className="btn" href={`/creator/o/${k.slug}`} target="_blank">Creator view ↗</a>}
-        {k.status === "open" ? <form action={act}>{hidden("close")}<button className="btn">Close</button></form>
-          : k.status === "pending" ? <form action={act}>{hidden("reject")}<button className="btn danger">Reject</button></form>
-          : <form action={act}>{hidden("reopen")}<button className="btn">Reopen</button></form>}
-      </>}>
+    <TeamShell active="campaigns" email={me.email} role={me.role}>
+      <PageHeader
+        crumbs={[{ label: "Open campaigns", href: "/team/campaigns" }, { label: k.title }]}
+        actions={<>
+          {k.status === "open" && <a className="btn sm" href={`/creator/o/${k.slug}`} target="_blank">Creator view ↗</a>}
+          {k.status === "open" ? <form action={act}>{hidden("close")}<button className="btn sm">Close</button></form>
+            : k.status === "pending" ? <form action={act}>{hidden("reject")}<button className="btn sm danger">Reject</button></form>
+            : <form action={act}>{hidden("reopen")}<button className="btn sm">Reopen</button></form>}
+        </>}
+        eyebrow={`${CAMPAIGN_STATUS_LABEL[k.status] || k.status} · ${k.brand || k.client_company || "Brand confidential"}`}
+        title={esc(k.title)}
+        sub={[k.deliverables, k.deadline ? `apply by ${day(k.deadline) || k.deadline}` : null, k.shoot_date ? `shoot ${day(k.shoot_date) || k.shoot_date}` : null, k.source === "client" ? "brief from the client" : "brief from the team"].filter(Boolean).join(" · ")}
+      >
+        <div className="ui-pills tr-headpills tr-headrow">
+          <Pill tone={STATUS_TONE[k.status] || "quiet"}>{CAMPAIGN_STATUS_LABEL[k.status] || k.status}</Pill>
+          {Number(k.brand_verified) === 1 ? <span className="pill good">Verified brand</span> : !k.held_reason && <form action={act}>{hidden("verify")}<button className="btn sm">Mark brand verified</button></form>}
+          {Number(k.rush) === 1 && <span className="pill plum">Rush: shortlist in 6 working hours (+5% fee)</span>}
+          {k.brief_score != null && <span className="pill">Brief strength {k.brief_score}/100</span>}
+          {k.featured_until && k.featured_until > nowTs
+            ? <><span className="pill ok">Featured until {day(k.featured_until)}</span><form action={act}>{hidden("unfeature")}<button className="btn sm">Stop featuring</button></form></>
+            : <>{ai.featured_request && <span className="pill ok">Client asked to feature (₹1,999)</span>}<form action={act}>{hidden("feature")}<button className="btn sm">Feature for 7 days</button></form></>}
+        </div>
+      </PageHeader>
 
       {flash && <div className={`note ${tone}`} style={{ marginBottom: 16 }}>{flash}</div>}
 
@@ -174,103 +259,64 @@ export default async function Page({ params, searchParams }) {
           <form action={act}>{hidden("verify")}<button className="btn plum">Mark brand verified</button></form></div>
       </div>}
 
-      <div className="row" style={{ gap: 8, marginBottom: 16 }}>
-        {Number(k.brand_verified) === 1 ? <span className="pill good">Verified brand</span> : !k.held_reason && <form action={act}>{hidden("verify")}<button className="btn sm">Mark brand verified</button></form>}
-        {Number(k.rush) === 1 && <span className="pill bad">Rush: shortlist in 6 working hours (+5% fee)</span>}
-        {k.brief_score != null && <span className="pill">Brief strength {k.brief_score}/100</span>}
-        {k.featured_until && k.featured_until > nowTs
-          ? <><span className="pill ok">Featured until {String(k.featured_until).slice(0, 10)}</span><form action={act}>{hidden("unfeature")}<button className="btn sm">Stop featuring</button></form></>
-          : <>{ai.featured_request && <span className="pill ok">Client asked to feature (₹1,999)</span>}<form action={act}>{hidden("feature")}<button className="btn sm">Feature for 7 days</button></form></>}
-      </div>
+      <StatusRail label="Campaign progress" steps={railSteps} eyebrow={k.status === "rejected" ? "Rejected" : undefined} note={railNote}
+        badge={k.status === "pending" ? <Pill tone="mine">Your move</Pill> : null} />
 
-      <div className="grid4">
-        <div className="panel kpi"><div className="k">Applicants</div><div className="v">{apps.length}</div><div className="s">{eligibleN} meet every requirement</div></div>
-        <div className="panel kpi"><div className="k">Matching creators</div><div className="v">{pool.length + eligibleN}{pool.length === 40 ? "+" : ""}</div><div className="s">in the database who can see this</div></div>
-        <div className="panel kpi"><div className="k">Needed</div><div className="v">{k.creators_needed ?? "—"}</div><div className="s">{k.deliverables || "Deliverables not set"}</div></div>
-        <div className="panel kpi"><div className="k">Client budget</div><div className="v">{k.budget_total ? inr(k.budget_total) : "—"}</div><div className="s">{k.creators_needed && k.budget_total ? `${inr(k.budget_total / k.creators_needed)} per creator` : "team only"}</div></div>
+      <div className="tr-gap">
+        <KpiStrip label="Campaign at a glance" items={[
+          { label: "Applicants", value: apps.length, foot: `${eligibleN} ${eligibleN === 1 ? "meets" : "meet"} every requirement`, href: "#applicants" },
+          { label: "Shortlisted", value: slTotal, foot: `${pool.length + eligibleN}${pool.length === 40 ? "+" : ""} matching creators in the database` },
+          { label: "Approved by client", value: slOk, title: "Approved on the client's page, or already booked: the same count the brand sees", foot: slTotal ? `${slBooked ? `${slBooked} booked · ` : ""}${slNo} declined · ${slTotal - slOk - slNo} waiting` : "Shortlist creators to ask the client" },
+          { featured: true, label: "Booked spend", value: bookedN ? inrShort(bookedFee) : "—", title: bookedN ? inr(bookedFee) : undefined, foot: `${plural(bookedN, "deal")}${k.budget_total ? ` · budget ${inrShort(k.budget_total)}` : ""}${k.creators_needed ? ` · needs ${k.creators_needed}` : ""}` },
+        ]} />
       </div>
 
       {flags.length > 0 && (
-        <div className="stack sec" style={{ marginTop: 20 }}>{flags.map((f, i) => <div key={i} className={`note ${f.level === "check" ? "warn" : "bad"}`}><b>{f.level === "block" ? "Blocked" : f.level === "stop" ? "Stop and check" : "Check"}: {f.title}.</b> {f.detail}</div>)}</div>
+        <div className="stack tr-gap">{flags.map((f, i) => <div key={i} className={`note ${f.level === "check" ? "warn" : "bad"}`}><b>{f.level === "block" ? "Blocked" : f.level === "stop" ? "Stop and check" : "Check"}: {f.title}.</b> {f.detail}</div>)}</div>
       )}
 
-      {(k.source === "client" || k.raw_brief || ai.questions?.length) ? (
-        <div className="grid2 sec" style={{ alignItems: "start" }}>
-          {k.raw_brief && <div className="panel pad"><h2>Original brief {k.source === "client" ? "from client" : ""}</h2><p style={{ whiteSpace: "pre-line", margin: 0, color: "var(--ink-2)" }}>{k.raw_brief}</p>
-            {k.source === "client" && <p className="hint" style={{ margin: "14px 0 0" }}><b>{k.client_name}</b>{k.client_company ? ` · ${k.client_company}` : ""}<br />{k.client_email}{k.client_phone ? ` · ${k.client_phone}` : ""}</p>}</div>}
-          <div className="panel pad"><h2>{ai.engine === "ai" ? "AI read this brief" : "Read by keyword rules"}</h2>
-            <div>{chips.map((r) => <span key={r} className="tag">{r}</span>)}{!chips.length && <span className="hint">No hard requirements, so every creator can see it.</span>}</div>
-            {ai.questions?.length ? <><div className="lbl" style={{ marginTop: 16 }}>Clarify with the client</div><ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>{ai.questions.map((q, i) => <li key={i}>{q}</li>)}</ul></> : null}
-          </div>
-        </div>
-      ) : null}
+      <Section id="applicants" title="Applicants, best match first" sub={ranked.length ? `${plural(ranked.length, "applicant")} · ${eligibleN} ${eligibleN === 1 ? "meets" : "meet"} every requirement. Eligible and trusted creators first.` : null}>
+        <DataTable caption="Applicants" columns={appCols} rows={ranked} rowKey={({ a }) => a.id} scroll
+          empty={{ title: "No applicants yet.", body: k.status === "open" ? "Invite the matching creators below. Each invite is a ready WhatsApp message." : "Approve the opportunity so matching creators can see it.", action: k.status === "open" ? <a className="btn sm" href="#pool">See matching creators</a> : <a className="btn sm" href="#needs">Check the needs</a> }} />
+      </Section>
 
-      <form className="panel pad sec" action={saveAct}>
-        <input type="hidden" name="id" value={id} />
-        <div className="spread"><h2 style={{ margin: 0 }}>Needs and what creators see</h2><span className="hint">Talent, followers, city and gender decide who can see this. Niche and language only change the ranking.</span></div>
-        <div style={{ marginTop: 16 }}><CampaignFields v={k} /></div>
-        <div className="row" style={{ marginTop: 18 }}>
-          <button className="btn" formAction={saveAct}>Save</button>
-          {k.status !== "open" && <button className="btn plum" formAction={approveAct}>Approve &amp; publish to matching creators</button>}
-        </div>
-      </form>
-
-      <div className="panel pad sec">
-        <div className="spread">
-          <div><h2 style={{ margin: 0 }}>Client shortlist</h2><p className="hint" style={{ margin: "6px 0 0" }}>Shortlisted and accepted creators appear on a private page where the client approves or declines each one. Your note on each creator is shown as "Why we picked them".</p></div>
+      <Grid aside={<>
+        <AsideCard id="shortlist" eyebrow="Client shortlist" title={slTotal ? `${slOk} of ${slTotal} <b>approved</b>` : "Client shortlist"}
+          foot={k.share_token ? <a href={`/shortlist/${k.share_token}`} target="_blank">Open the client's page ↗</a> : null}>
+          <p className="small">Shortlisted and accepted creators appear on a private page where the client approves or declines each one. Your note on each creator is shown as "Why we picked them".</p>
+          {slTotal > 0 && <Split label="Client decisions" parts={[{ label: "Approved or booked", n: slOk }, { label: "Declined", n: slNo }, { label: "Waiting", n: slTotal - slOk - slNo }]} />}
           {k.share_token
-            ? <div className="row"><code className="k">{origin}/shortlist/{k.share_token.slice(0, 8)}…</code><CopyButton url={`${origin}/shortlist/${k.share_token}`} /><a className="btn sm" href={`/shortlist/${k.share_token}`} target="_blank">Open ↗</a></div>
+            ? <div className="tr-copy"><code className="k">{origin}/shortlist/{k.share_token.slice(0, 8)}…</code><CopyButton url={`${origin}/shortlist/${k.share_token}`} /></div>
             : <form action={act}>{hidden("share")}<button className="btn plum">Create client link</button></form>}
-        </div>
-        {slTotal > 0 && <p className="small" style={{ margin: "12px 0 0" }}>{slTotal} on the shortlist · <b style={{ color: "var(--good)" }}>{slOk} approved</b> · {slNo} declined · {slTotal - slOk - slNo} waiting</p>}
-      </div>
+        </AsideCard>
+        <AsideCard eyebrow={ai.engine === "ai" ? "AI read this brief" : "Read by keyword rules"} title="Who can see it">
+          <div>{chips.length ? <Tags items={chips} max={10} /> : <span className="hint">No hard requirements, so every creator can see it.</span>}</div>
+          {ai.questions?.length ? <><div className="lbl">Clarify with the client</div><ul className="tr-qs">{ai.questions.map((q, i) => <li key={i}>{q}</li>)}</ul></> : null}
+        </AsideCard>
+        {k.raw_brief && <AsideCard eyebrow={`Original brief${k.source === "client" ? " from client" : ""}`} title={k.client_company || k.brand || "As it came"}>
+          <p className="tr-raw">{k.raw_brief}</p>
+          {k.source === "client" && <p className="hint"><b>{k.client_name}</b>{k.client_company ? ` · ${k.client_company}` : ""}<br />{k.client_email}{k.client_phone ? ` · ${k.client_phone}` : ""}</p>}
+        </AsideCard>}
+      </>}>
+        <Section id="pool" title="Matching creators who haven't applied" sub="From Colatch's database, ranked by the same engine.">
+          <DataTable caption="Matching creators who haven't applied" columns={poolCols} rows={pool} rowKey={({ c }) => c.id}
+            empty={<Card><p className="small" style={{ margin: 0 }}><b>No one else in the database fits yet.</b> Loosen a hard requirement, import more creators, or share <code className="k">{origin}/join</code> with {chips[0]?.toLowerCase() || "creator"} communities.</p></Card>} />
+        </Section>
 
-      <div className="sec">
-        <div className="h2">Applicants, best match first</div>
-        {ranked.length ? (
-          <div className="panel scroll-x"><table className="tbl">
-            <thead><tr><th>Match</th><th>Creator</th><th className="num">Followers</th><th className="num">ER</th><th className="num">Quote</th><th>Why</th><th>Status</th></tr></thead>
-            <tbody>{ranked.map(({ a, m }) => (
-              <tr key={a.id}>
-                <td><div className="score sm" style={{ "--v": a.match_score ?? m.score }} title="Score saved when they applied: the one the brand sees"><i>{a.match_score ?? m.score}</i></div></td>
-                <td><a className="who" href={a.creator_id ? `/team/creators/${a.creator_id}` : `https://instagram.com/${a.handle}`}><div className="ava">{a.profile_pic ? <img src={a.profile_pic} alt="" /> : initials(a.name || a.handle)}</div><div><b>{a.name || a.handle}{a.verified ? " ✓" : ""}{a.creator_id && tiers.get(a.creator_id) && tiers.get(a.creator_id) !== "Rising" ? <span className="pill good" style={{ marginLeft: 6 }}>{tiers.get(a.creator_id)}</span> : null}</b><span>@{a.handle}{a.ccity || a.city ? ` · ${a.ccity || a.city}` : ""}</span></div></a>
-                  {a.pitch && <div className="hint" style={{ maxWidth: 360, marginTop: 6 }}>"{a.pitch}"</div>}</td>
-                <td className="num">{compact(a.cf ?? a.followers)}</td>
-                <td className="num">{a.engagement_rate != null ? `${a.engagement_rate}%` : "—"}</td>
-                <td className="num">{a.rate_quote ? inr(a.rate_quote) : "—"}</td>
-                <td style={{ maxWidth: 260 }}>{m.reasons.slice(0, 2).map((r) => <span key={r} className="tag">{r}</span>)}{m.blockers.map((b) => <span key={b} className="tag" style={{ background: "transparent", boxShadow: "inset 0 0 0 1px var(--line-3)", color: "var(--ink-3)" }}>✕ {b}</span>)}</td>
-                <td>{a.client_decision && <span className={`pill ${a.client_decision === "approved" ? "good" : "low"}`} style={{ marginBottom: 6 }}>Client {a.client_decision}</span>}{a.client_note && <div className="hint" style={{ maxWidth: 200 }}>"{a.client_note}"</div>}
-                  {["shortlisted", "accepted"].includes(a.status) && <form action={act} className="row" style={{ margin: "6px 0", gap: 6, flexWrap: "nowrap" }}>{hidden("note")}<input type="hidden" name="app" value={a.id} /><input className="in" name="team_note" defaultValue={a.team_note ?? ""} placeholder="Why we picked them" style={{ padding: "6px 8px", fontSize: 12.5, minWidth: 180 }} /><button className="btn sm">Save</button></form>}
-                  {deals.get(a.id) ? <a className="btn sm" href={`/team/deals/${deals.get(a.id)}`} style={{ marginBottom: 6 }}>Open deal</a>
-                    : ["shortlisted", "accepted"].includes(a.status) && a.creator_id && <form action={act} style={{ marginBottom: 6 }}>{hidden("deal")}<input type="hidden" name="app" value={a.id} /><button className="btn sm">Create deal</button></form>}
-                  <form action={act}>{hidden("app")}<input type="hidden" name="app" value={a.id} />
-                    <select className="in" name="reason" defaultValue={a.reject_reason ?? ""} style={{ width: "auto", padding: "6px 8px", fontSize: 12, marginBottom: 4 }}><option value="">Reason if rejecting…</option>{Object.entries(REJECT_REASONS).map(([key, val]) => <option key={key} value={key}>{val[0]}</option>)}</select>
-                    <AutoSelect className="in" name="status" defaultValue={a.status} style={{ width: "auto", padding: "6px 8px", fontSize: 12.5 }}>{[["new", "New"], ["shortlisted", "Shortlisted"], ["accepted", "Selected"], ["rejected", "Not selected"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}</AutoSelect></form></td>
-              </tr>
-            ))}</tbody>
-          </table></div>
-        ) : <div className="panel empty"><b>No applicants yet.</b>{k.status === "open" ? "Invite the matching creators below. Each invite is a ready WhatsApp message." : "Approve the opportunity so matching creators can see it."}</div>}
-      </div>
-
-      <div className="sec">
-        <div className="spread" style={{ marginBottom: 12 }}><div className="h2" style={{ margin: 0 }}>Matching creators who haven't applied</div><span className="hint">From Colatch's database, ranked by the same engine</span></div>
-        {pool.length ? (
-          <div className="panel scroll-x"><table className="tbl">
-            <thead><tr><th>Match</th><th>Creator</th><th className="num">Followers</th><th className="num">ER</th><th className="num">Reel rate</th><th>Why</th><th></th></tr></thead>
-            <tbody>{pool.map(({ c, m }) => (
-              <tr key={c.id}>
-                <td><div className="score sm" style={{ "--v": m.score }}><i>{m.score}</i></div></td>
-                <td><a className="who" href={`/team/creators/${c.id}`}><div className="ava">{c.profile_pic ? <img src={c.profile_pic} alt="" loading="lazy" /> : initials(c.name || c.handle)}</div><div><b>{c.name || c.handle}</b><span>@{c.handle}{c.city ? ` · ${c.city}` : ""}</span></div></a></td>
-                <td className="num">{compact(c.followers)}</td>
-                <td className="num">{c.engagement_rate != null ? `${c.engagement_rate}%` : "—"}</td>
-                <td className="num">{c.rate_reel ? inr(c.rate_reel) : "—"}</td>
-                <td style={{ maxWidth: 260 }}>{m.reasons.slice(0, 2).map((r) => <span key={r} className="tag">{r}</span>)}</td>
-                <td>{k.status === "open" && (wa(c.phone, c.name || c.handle) ? <a className="btn sm" href={wa(c.phone, c.name || c.handle)} target="_blank" rel="noopener">Invite on WhatsApp</a> : <a className="btn sm" href={`https://ig.me/m/${c.handle}`} target="_blank" rel="noopener">Invite on Instagram</a>)}</td>
-              </tr>
-            ))}</tbody>
-          </table></div>
-        ) : <div className="panel empty"><b>No one else in the database fits yet.</b>Loosen a hard requirement, import more creators, or share <code className="k">{origin}/join</code> with {chips[0]?.toLowerCase() || "creator"} communities.</div>}
-      </div>
+        <Section id="needs" title="Needs and what creators see" sub="Talent, followers, city and gender decide who can see this. Niche and language only change the ranking.">
+          <details className="tr-fold" open={editOpen}>
+            <summary><span>Edit the brief</span><span className="hint">{chips.length ? chips.slice(0, 4).join(" · ") : "No hard requirements"}</span></summary>
+            <form className="tr-fold__body" action={saveAct}>
+              <input type="hidden" name="id" value={id} />
+              <CampaignFields v={k} />
+              <div className="row" style={{ marginTop: 18 }}>
+                <button className="btn" formAction={saveAct}>Save</button>
+                {k.status !== "open" && <button className="btn-foil" formAction={approveAct}>Approve &amp; publish to matching creators</button>}
+              </div>
+            </form>
+          </details>
+        </Section>
+      </Grid>
     </TeamShell>
   );
 }

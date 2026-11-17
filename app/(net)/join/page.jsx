@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import PublicShell from "../_ui/PublicShell";
+import { SplitAuth, FormSteps } from "@/components/ui";
 import CreatorProfileFields from "../_ui/CreatorProfileFields";
 import { flashUrl } from "../_ui/flash";
 import { packForm, unpackForm } from "../_ui/keep";
@@ -92,40 +93,48 @@ export default async function Page({ searchParams }) {
   const err = searchParams?.err;
   const openCount = (await env.DB.prepare("SELECT COUNT(*) n FROM campaigns WHERE status='open'").first().catch(() => null))?.n ?? 0;
   const next = searchParams?.next ?? v.next ?? "";
-  const hero = (
-    <section className="hero"><div className="hero-in">
-      <div className="eb">Colatch creator network</div>
-      <h1>Brand deals made for <b>what you do.</b></h1>
-      <p>Tell us once who you are: dancer, chef, comedian, mom creator, whatever you make. You'll only see briefs you actually fit, with the pay, dates and deliverables up front. Free to join, and you choose what to apply for.</p>
-      <div className="row" style={{ marginTop: 22, gap: 22, color: "rgba(244,239,227,.8)", fontSize: 14 }}>
-        <span>✦ {openCount > 0 ? `${openCount} open ${openCount === 1 ? "brief" : "briefs"} right now` : "New briefs every week"}</span><span>✦ Only briefs that match you</span><span>✦ No fees, ever</span>
-      </div>
-    </div></section>
-  );
+  const loginHref = `/creator/login${next ? `?next=${encodeURIComponent(next)}` : ""}`;
   return (
-    <PublicShell path="/join" hero={hero}>
-      <div className="wrap narrow" style={{ padding: 0 }}>
-        {err && <div className="note bad" style={{ marginBottom: 18 }}>{err}</div>}
-        <form className="panel pad" action={join}>
+    <PublicShell path="/join" flush>
+      <SplitAuth className="cr-join-auth"
+        panel={{
+          eyebrow: "Colatch creator network",
+          title: "Brand deals made for <em>what you do.</em>",
+          lede: "Tell us once who you are: dancer, chef, comedian, mom creator, whatever you make. You'll only see briefs you actually fit, with the pay, dates and deliverables up front.",
+          quote: { text: "Brands fund the deal before you shoot, and Colatch pays you once the post is live. You choose what to apply for.", source: "How a Colatch deal works" },
+          stats: [{ value: openCount > 0 ? String(openCount) : "New", label: openCount > 0 ? `Open ${openCount === 1 ? "brief" : "briefs"} right now` : "Briefs every week", gold: true }, { value: "₹0", label: "Fees, ever" }],
+        }}
+        intro={{ eyebrow: "Join free", title: "Get briefs that <b>fit you</b>.", sub: "Three short parts, one page. Rough numbers are fine; the team checks them." }}
+      >
+        <FormSteps label="Sign-up parts" current={0} steps={[{ label: "Your account", href: "#j-account" }, { label: "About your work", href: "#j-work" }, { label: "Confirm", href: "#j-confirm" }]} />
+        {err && <div className="note bad" style={{ margin: "16px 0 0" }}>{err}</div>}
+        <form className="panel pad cr-join" action={join}>
           <input type="hidden" name="next" value={next} />
           <div style={{ position: "absolute", left: -9999 }} aria-hidden="true"><input name="website" tabIndex={-1} autoComplete="off" /></div>
-          <h2>Your account</h2>
-          <div className="form-grid">
-            <div className="fld"><label htmlFor="f-join-name-1">Your name</label><input id="f-join-name-1" name="name" required defaultValue={v.name ?? ""} /></div>
-            <div className="fld"><label htmlFor="f-join-handle-2">Instagram handle</label><input id="f-join-handle-2" name="handle" required defaultValue={v.handle ?? ""} placeholder="@yourname" /></div>
-            <div className="fld"><label htmlFor="f-join-email-3">Email</label><input id="f-join-email-3" name="email" type="email" required defaultValue={v.email ?? ""} autoComplete="email" /></div>
-            <div className="fld"><label htmlFor="f-join-password-4">Password</label><input id="f-join-password-4" name="password" type="password" required minLength={10} autoComplete="new-password" placeholder="At least 10 characters" /></div>
-          </div>
-          <h2 style={{ marginTop: 28 }}>About your work</h2>
-          <CreatorProfileFields v={v} />
-          <label className="row" style={{ marginTop: 20, gap: 10, fontSize: 13.5, color: "var(--ink-3)", alignItems: "flex-start", flexWrap: "nowrap" }}>
-            <input type="checkbox" name="consent" value="1" required style={{ marginTop: 3 }} />
-            <span>Colatch may contact me on WhatsApp, Instagram or email about brand opportunities, and may share my profile with brands for campaigns I apply to.</span>
-          </label>
-          <button className="btn-foil" style={{ marginTop: 22 }}>Join and see my matches →</button>
-          <p className="hint" style={{ margin: "14px 0 0" }}>Already joined? <a className="link" href={`/creator/login${next ? `?next=${encodeURIComponent(next)}` : ""}`}>Log in</a></p>
+          <section className="cr-join__part" id="j-account" aria-labelledby="j-account-h">
+            <h2 className="cr-join__h" id="j-account-h"><span className="cr-join__n">01</span>Your account</h2>
+            <div className="form-grid">
+              <div className="fld"><label htmlFor="f-join-name-1">Your name</label><input id="f-join-name-1" name="name" required defaultValue={v.name ?? ""} autoComplete="name" /></div>
+              <div className="fld"><label htmlFor="f-join-handle-2">Instagram handle</label><input id="f-join-handle-2" name="handle" required defaultValue={v.handle ?? ""} placeholder="@yourname" autoCapitalize="none" spellCheck={false} /></div>
+              <div className="fld"><label htmlFor="f-join-email-3">Email</label><input id="f-join-email-3" name="email" type="email" required defaultValue={v.email ?? ""} autoComplete="email" /></div>
+              <div className="fld"><label htmlFor="f-join-password-4">Password</label><input id="f-join-password-4" name="password" type="password" required minLength={10} autoComplete="new-password" placeholder="At least 10 characters" /></div>
+            </div>
+          </section>
+          <section className="cr-join__part" id="j-work" aria-labelledby="j-work-h">
+            <h2 className="cr-join__h" id="j-work-h"><span className="cr-join__n">02</span>About your work</h2>
+            <CreatorProfileFields v={v} />
+          </section>
+          <section className="cr-join__part" id="j-confirm" aria-labelledby="j-confirm-h">
+            <h2 className="cr-join__h" id="j-confirm-h"><span className="cr-join__n">03</span>Confirm</h2>
+            <label className="row" style={{ gap: 10, fontSize: 13.5, color: "var(--ink-3)", alignItems: "flex-start", flexWrap: "nowrap" }}>
+              <input type="checkbox" name="consent" value="1" required style={{ marginTop: 3 }} />
+              <span>Colatch may contact me on WhatsApp, Instagram or email about brand opportunities, and may share my profile with brands for campaigns I apply to.</span>
+            </label>
+            <button className="btn-foil cr-join__go">Join and see my matches →</button>
+            <p className="hint" style={{ margin: "14px 0 0" }}>Already joined? <a className="link" href={loginHref}>Log in</a> · Free to join, and Colatch never charges creators.</p>
+          </section>
         </form>
-      </div>
+      </SplitAuth>
     </PublicShell>
   );
 }

@@ -1,6 +1,8 @@
 // Header + footer for the creator- and brand-facing pages.
 // Signed-in creators get a 4-item tab bar on phones (Home, Deals, Earnings, Profile); every other
 // destination (Score, Pitch, Settings, Log out) stays in the header on desktop and in the footer menu on phones.
+// `hero` renders full width above <main> (pass a <PageHeader variant="hero">); `flush` drops the centred
+// .wrap column so a full-bleed layout (SplitAuth) can fill the page.
 const ICON = {
   home: <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 11 12 4l8 7v8a1 1 0 0 1-1 1h-4v-6H9v6H5a1 1 0 0 1-1-1z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" /></svg>,
   deals: <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="4" y="6" width="16" height="13" rx="2" stroke="currentColor" strokeWidth="1.5" /><path d="M9 6V4.8A.8.8 0 0 1 9.8 4h4.4a.8.8 0 0 1 .8.8V6M4 11h16" stroke="currentColor" strokeWidth="1.5" /></svg>,
@@ -8,7 +10,7 @@ const ICON = {
   me: <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="8.5" r="3.5" stroke="currentColor" strokeWidth="1.5" /><path d="M5 20c1-3.6 3.8-5.5 7-5.5s6 1.9 7 5.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" /></svg>,
 };
 
-export default function PublicShell({ mode = "creator", creatorName = null, brandName = null, path = "", hero = null, narrow = false, moves = 0, children }) {
+export default function PublicShell({ mode = "creator", creatorName = null, brandName = null, path = "", hero = null, narrow = false, flush = false, moves = 0, children }) {
   const isClient = mode === "client";
   const on = (p, exact = false) => (exact ? path === p : path.startsWith(p)) ? "on" : "";
   const creatorLinks = [
@@ -25,11 +27,11 @@ export default function PublicShell({ mode = "creator", creatorName = null, bran
         </a>
         {isClient ? (
           brandName ? (
-            <nav className="tnav" aria-label="Main">
-              <a className={on("/brand", true)} aria-current={on("/brand", true) ? "page" : undefined} href="/brand">My campaigns</a>
+            <nav className="tnav brand-nav" aria-label="Main">
+              <a className={on("/brand", true)} aria-current={on("/brand", true) ? "page" : undefined} href="/brand"><span className="lbl-long">My campaigns</span><span className="lbl-short" aria-hidden="true">Campaigns</span></a>
               <a className={`tnav-full ${on("/brand/settings")}`} href="/brand/settings">Settings</a>
               <a className="tnav-full" href="/brand/logout">Log out</a>
-              <a className="cta" href="/brief">Post a brief</a>
+              <a className="cta" href="/brief"><span className="lbl-long">Post a brief</span><span className="lbl-short" aria-hidden="true">+ Brief</span></a>
             </nav>
           ) : (
             <nav className="tnav" aria-label="Main"><a className="tnav-full" href="/pitches">Creator ideas</a><a className="tnav-full" href="/join">I'm a creator</a><a className={on("/brand/login", true)} href="/brand/login">Log in</a><a className="cta" href="/brief">Post a brief</a></nav>
@@ -44,7 +46,7 @@ export default function PublicShell({ mode = "creator", creatorName = null, bran
         )}
       </div></header>
       {hero}
-      <main id="main" tabIndex={-1} className={narrow ? "wrap narrow" : "wrap"}>{children}</main>
+      <main id="main" tabIndex={-1} className={flush ? "ui-flush" : narrow ? "wrap narrow" : "wrap"}>{children}</main>
       <footer className="foot">
         {brandName && isClient && (
           <nav className="bar-in" aria-label="More" style={{ paddingBottom: 0 }}>

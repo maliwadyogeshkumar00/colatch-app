@@ -3,6 +3,9 @@ import { requireTeam } from "../_guard";
 import { env } from "@/lib/net/env";
 import { inr } from "@/lib/net/creators";
 import { list } from "@/lib/net/match";
+import { inrKpi, inrFull } from "@/components/team/labels";
+import { PageHeader, KpiStrip, ChartCard, DataTable, Grid, Section, AsideCard, EmptyState, Pill, Cell, Figure } from "@/components/ui";
+import { Funnel, HBars, DefList } from "@/components/admin/Charts";
 
 export const metadata = { title: "Marketplace health", robots: { index: false, follow: false } };
 
@@ -10,9 +13,11 @@ export default async function Page() {
   const me = await requireTeam();
   const q = async (sql, ...b) => (await env.DB.prepare(sql).bind(...b).all().catch(() => ({ results: [] }))).results ?? [];
   const camps = await q("SELECT id, title, talent_types, city, status, created_at, creators_needed, promised_cpv, brand, client_company, source FROM campaigns WHERE status <> 'rejected'");
-  const apps = await q("SELECT campaign_id, created_at, status FROM campaign_applications");
-  const deals = await q("SELECT d.campaign_id, d.fee, d.actual_views, d.live_at, d.paid_at, d.pay_status, k.payment_days FROM creator_deals d LEFT JOIN campaigns k ON k.id=d.campaign_id");
+  const apps = await q("SELECT id, campaign_id, created_at, status FROM campaign_applications");
+  const deals = await q("SELECT d.id, d.application_id, d.campaign_id, d.fee, d.actual_views, d.live_at, d.paid_at, d.pay_status, k.payment_days FROM creator_deals d LEFT JOIN campaigns k ON k.id=d.campaign_id");
   const creators = await q("SELECT skills, city, verified, owner_verified, created_at, source FROM creators WHERE status <> 'blacklisted'");
+  // Deals with a brand payment in the ledger: the rule Money and ledger reconciles against.
+  const fundedIds = new Set((await q("SELECT DISTINCT deal_id FROM finance_ledger WHERE kind='brand_payment_received' AND deal_id IS NOT NULL")).map((r) => r.deal_id));
   const accounts = (await q("SELECT COUNT(*) n FROM creator_accounts"))[0]?.n ?? 0;
 
   const ms = (s) => { s = String(s); return Date.parse(s.replace(" ", "T") + (s.includes("Z") || s.includes("+") ? "" : "Z")); };
@@ -56,49 +61,89 @@ export default async function Page() {
   const cityCount = new Map();
   for (const c of creators) if (c.city) cityCount.set(c.city, (cityCount.get(c.city) ?? 0) + 1);
   const cities = [...cityCount.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8);
+  // Open and waiting briefs per city (a brief can name several cities), beside the creators who live there.
+  const cityDemand = new Map();
+  for (const k of camps.filter((x) => x.status === "open" || x.status === "pending")) for (const c of list(k.city)) cityDemand.set(c, (cityDemand.get(c) ?? 0) + 1);
+  const cityRows = [...new Set([...cityDemand.keys(), ...cities.map(([c]) => c)])].map((c) => ({ label: c, a: cityDemand.get(c) ?? 0, b: cityCount.get(c) ?? 0 }))
+    .sort((x, y) => y.a - x.a || y.b - x.b).slice(0, 8);
   // funnel
   const verified = creators.filter((c) => c.verified || c.owner_verified).length;
-  const applied = new Set(apps.map((a) => a.campaign_id + a.created_at)).size;
-  const selected = apps.filter((a) => ["shortlisted", "accepted"].includes(a.status)).length;
-  const paidCount = deals.filter((d) => d.pay_status === "paid").length;
-  const gmv = deals.filter((d) => ["funded", "released", "paid"].includes(d.pay_status)).reduce((s, d) => s + (d.fee || 0), 0);
+  // One population for every stage: applications. Selected and paid are subsets of it, so the funnel can't grow.
+  const SELECTED = ["shortlisted", "accepted"];
+  const paidApps = new Set(deals.filter((d) => d.pay_status === "paid" && d.application_id).map((d) => d.application_id));
+  const applied = apps.length;
+  const selected = apps.filter((a) => SELECTED.includes(a.status)).length;
+  const paidCount = apps.filter((a) => SELECTED.includes(a.status) && paidApps.has(a.id)).length;
+  const fundedDeals = deals.filter((d) => ["funded", "released", "paid"].includes(d.pay_status) && fundedIds.has(d.id));
+  const gmv = fundedDeals.reduce((s, d) => s + (d.fee || 0), 0);
   const fmt = (n, suf = "") => (n == null ? "—" : (Math.round(n * 10) / 10) + suf);
 
+  const GAP_TONE = { low: "mine", ok: "wait", good: "done" };
+  const conv = pct(paidCount, applied);
+  const plural = (n, one, many) => `${Number(n || 0).toLocaleString("en-IN")} ${Number(n) === 1 ? one : many}`;
+
   return (
-    <TeamShell active="insights" eyebrow="Creator tools" title="Is the marketplace <b>working</b>?" email={me.email}>
-      <p className="lead">The numbers that decide whether brands come back and creators stay: how fast briefs fill, how fast creators get paid, and whether we hit the cost per view we promised.</p>
+    <TeamShell active="insights" email={me.email} role={me.role}>
+      <PageHeader
+        crumbs={[{ label: "Creator tools" }, { label: "Marketplace health" }]}
+        eyebrow="Creator tools · Marketplace health"
+        title="Is the marketplace <b>working</b>?"
+        sub="The numbers that decide whether brands come back and creators stay: how fast briefs fill, how fast creators get paid, and whether we hit the cost per view we promised."
+        meta={[{ label: "Funded deal value", value: inrKpi(gmv), title: inrFull(gmv), gold: true }, { label: "Creators", value: creators.length }]}
+      />
 
-      <div className="grid4">
-        <div className="panel kpi"><div className="k">Briefs filled in 72h</div><div className="v">{fmt(pct(filled72, live.length), "%")}</div><div className="s">{filled72} of {live.length} live briefs · target 70%</div></div>
-        <div className="panel kpi"><div className="k">First application</div><div className="v">{fmt(median(firstHrs), "h")}</div><div className="s">median after a brief goes live</div></div>
-        <div className="panel kpi"><div className="k">Days to pay</div><div className="v">{fmt(median(payDays), "d")}</div><div className="s">median, live → paid · target ≤7</div></div>
-        <div className="panel kpi"><div className="k">Paid on time</div><div className="v">{fmt(pct(onTime, paid.length), "%")}</div><div className="s">{overdue ? overdue + " payouts overdue now" : "none overdue"}</div></div>
-        <div className="panel kpi"><div className="k">Funded deal value</div><div className="v">{inr(gmv)}</div><div className="s">creator fees funded or paid</div></div>
-        <div className="panel kpi"><div className="k">Repeat brands</div><div className="v">{repeat}</div><div className="s">of {brandCount.size} brands with 2+ briefs</div></div>
-        <div className="panel kpi"><div className="k">Creators</div><div className="v">{creators.length}</div><div className="s">{accounts} with a login · {fmt(pct(verified, creators.length), "%")} verified</div></div>
-        <div className="panel kpi"><div className="k">Creator funnel</div><div className="v" style={{ fontSize: 20 }}>{applied} → {selected} → {paidCount}</div><div className="s">applications → selected → paid</div></div>
-      </div>
+      <KpiStrip label="Marketplace health" items={[
+        { featured: true, label: "Briefs filled in 72h", value: fmt(pct(filled72, live.length), "%"), foot: `${filled72} of ${live.length} live briefs · target 70%`, href: "/team/campaigns?tab=open" },
+        { label: "First application", value: fmt(median(firstHrs), "h"), foot: "median after a brief goes live" },
+        { label: "Days to pay", value: fmt(median(payDays), "d"), foot: "median, live → paid · target ≤7" },
+        { label: "Paid on time", value: fmt(pct(onTime, paid.length), "%"), foot: overdue ? `${overdue} payouts overdue now` : "none overdue", href: overdue ? "/team/crm" : undefined },
+      ]} />
 
-      <div className="grid2 sec" style={{ alignItems: "start" }}>
-        <div className="panel">
-          <div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Supply vs demand by talent</h2></div>
-          {gaps.length ? <table className="tbl"><thead><tr><th>Talent</th><th className="num">Open briefs</th><th className="num">Creators</th><th></th></tr></thead><tbody>
-            {gaps.map((g) => <tr key={g.t}><td>{g.t}</td><td className="num">{g.d}</td><td className="num">{g.s}</td><td><span className={`pill ${g.tone}`}>{g.label}</span></td></tr>)}
-          </tbody></table> : <p className="hint" style={{ padding: "0 20px 18px" }}>Fills in as briefs and creators come in.</p>}
-          <p className="hint" style={{ padding: "0 20px 18px" }}>"Recruit" means fewer than 10 creators per open brief for that talent. Run a comment-to-DM reel or invite that community.</p>
-        </div>
-        <div className="stack">
-          <div className="panel">
-            <div className="pad" style={{ padding: "18px 20px 6px" }}><h2>CPV delivered vs promised</h2></div>
-            {cpvRows.length ? <table className="tbl"><tbody>{cpvRows.map((r, i) => <tr key={i}><td>{r.title}</td><td className="num">₹{r.actual.toFixed(2)} vs ₹{r.promised.toFixed(2)}</td><td><span className={`pill ${r.actual > r.promised ? "low" : "good"}`}>{r.actual > r.promised ? "Missed promise" : "Hit"}</span></td></tr>)}</tbody></table>
-              : <p className="hint" style={{ padding: "0 20px 18px" }}>Set a promised CPV on a campaign and add real views to its deals.</p>}
-          </div>
-          <div className="panel">
-            <div className="pad" style={{ padding: "18px 20px 6px" }}><h2>Creators by city</h2></div>
-            {cities.length ? <table className="tbl"><tbody>{cities.map(([c, n]) => <tr key={c}><td>{c}</td><td className="num">{n}</td></tr>)}</tbody></table> : <p className="hint" style={{ padding: "0 20px 18px" }}>No creators yet.</p>}
-          </div>
-        </div>
-      </div>
+      <Grid cols={2}>
+        <ChartCard level={2} title="Creator funnel" period="All applications" figure={conv == null ? "—" : `${conv}%`} figureTitle="Applications that ended in a paid deal"
+          foot="One population: applications. Selected and paid are subsets of it, so the funnel can't grow.">
+          {applied ? <Funnel label="Applications to selected to paid" steps={[
+            { label: "Applied", n: applied, note: "every application to a brief", href: "/team/campaigns" },
+            { label: "Selected", n: selected, note: "shortlisted or accepted" },
+            { label: "Paid", n: paidCount, note: "creator payout recorded" },
+          ]} /> : <EmptyState title="No applications yet." body="The funnel fills in once creators apply to an open brief." action={<a className="btn sm" href="/team/campaigns">Open campaigns</a>} />}
+        </ChartCard>
+        <ChartCard level={2} title="Supply vs demand by talent" period="Open and waiting briefs"
+          foot={<>"Recruit" means fewer than 10 creators per open brief for that talent. Run a comment-to-DM reel or invite that community.</>}>
+          {gaps.length ? <HBars label="Open briefs and creators by talent" aLabel="Open briefs" bLabel="Creators"
+            rows={gaps.slice(0, 8).map((g) => ({ label: g.t, a: g.d, b: g.s, tag: <Pill tone={GAP_TONE[g.tone] || "quiet"}>{g.label}</Pill> }))} />
+            : <EmptyState title="Nothing to compare yet." body="Fills in as briefs and creators come in." />}
+        </ChartCard>
+      </Grid>
+
+      <Grid aside={<>
+        <AsideCard eyebrow="Brands and creators" title="Who keeps coming back">
+          <DefList items={[
+            { label: "Funded deal value", value: <span title={inrFull(gmv)}><b>{inrKpi(gmv)}</b> · creator fees on {plural(fundedDeals.length, "deal", "deals")} with a brand payment in the ledger</span> },
+            { label: "Repeat brands", value: <><b>{repeat}</b> of {plural(brandCount.size, "brand", "brands")} with 2+ briefs</> },
+            { label: "Creators", value: <><b>{creators.length}</b> · {accounts} with a login · {fmt(pct(verified, creators.length), "%")} verified</> },
+            { label: "Funnel", value: <>{applied} → {selected} → {paidCount}<br /><span className="adm-dim">applications → selected → paid</span></> },
+          ]} />
+        </AsideCard>
+        <AsideCard eyebrow="Method" title="Where these numbers come from">
+          <p className="small" style={{ margin: 0 }}>Every figure is worked out on this page from campaigns, applications, deals and the money ledger. Funded value counts only deals with a brand payment recorded in the ledger, the same rule Money and ledger reconciles against.</p>
+        </AsideCard>
+      </>}>
+        <Section title="Briefs and creators by city" sub="Open and waiting briefs that name a city, beside the creators based there.">
+          <ChartCard title="Demand vs supply by city" period={`${cityCount.size} cities with creators`}>
+            {cityRows.length ? <HBars label="Open briefs and creators by city" aLabel="Open briefs" bLabel="Creators" rows={cityRows} />
+              : <EmptyState title="No cities yet." body="Creators add their city when they join." />}
+          </ChartCard>
+        </Section>
+        <Section title="CPV delivered vs promised" sub="Campaigns with a promised cost per view and real views on their deals.">
+          <DataTable caption="CPV delivered vs promised" rows={cpvRows} rowKey={(r, i) => r.title + i} columns={[
+            { key: "title", label: "Campaign", render: (r) => <Cell title={r.title} /> },
+            { key: "res", label: "Result", primary: true, render: (r) => <Pill tone={r.actual > r.promised ? "mine" : "done"}>{r.actual > r.promised ? "Missed promise" : "Hit"}</Pill> },
+            { key: "actual", label: "Delivered", num: true, render: (r) => <Figure value={`₹${r.actual.toFixed(2)}`} note="per view" /> },
+            { key: "promised", label: "Promised", num: true, render: (r) => <Figure value={`₹${r.promised.toFixed(2)}`} note="per view" /> },
+          ]} empty={{ title: "No CPV to compare yet.", body: "Set a promised CPV on a campaign and add real views to its deals.", action: <a className="btn sm" href="/team/cpv">Open the CPV calculator</a> }} />
+        </Section>
+      </Grid>
     </TeamShell>
   );
 }

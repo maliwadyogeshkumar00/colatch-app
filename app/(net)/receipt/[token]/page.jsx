@@ -2,6 +2,10 @@ import { notFound } from "next/navigation";
 import { headers } from "next/headers";
 import PublicShell from "../../_ui/PublicShell";
 import PrintButton from "./PrintButton";
+import { PageHeader, KpiStrip, ChartCard, Grid, AsideCard } from "@/components/ui";
+import { ShareBar } from "@/components/brand/Facts";
+import { inrShort } from "@/lib/net/dashboard";
+import { inrFull } from "@/components/team/labels";
 import { env } from "@/lib/net/env";
 import { inr, compact } from "@/lib/net/creators";
 import { feePct } from "@/lib/net/deal";
@@ -19,8 +23,8 @@ export async function generateMetadata({ params }) {
 }
 
 const CSS = `
-.pg-receipt{padding:10px 0 40px}
-.pg-receipt .paper{position:relative;max-width:640px;margin:0 auto;background:#fffdf8;color:#1F1524;padding:44px 40px 40px;box-shadow:0 30px 60px -30px rgba(31,21,36,.35),0 2px 6px rgba(31,21,36,.06);
+.pg-receipt{padding:0 0 40px}
+.pg-receipt .paper{position:relative;max-width:680px;margin:0;background:#fffdf8;color:#14121C;padding:44px 40px 40px;box-shadow:0 30px 60px -30px rgba(31,21,36,.35),0 2px 6px rgba(31,21,36,.06);
   -webkit-mask:radial-gradient(circle 7px at 50% 0,#0000 98%,#000) top/18px 51% repeat-x,radial-gradient(circle 7px at 50% 100%,#0000 98%,#000) bottom/18px 51% repeat-x;
   mask:radial-gradient(circle 7px at 50% 0,#0000 98%,#000) top/18px 51% repeat-x,radial-gradient(circle 7px at 50% 100%,#0000 98%,#000) bottom/18px 51% repeat-x}
 .pg-receipt .mono{font-family:var(--font-sans);font-variant-numeric:tabular-nums lining-nums}
@@ -37,13 +41,13 @@ const CSS = `
 .pg-receipt .ln .dots{flex:1;border-bottom:1px dotted rgba(31,21,36,.28);margin:0 6px 5px;min-width:20px;align-self:flex-end}
 .pg-receipt .rule{border-top:1px dashed rgba(31,21,36,.3);margin:12px 0}
 .pg-receipt .tot{display:flex;justify-content:space-between;font-weight:700;font-size:15px;padding:6px 0}
-.pg-receipt .grand{margin:22px -40px 0;padding:22px 40px;background:#1E1128;color:#F4EFE3;text-align:center}
-.pg-receipt .grand .k{font-size:10.5px;letter-spacing:.28em;text-transform:uppercase;color:#E8B84B}
+.pg-receipt .grand{margin:22px -40px 0;padding:22px 40px;background:#1B1342;color:#F4EFE3;text-align:center}
+.pg-receipt .grand .k{font-size:10.5px;letter-spacing:.28em;text-transform:uppercase;color:#E8C281}
 .pg-receipt .grand .v{font-size:46px;font-weight:300;letter-spacing:-.03em;margin-top:4px}
 .pg-receipt .grand .s{font-size:12.5px;opacity:.75;margin-top:4px}
 .pg-receipt .proofs{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-top:6px}
 .pg-receipt .proofs div{border:1px solid rgba(31,21,36,.12);border-radius:10px;padding:10px 12px;font-size:12.5px;color:#5A5664}
-.pg-receipt .proofs b{display:block;font-size:20px;font-weight:500;color:#1F1524}
+.pg-receipt .proofs b{display:block;font-size:20px;font-weight:500;color:#14121C}
 .pg-receipt .foot-note{font-size:11.5px;color:#6E6478;line-height:1.5;margin-top:18px}
 .pg-receipt .thanks{text-align:center;font-size:12px;letter-spacing:.2em;text-transform:uppercase;margin-top:22px;color:#5A5664}
 .pg-receipt .bar{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;max-width:640px;margin:22px auto 0}
@@ -51,7 +55,8 @@ const CSS = `
 .pg-receipt .refer code{font-size:12.5px;background:#fff;border:1px solid var(--line);padding:2px 8px;border-radius:6px;word-break:break-all}
 @media(max-width:600px){.pg-receipt .paper{padding:34px 20px 30px}.pg-receipt .grand{margin:22px -20px 0;padding:20px}.pg-receipt .grand .v{font-size:36px}}
 @media print{
-  .net:has(.pg-receipt) .top,.net:has(.pg-receipt) .foot,.pg-receipt .noprint{display:none!important}
+  .net:has(.pg-receipt) .top,.net:has(.pg-receipt) .foot,.net:has(.pg-receipt) .v2b-noprint,.pg-receipt .noprint{display:none!important}
+  .pg-receipt .ui-grid{display:block}
   .net:has(.pg-receipt){background:#fff!important}
   .pg-receipt .paper{box-shadow:none;-webkit-mask:none;mask:none;border:1px dashed #999;max-width:none}
   .pg-receipt .grand{-webkit-print-color-adjust:exact;print-color-adjust:exact}
@@ -59,6 +64,7 @@ const CSS = `
 `;
 
 const day = (s) => String(s || "").slice(0, 10);
+const dayIST = (s) => { const t = Date.parse(String(s || "").slice(0, 10) + "T00:00:00+05:30"); return Number.isFinite(t) ? new Date(t).toLocaleDateString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" }) : String(s || ""); };
 
 export default async function Page({ params }) {
   const token = String(params?.token || "");
@@ -66,7 +72,7 @@ export default async function Page({ params }) {
   if (!k) notFound();
 
   // Only deals the brand has actually paid for count. A shortlisted or approved-but-unpaid creator isn't spend.
-  const deals = (await env.DB.prepare("SELECT d.*, c.name, c.handle FROM creator_deals d JOIN creators c ON c.id=d.creator_id WHERE d.campaign_id=? AND d.pay_status IN ('funded','released','paid') ORDER BY d.created_at ASC").bind(k.id).all()).results ?? [];
+  const deals = (await env.DB.prepare("SELECT d.*, c.name, c.handle, c.avg_views AS c_avg_views FROM creator_deals d JOIN creators c ON c.id=d.creator_id WHERE d.campaign_id=? AND d.pay_status IN ('funded','released','paid') ORDER BY d.created_at ASC").bind(k.id).all()).results ?? [];
   const payments = (await env.DB.prepare("SELECT kind, amount_paise, utr, at FROM finance_ledger WHERE campaign_id=? AND kind IN ('brand_payment_received','brand_refund_sent') ORDER BY id").bind(k.id).all()).results ?? [];
   const pct = feePct(env);
   const base = baselines(env);
@@ -91,6 +97,10 @@ export default async function Page({ params }) {
   const firstTime = deals.filter((d) => d.draft_status === "approved" && !(d.revisions_used > 0)).length;
   const signed = deals.filter((d) => d.brand_signoff_at).length;
   const fiveStar = (await env.DB.prepare("SELECT COUNT(*) n FROM ratings WHERE by_side='brand' AND stars=5 AND deal_id IN (SELECT id FROM creator_deals WHERE campaign_id=?)").bind(k.id).first())?.n ?? 0;
+  // Before any post is live the receipt leads with what is committed, not a return that can't exist yet.
+  const pending = deals.length > 0 && live.length === 0;
+  const expectedViews = deals.reduce((a, d) => a + (Number(d.c_avg_views) || 0), 0);
+  const nextLive = deals.map((d) => d.go_live_date).filter(Boolean).sort()[0] || null;
   const clicks = deals.reduce((a, d) => a + (d.clicks || 0), 0);
   const orders = deals.reduce((a, d) => a + (d.orders || 0), 0);
 
@@ -116,81 +126,123 @@ export default async function Page({ params }) {
     `  Saved vs a ${base.agencyPct}% agency markup: ${inr(tot.savedVsAgency)}`,
     `  ${compact(tot.views)} views, worth ${inr(tot.adsEquivalent)} as paid ads`,
     `  Sales from creator codes: ${inr(tot.sales)}`,
-    multiple ? `Return on Colatch: ${multiple.toFixed(1)}x` : "",
+    multiple && !pending ? `Return on Colatch: ${multiple.toFixed(1)}x` : pending ? "Results: no post is live yet; views and sales are added as each post goes live." : "",
     "",
     `Full receipt: ${origin}/receipt/${token}`,
   ].join("\n");
   const mailto = `mailto:?subject=${encodeURIComponent(`Colatch value receipt: ${k.title}`)}&body=${encodeURIComponent(mailBody)}`;
 
+  const hero = (
+    <PageHeader variant="hero" crumbs={[{ label: "Your campaign", href: `/shortlist/${token}` }, { label: "Value receipt" }]}
+      eyebrow={`Value receipt · ${receiptNo}`} title={k.title || "Your campaign"}
+      sub={pending
+        ? `${brand} · ${deals.length} ${deals.length === 1 ? "creator" : "creators"} paid for · as of ${today}. Nothing is live yet, so this shows what you've committed; views, sales and value are added as each post goes live.`
+        : `${brand} · ${deals.length} ${deals.length === 1 ? "creator" : "creators"} paid for · as of ${today}. Every rupee you spent, and everything it bought you.`}
+      meta={pending ? [{ label: "Status", value: "Results pending" }] : undefined} />
+  );
+  const parts = [
+    { label: "Saved vs market rates", n: tot.savedVsMarket, text: inr(tot.savedVsMarket) },
+    { label: "Saved vs agency markup", n: tot.savedVsAgency, text: inr(tot.savedVsAgency) },
+    { label: "Views as paid-ads value", n: tot.adsEquivalent, text: inr(tot.adsEquivalent) },
+    { label: "Sales from codes and links", n: tot.sales, text: inr(tot.sales) },
+  ];
+
   return (
-    <PublicShell mode="client">
-      <div className="pg-receipt">
+    <PublicShell mode="client" hero={<div className="v2b-noprint">{hero}</div>}>
+      <div className="pg-receipt v2b v2b-own-cta">
         <style dangerouslySetInnerHTML={{ __html: CSS }} />
-        <div className="paper">
-          <div className="head">
-            <svg className="em"><use href="#emblem-foil" /></svg>
-            <div className="ttl">Value receipt</div>
-            <div className="sub">Every rupee you spent, and everything it bought you.</div>
-          </div>
-
-          <div className="meta mono">
-            <span>Receipt</span><b>{receiptNo}</b>
-            <span>Date</span><b>{today}</b>
-            <span>Brand</span><b>{brand}</b>
-            <span>Campaign</span><b>{k.title}</b>
-            <span>Creators</span><b>{deals.length} paid for</b>
-          </div>
-          <p className="foot-note" style={{ marginTop: 0 }}>A summary of your campaign's spend and results. It is not a tax invoice; GST invoices are issued separately.</p>
-
-          {deals.length === 0 ? (
-            <p className="foot-note">This receipt fills in once your first payment is recorded. Every fee, saving and view will show here line by line.</p>
-          ) : (<>
-            <div className="sect">What you spent</div>
-            {deals.map((d) => <Line key={d.id} l={d.name || "@" + d.handle} sub={d.deliverable} v={inr(d.fee || 0)} />)}
-            <Line l={`Colatch fee (${effPct}%)`} sub={reasons.length ? reasons.join(" · ") : undefined} v={inr(q.colatch)} />
-            {q.rush > 0 && <Line l="Rush shortlist (5%)" v={inr(q.rush)} />}
-            <Line l="GST on Colatch fee (18%)" sub="At the rate currently set; your GST invoice is the final figure" v={inr(q.gst)} />
-            <div className="rule" />
-            <div className="tot mono"><span>Total spend</span><span>{inr(spend)}</span></div>
-            {payments.length > 0 && <>
-              <div className="sect">Recorded payments</div>
-              {payments.map((x, i) => <Line key={i} l={x.kind === "brand_refund_sent" ? "Refund to you" : "Payment received"} sub={`${String(x.at instanceof Date ? x.at.toISOString() : x.at).slice(0, 10)}${x.utr ? ` · ref …${String(x.utr).slice(-4)}` : ""}`} v={(x.kind === "brand_refund_sent" ? "− " : "") + formatPaise(Number(x.amount_paise))} />)}
-              <div className="tot mono"><span>Net received by Colatch</span><span>{formatPaise(paidIn - refunded)}</span></div>
-            </>}
-
-            <div className="sect">Value received</div>
-            <Line l="Saved vs creators' market rates" sub="Each creator's own rate card, or the typical rate for their size" v={inr(tot.savedVsMarket)} />
-            <Line l={`Saved vs a ${base.agencyPct}% agency markup`} sub={`Colatch charged ${effPct}% on this campaign`} v={inr(tot.savedVsAgency)} />
-            <Line l={`${compact(tot.views)} views, valued as paid ads`} sub={`At ₹${base.cpm} per 1,000 views`} v={inr(tot.adsEquivalent)} />
-            <Line l="Sales from creator codes and links" sub={clicks ? `${compact(clicks)} clicks${orders ? `, ${orders} orders` : ""}` : "Tracked links and discount codes"} v={inr(tot.sales)} />
-            <div className="rule" />
-            <div className="tot mono"><span>Total value received</span><span>{inr(received)}</span></div>
-            {tot.rewards > 0 && <Line l="Paid in product, tickets or giveaways instead of cash" sub="At retail value, already inside your creator deals" v={inr(tot.rewards)} />}
-
-            <div className="sect">Proof, not promises</div>
-            <div className="proofs">
-              <div><b className="mono">{live.length}/{deals.length}</b>posts checked live by Colatch</div>
-              <div><b className="mono">{live.length ? Math.round((onTime / live.length) * 100) + "%" : "—"}</b>went live on or before the date</div>
-              <div><b className="mono">{firstTime}</b>drafts approved first time</div>
-              <div><b className="mono">{signed}</b>signed off by you{fiveStar ? `, ${fiveStar} rated 5★` : ""}</div>
+        {pending && <div className="noprint"><KpiStrip label="Receipt at a glance" items={[
+          { featured: true, label: "Committed spend", value: inrShort(spend), title: inrFull(spend), foot: "creator fees, Colatch fee and GST" },
+          { label: "Creators booked", value: deals.length, foot: "paid for, getting ready to post" },
+          { label: "Expected views", value: expectedViews ? compact(expectedViews) : "—", foot: expectedViews ? `from each creator's average reel views` : "shows once creators' views are known" },
+          { label: "Posts live", value: `0 / ${deals.length}`, foot: nextLive ? `first go-live planned ${dayIST(nextLive)}` : "results start when the first post is live" },
+        ]} /></div>}
+        {deals.length > 0 && !pending && <div className="noprint"><KpiStrip label="Receipt at a glance" items={[
+          { label: "Total spend", value: inrShort(spend), title: inrFull(spend), foot: "fees, Colatch fee and GST" },
+          { featured: true, label: "Value received", value: inrShort(received), title: inrFull(received), foot: "savings, ads value and sales" },
+          { label: "Kept in your pocket", value: inrShort(tot.saved), title: inrFull(tot.saved), foot: "vs market rates and agency markup" },
+          { label: "Return on Colatch", value: multiple != null ? `${multiple.toFixed(1)}×` : "—", foot: `${live.length} of ${deals.length} posts live` },
+        ]} /></div>}
+        <Grid aside={<div className="noprint v2b-stack">
+          <AsideCard eyebrow="Share it" title="Send this to finance" foot={<a href={`/shortlist/${token}`}>Back to your campaign</a>}>
+            <p className="small">A summary of spend and results. It is not a tax invoice; GST invoices are issued separately.</p>
+            <div className="v2b-acts">
+              <a className="btn-foil" href={mailto}>Forward to your CFO</a>
+              <PrintButton />
+            </div>
+          </AsideCard>
+          {pending && <AsideCard eyebrow="Results pending" title="What happens next">
+            <p className="small">{deals.length === 1 ? "Your creator is" : `Your ${deals.length} creators are`} booked and paid for. Each post is checked live by the Colatch team, then its views, clicks and sales are added here.</p>
+            <a className="btn sm" href={`/shortlist/${token}#progress`}>See campaign progress</a>
+          </AsideCard>}
+          {received > 0 && !pending && <ChartCard title="Where the value came from" figure={inrShort(received)} figureTitle={inrFull(received)} level={2} foot="Nothing is counted twice">
+            <ShareBar label="Value received by source" parts={parts} />
+          </ChartCard>}
+          {code && <AsideCard eyebrow="Refer a brand" title="Know another brand that needs creators?">
+            <p className="small">Share your link and earn credit off your Colatch invoices on their campaigns for 12 months:</p>
+            <p><code className="k v2b-code">{origin}/r/{code}</code></p>
+          </AsideCard>}
+        </div>}>
+          <div className="paper">
+            <div className="head">
+              <svg className="em"><use href="#emblem-foil" /></svg>
+              <div className="ttl">Value receipt</div>
+              <div className="sub">Every rupee you spent, and everything it bought you.</div>
             </div>
 
-            <div className="grand">
-              <div className="k">Kept in your pocket</div>
-              <div className="v mono">{inr(tot.saved)}</div>
-              <div className="s">{inr(received)} of value for {inr(spend)} spent{multiple != null && multiple >= 1 ? ` · ${multiple.toFixed(1)}× return` : ""}</div>
+            <div className="meta mono">
+              <span>Receipt</span><b>{receiptNo}</b>
+              <span>Date</span><b>{today}</b>
+              <span>Brand</span><b>{brand}</b>
+              <span>Campaign</span><b>{k.title}</b>
+              <span>Creators</span><b>{deals.length} paid for</b>
             </div>
-            <p className="foot-note">How we count: market rate is each creator's own rate card, or the typical rate for their follower size. The agency baseline is a {base.agencyPct}% markup (the usual range is 15 to 30%). Paid-ads value prices your views at ₹{base.cpm} per 1,000. Sales come only from your tracked Colatch codes and links. Nothing is counted twice.</p>
-          </>)}
-          <div className="thanks">Thank you for booking through Colatch</div>
-        </div>
+            <p className="foot-note" style={{ marginTop: 0 }}>A summary of your campaign's spend and results. It is not a tax invoice; GST invoices are issued separately.</p>
 
-        <div className="bar noprint">
-          <a className="btn-foil" href={mailto}>Forward to your CFO</a>
-          <PrintButton />
-          <a className="btn" href={`/shortlist/${token}`}>Back to your campaign</a>
-        </div>
-        {code && <div className="refer noprint">Know another brand that needs creators? Share your link and earn credit off your Colatch invoices on their campaigns for 12 months: <code>{origin}/r/{code}</code></div>}
+            {deals.length === 0 ? (
+              <p className="foot-note">This receipt fills in once your first payment is recorded. Every fee, saving and view will show here line by line.</p>
+            ) : (<>
+              <div className="sect">What you spent</div>
+              {deals.map((d) => <Line key={d.id} l={d.name || "@" + d.handle} sub={d.deliverable} v={inr(d.fee || 0)} />)}
+              <Line l={`Colatch fee (${effPct}%)`} sub={reasons.length ? reasons.join(" · ") : undefined} v={inr(q.colatch)} />
+              {q.rush > 0 && <Line l="Rush shortlist (5%)" v={inr(q.rush)} />}
+              <Line l="GST on Colatch fee (18%)" sub="At the rate currently set; your GST invoice is the final figure" v={inr(q.gst)} />
+              <div className="rule" />
+              <div className="tot mono"><span>Total spend</span><span>{inr(spend)}</span></div>
+              {payments.length > 0 && <>
+                <div className="sect">Recorded payments</div>
+                {payments.map((x, i) => <Line key={i} l={x.kind === "brand_refund_sent" ? "Refund to you" : "Payment received"} sub={`${String(x.at instanceof Date ? x.at.toISOString() : x.at).slice(0, 10)}${x.utr ? ` · ref …${String(x.utr).slice(-4)}` : ""}`} v={(x.kind === "brand_refund_sent" ? "− " : "") + formatPaise(Number(x.amount_paise))} />)}
+                <div className="tot mono"><span>Net received by Colatch</span><span>{formatPaise(paidIn - refunded)}</span></div>
+              </>}
+
+              <div className="sect">{pending ? "Value so far (before any post is live)" : "Value received"}</div>
+              <Line l="Saved vs creators' market rates" sub="Each creator's own rate card, or the typical rate for their size" v={inr(tot.savedVsMarket)} />
+              <Line l={`Saved vs a ${base.agencyPct}% agency markup`} sub={`Colatch charged ${effPct}% on this campaign`} v={inr(tot.savedVsAgency)} />
+              <Line l={`${compact(tot.views)} views, valued as paid ads`} sub={`At ₹${base.cpm} per 1,000 views`} v={inr(tot.adsEquivalent)} />
+              <Line l="Sales from creator codes and links" sub={clicks ? `${compact(clicks)} clicks${orders ? `, ${orders} orders` : ""}` : "Tracked links and discount codes"} v={inr(tot.sales)} />
+              <div className="rule" />
+              <div className="tot mono"><span>Total value received</span><span>{inr(received)}</span></div>
+              {tot.rewards > 0 && <Line l="Paid in product, tickets or giveaways instead of cash" sub="At retail value, already inside your creator deals" v={inr(tot.rewards)} />}
+
+              <div className="sect">Proof, not promises</div>
+              <div className="proofs">
+                <div><b className="mono">{live.length}/{deals.length}</b>posts checked live by Colatch</div>
+                <div><b className="mono">{live.length ? Math.round((onTime / live.length) * 100) + "%" : "—"}</b>went live on or before the date</div>
+                <div><b className="mono">{firstTime}</b>drafts approved first time</div>
+                <div><b className="mono">{signed}</b>signed off by you{fiveStar ? `, ${fiveStar} rated 5★` : ""}</div>
+              </div>
+
+              <div className="grand">
+                <div className="k">{pending ? "Kept in your pocket so far" : "Kept in your pocket"}</div>
+                <div className="v mono">{inr(tot.saved)}</div>
+                <div className="s">{pending ? `Savings on fees you've committed. Views and sales are added once posts go live.` : <>{inr(received)} of value for {inr(spend)} spent{multiple != null && multiple >= 1 ? ` · ${multiple.toFixed(1)}× return` : ""}</>}</div>
+              </div>
+              <p className="foot-note">How we count: market rate is each creator's own rate card, or the typical rate for their follower size. The agency baseline is a {base.agencyPct}% markup (the usual range is 15 to 30%). Paid-ads value prices your views at ₹{base.cpm} per 1,000. Sales come only from your tracked Colatch codes and links. Nothing is counted twice.</p>
+            </>)}
+            <div className="thanks">Thank you for booking through Colatch</div>
+          </div>
+
+        </Grid>
       </div>
     </PublicShell>
   );

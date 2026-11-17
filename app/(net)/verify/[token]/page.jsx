@@ -1,4 +1,6 @@
 import PublicShell from "../../_ui/PublicShell";
+import { SplitAuth } from "@/components/ui";
+import { BRAND_PANEL, ACCOUNT_PANEL } from "@/components/brand/AuthPanels";
 import { consumeVerifyToken, audit } from "@/lib/net/security";
 import { currentBrand } from "@/lib/net/creatorAuth";
 import { linkCampaignsByEmail } from "../../brand/_lib";
@@ -19,23 +21,22 @@ export default async function Page({ params }) {
   const signedInBrand = brand ? await currentBrand() : null;
   const home = brand ? (signedInBrand ? "/brand" : "/brand/login") : "/creator";
   return (
-    <PublicShell mode={brand ? "client" : "creator"} path="/verify">
-      <div className="wrap narrow" style={{ maxWidth: 480, padding: "20px 0 0" }}>
+    <PublicShell mode={brand ? "client" : "creator"} path="/verify" flush>
+      <SplitAuth panel={brand ? BRAND_PANEL : ACCOUNT_PANEL} intro={who
+        ? { eyebrow: "Email", title: "Email confirmed", sub: `${who.email} is confirmed for your Colatch ${brand ? "brand" : "creator"} account.` }
+        : { eyebrow: "Email", title: "This link doesn't work any more", sub: "Confirmation links work once and expire after 48 hours. If you already confirmed, you're all set." }}>
         {who ? (
-          <div className="panel pad">
-            <h2>Email confirmed</h2>
-            <p className="muted">{who.email} is confirmed for your Colatch {brand ? "brand" : "creator"} account.</p>
-            {brand && <p>{linked > 0 ? `${linked} ${linked === 1 ? "brief" : "briefs"} you sent from this email ${linked === 1 ? "is" : "are"} now in your account.` : "Briefs you send from this email will show up in your account."}</p>}
-            <a className="btn-foil" style={{ marginTop: 12 }} href={home}>{brand ? (signedInBrand ? "Go to my campaigns" : "Log in") : "Go to my home"}</a>
+          <div className="v2b-auth-next">
+            {brand && <p className="v2b-auth-lead">{linked > 0 ? `${linked} ${linked === 1 ? "brief" : "briefs"} you sent from this email ${linked === 1 ? "is" : "are"} now in your account.` : "Briefs you send from this email will show up in your account."}</p>}
+            <a className="btn-foil" style={{ width: "100%", justifyContent: "center" }} href={home}>{brand ? (signedInBrand ? "Go to my campaigns" : "Log in") : "Go to my home"}</a>
           </div>
         ) : (
-          <div className="panel pad">
-            <h2>This link doesn't work any more</h2>
-            <p className="muted">Confirmation links work once and expire after 48 hours. If you already confirmed, you're all set.</p>
-            <p>Need a new link? Log in and use “Send confirmation link” in Settings: <a className="link" href="/brand/settings">brand settings</a> · <a className="link" href="/creator/settings">creator settings</a>.</p>
+          <div className="v2b-auth-next">
+            <p className="v2b-auth-lead">Need a new link? Log in and use “Send confirmation link” in Settings.</p>
+            <div className="v2b-auth-links"><a className="btn" href="/brand/settings">Brand settings</a><a className="btn" href="/creator/settings">Creator settings</a></div>
           </div>
         )}
-      </div>
+      </SplitAuth>
     </PublicShell>
   );
 }

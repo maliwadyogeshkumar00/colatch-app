@@ -229,9 +229,11 @@ const NOTIFY_ON: Partial<Record<Step, true>> = { submit_draft: true, request_cha
 export async function transition(dealId: string, step: Step, actor: Actor, input: Input = {}): Promise<any> {
   // Keys starting with __ are set only here (e.g. the frozen price); callers can never supply them.
   input = Object.fromEntries(Object.entries(input || {}).filter(([k]) => !k.startsWith('__')));
+  let beforeStage: string | null = null; // for the deal.stage_changed webhook only
   const result = await env.DB.tx(async (t: any) => {
     const d = await t.prepare('SELECT * FROM creator_deals WHERE id = ? FOR UPDATE').bind(String(dealId || '')).first();
     if (!d) throw new FlowError('That deal does not exist.', 'not_found');
+    beforeStage = d.stage;
     if (!allowedActor(step, actor, d)) throw new FlowError("You don't have permission to do that on this deal.", 'forbidden');
     if (step === 'record_funding' && d.pay_status === 'unfunded' && Number(d.fee) > 0) {
       const { priceDeal } = await import('./pricing');
@@ -263,6 +265,8 @@ export async function transition(dealId: string, step: Step, actor: Actor, input
     return t.prepare('SELECT * FROM creator_deals WHERE id = ?').bind(d.id).first();
   });
   if (NOTIFY_ON[step]) await notifyFor(step, result, input).catch((e) => logError('dealflow/notify', e, { step, deal: result?.id }));
+  // Outgoing webhooks, after the commit. emitDealStep never throws; a webhook problem never undoes the step.
+  await import('./webhooks').then((w) => w.emitDealStep(step, beforeStage, result)).catch((e) => logError('dealflow/webhooks', e, { step, deal: result?.id }));
   return result;
 }
 
