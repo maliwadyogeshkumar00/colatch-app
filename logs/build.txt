@@ -1,0 +1,111 @@
+
+> build
+> next build
+
+⚠ No build cache found. Please configure build caching for faster rebuilds. Read more: https://nextjs.org/docs/messages/no-cache
+Attention: Next.js now collects completely anonymous telemetry regarding usage.
+This information is used to shape Next.js' roadmap and prioritize features.
+You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
+https://nextjs.org/telemetry
+
+  ▲ Next.js 14.2.35
+
+   Creating an optimized production build ...
+ ✓ Compiled successfully
+   Skipping validation of types
+   Skipping linting
+
+   We detected TypeScript in your project and reconfigured your tsconfig.json file for you. Strict-mode is set to false by default.
+   The following suggested values were added to your tsconfig.json. These values can be changed to fit your project's needs:
+
+   	- include was updated to add '.next/types/**/*.ts'
+
+   Collecting page data ...
+   Generating static pages (0/46) ...
+   Generating static pages (11/46) 
+   Generating static pages (22/46) 
+   Generating static pages (34/46) 
+ ✓ Generating static pages (46/46)
+   Finalizing page optimization ...
+   Collecting build traces ...
+
+Route (app)                              Size     First Load JS
+┌ ○ /                                    20.3 kB         108 kB
+├ ○ /_not-found                          268 B          87.5 kB
+├ ƒ /api/brief                           0 B                0 B
+├ ƒ /api/decode                          0 B                0 B
+├ ƒ /api/health                          0 B                0 B
+├ ƒ /api/match                           0 B                0 B
+├ ƒ /api/net/cron                        0 B                0 B
+├ ƒ /api/net/health                      0 B                0 B
+├ ƒ /api/request                         0 B                0 B
+├ ƒ /api/roster                          0 B                0 B
+├ ƒ /brand                               268 B          87.5 kB
+├ ƒ /brand/join                          268 B          87.5 kB
+├ ƒ /brand/login                         268 B          87.5 kB
+├ ƒ /brand/logout                        0 B                0 B
+├ ƒ /brand/settings                      268 B          87.5 kB
+├ ƒ /brief                               2.04 kB        89.3 kB
+├ ƒ /c/[code]                            268 B          87.5 kB
+├ ƒ /c/[code]/card                       0 B                0 B
+├ ƒ /creator                             268 B          87.5 kB
+├ ƒ /creator/applications                265 B          87.5 kB
+├ ƒ /creator/deals/[id]                  268 B          87.5 kB
+├ ƒ /creator/earnings                    268 B          87.5 kB
+├ ƒ /creator/login                       268 B          87.5 kB
+├ ƒ /creator/logout                      0 B                0 B
+├ ƒ /creator/o/[slug]                    268 B          87.5 kB
+├ ƒ /creator/pitch                       268 B          87.5 kB
+├ ƒ /creator/profile                     268 B          87.5 kB
+├ ƒ /creator/score                       268 B          87.5 kB
+├ ƒ /creator/settings                    268 B          87.5 kB
+├ ƒ /faq                                 268 B          87.5 kB
+├ ƒ /go/[code]                           0 B                0 B
+├ ƒ /join                                268 B          87.5 kB
+├ ƒ /m/[handle]                          268 B          87.5 kB
+├ ƒ /pitches                             268 B          87.5 kB
+├ ƒ /pitches/[id]                        268 B          87.5 kB
+├ ƒ /proof/[id]                          268 B          87.5 kB
+├ ƒ /r/[code]                            0 B                0 B
+├ ƒ /receipt/[token]                     312 B          87.6 kB
+├ ƒ /reset/[token]                       268 B          87.5 kB
+├ ƒ /reset/request                       268 B          87.5 kB
+├ ○ /robots.txt                          0 B                0 B
+├ ƒ /roster/[token]                      268 B          87.5 kB
+├ ƒ /s                                   5.02 kB        92.3 kB
+├ ƒ /shortlist/[token]                   268 B          87.5 kB
+├ ○ /sitemap.xml                         0 B                0 B
+├ ƒ /team                                268 B          87.5 kB
+├ ƒ /team/audit                          268 B          87.5 kB
+├ ƒ /team/brands                         268 B          87.5 kB
+├ ƒ /team/campaigns                      268 B          87.5 kB
+├ ƒ /team/campaigns/[id]                 524 B          87.8 kB
+├ ƒ /team/cpv                            2.3 kB         89.5 kB
+├ ƒ /team/creators                       268 B          87.5 kB
+├ ƒ /team/creators/[id]                  268 B          87.5 kB
+├ ƒ /team/crm                            528 B          87.8 kB
+├ ƒ /team/deals/[id]                     525 B          87.8 kB
+├ ƒ /team/disputes                       268 B          87.5 kB
+├ ƒ /team/finance                        268 B          87.5 kB
+├ ƒ /team/finance/export                 0 B                0 B
+├ ƒ /team/insights                       268 B          87.5 kB
+├ ƒ /team/integrations                   268 B          87.5 kB
+├ ƒ /team/login                          268 B          87.5 kB
+├ ƒ /team/logout                         0 B                0 B
+├ ƒ /team/members                        268 B          87.5 kB
+├ ƒ /team/notifications                  268 B          87.5 kB
+├ ƒ /team/referrals                      528 B          87.8 kB
+├ ƒ /team/reports                        268 B          87.5 kB
+├ ƒ /team/settings                       268 B          87.5 kB
+├ ƒ /team/setup                          268 B          87.5 kB
+├ ƒ /team/system                         268 B          87.5 kB
+└ ƒ /verify/[token]                      269 B          87.5 kB
++ First Load JS shared by all            87.2 kB
+  ├ chunks/2117-b0137f6c1fc8a8d5.js      31.7 kB
+  ├ chunks/fd9d1056-790ee93443143d43.js  53.6 kB
+  └ other shared chunks (total)          1.87 kB
+
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+

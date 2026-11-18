@@ -1,0 +1,66 @@
+
+> test:int
+> node scripts/run-tests.mjs integration
+
+✔ paise parsing is strict (2.946469ms)
+✔ full lifecycle: accept → fund → draft → approve → live → verify → release → pay (389.091809ms)
+✔ a creator can't be paid twice, even with two payouts racing (104.26973ms)
+✔ the same bank reference can't be used for two payouts (149.887592ms)
+✔ payout can't exceed the agreed fee (69.285966ms)
+✔ steps out of order are refused (20.48836ms)
+✔ roles and owners are enforced (no IDOR) (43.532969ms)
+✔ unsafe links are refused (20.829444ms)
+✔ cancel and refund: funded deal can be refunded once; paid deal can't be cancelled (110.018022ms)
+✔ the ledger is append-only (32.720978ms)
+✔ referral earnings are booked once, with the payout (304.169853ms)
+✔ migrations are recorded and re-running is a no-op (2.035426ms)
+✔ callers can't inject the frozen price (32.058074ms)
+✔ auto-approve fired twice at once approves once (75.836361ms)
+✔ creator and brand messages are scrubbed on write; team messages are stored as written (248.688231ms)
+✔ empty and over-long messages are refused and nothing is stored (10.342411ms)
+✔ submitting the same form twice stores one message (27.740596ms)
+✔ unread counts are per reader and clear when the deal is opened (44.575244ms)
+✔ a new message queues one email for the other side, without the message text, and no repeat while unread (48.743581ms)
+✔ shipments: pending → shipped → delivered → returned with timestamps; bad moves are refused (24.786064ms)
+✔ the creator's address is read back for the team; missing is null (7.194431ms)
+✔ usage rights: saved before go-live start on the live date; expiry = start + months; expired shows as expired (121.98396ms)
+✔ each side can have one open dispute per deal; a second is refused (277.979136ms)
+✔ only people on the deal can raise one, and the text is checked (14.19187ms)
+✔ resolving is permission-checked, audited, happens once, and allows a new dispute after (31.259899ms)
+✔ contact details are scrubbed from the dispute text (14.476643ms)
+✔ five checks are defined (1.892086ms)
+✔ a deal marked paid with no ledger rows is flagged; a correctly recorded deal is not (200.124623ms)
+✔ payout above the fee and a funding mismatch are flagged (17.696393ms)
+✔ ledger rows pointing at a missing deal are flagged (7.321684ms)
+{"level":"error","source":"cron/webhook_catchup","message":"boom","digest":null}
+✔ cron: overdue draft is auto-approved once through the state machine, and every job records its run (182.55177ms)
+✔ one failing job does not stop the others (6.684238ms)
+✔ reminders: brand unpaid is sent once to brand and team, however often cron runs (35.707649ms)
+✔ usage rights: 14-day warning and expiry are each sent once (58.380591ms)
+✔ emit: one delivery row per matching active hook, deduped by key, retried on the backoff schedule (53.90945ms)
+✔ delivery: signed POST, delivered on 2xx; the deal state machine emits after commit (694.12895ms)
+✔ v3 database with duplicate deals migrates and reports the conflict (469.381774ms)
+✔ a new brand pays the standard fee (48.624978ms)
+✔ repeat booking: 12% when this brand already paid this creator through Colatch (12.349074ms)
+✔ repeat booking ignores deals on the current campaign (6.409479ms)
+✔ loyalty ladder: 1 point off per ₹5 lakh paid in the last 365 days, never below 10% (39.496821ms)
+✔ price is live before funding and frozen after (8.207448ms)
+✔ brand referral earns for 12 months, then stops (228.658823ms)
+✔ 8 failures inside 15 minutes block the key (63.363703ms)
+✔ a successful login clears earlier failures (12.590253ms)
+✔ failures older than the window don't count (12.64337ms)
+✔ keys are independent: one blocked email doesn't block another (11.275936ms)
+✔ a verify link works once and marks the email confirmed (50.789221ms)
+✔ a newer link cancels the older one (7.797057ms)
+✔ a link for an old email does not confirm a changed email (6.541887ms)
+✔ expired and made-up tokens are refused (4.525958ms)
+✔ earlier briefs are linked only after the email is confirmed, and never stolen (15.823612ms)
+✔ brand page queries run on Postgres (6.119152ms)
+ℹ tests 53
+ℹ suites 0
+ℹ pass 53
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1926.778827
